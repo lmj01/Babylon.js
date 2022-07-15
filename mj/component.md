@@ -4,4 +4,7 @@ Babylon的特征之一就是是ECS(Entity-Component-System实体-组件-系统)�
 以scene场景为单元作为一个实体，每个scene实体包含多个组件。
 这样对scene进行解耦，使得每个模块如layers，post-process模块独立性更强。
 
-既然以scene为单元，engine对象也是绑定在scene内部，渲染时不需要通过去调引擎
+既然以scene为单元，engine对象也是绑定在scene内部，渲染时不需要通过去调引擎,Mesh对象构造时也是依赖与某个scene的
+
+scene与engine是双向的，scene引用engine，engine引用scene
+正是因为这种互相引用，方便了业务层面上的相互应用，避免了全局引用
