@@ -8,3 +8,17 @@ Babylon的特征之一就是是ECS(Entity-Component-System实体-组件-系统)�
 
 scene与engine是双向的，scene引用engine，engine引用scene
 正是因为这种互相引用，方便了业务层面上的相互应用，避免了全局引用
+
+自v3.1所有场景对象都继承自Node接口，
+```js
+/**
+ * Node is the basic class for all scene objects (Mesh, Light, Camera.)
+ */
+export class Node implements IBehaviorAware<Node> {
+}
+```
+一般框架中基类会基础事件接口，方便各个部件处理，如three-js中
+```js
+class Object3D extends EventDispatcher {
+}
+```
