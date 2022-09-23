@@ -7,7 +7,8 @@ import { EngineStore } from "../Engines/engineStore";
 import type { AbstractMesh } from "../Meshes/abstractMesh";
 import type { Mesh } from "../Meshes/mesh";
 import { VertexBuffer } from "../Buffers/buffer";
-import { Light } from "../Lights/light";
+import type { Light } from "../Lights/light";
+import { LightConstants } from "../Lights/lightConstants";
 import { Constants } from "../Engines/constants";
 import type { PrePassConfiguration } from "../Materials/prePassConfiguration";
 
@@ -46,7 +47,7 @@ export class MaterialHelper {
     public static PrepareDefinesForMergedUV(texture: BaseTexture, defines: any, key: string): void {
         defines._needUVs = true;
         defines[key] = true;
-        if (texture.getTextureMatrix().isIdentityAs3x2()) {
+        if (texture.optimizeUVAllocation && texture.getTextureMatrix().isIdentityAs3x2()) {
             defines[key + "DIRECTUV"] = texture.coordinatesIndex + 1;
             defines["MAINUV" + (texture.coordinatesIndex + 1)] = true;
         } else {
@@ -478,13 +479,13 @@ export class MaterialHelper {
         defines["LIGHT_FALLOFF_STANDARD" + lightIndex] = false;
 
         switch (light.falloffType) {
-            case Light.FALLOFF_GLTF:
+            case LightConstants.FALLOFF_GLTF:
                 defines["LIGHT_FALLOFF_GLTF" + lightIndex] = true;
                 break;
-            case Light.FALLOFF_PHYSICAL:
+            case LightConstants.FALLOFF_PHYSICAL:
                 defines["LIGHT_FALLOFF_PHYSICAL" + lightIndex] = true;
                 break;
-            case Light.FALLOFF_STANDARD:
+            case LightConstants.FALLOFF_STANDARD:
                 defines["LIGHT_FALLOFF_STANDARD" + lightIndex] = true;
                 break;
         }
@@ -524,10 +525,10 @@ export class MaterialHelper {
             }
         }
 
-        if (light.lightmapMode != Light.LIGHTMAP_DEFAULT) {
+        if (light.lightmapMode != LightConstants.LIGHTMAP_DEFAULT) {
             state.lightmapMode = true;
             defines["LIGHTMAPEXCLUDED" + lightIndex] = true;
-            defines["LIGHTMAPNOSPECULAR" + lightIndex] = light.lightmapMode == Light.LIGHTMAP_SHADOWSONLY;
+            defines["LIGHTMAPNOSPECULAR" + lightIndex] = light.lightmapMode == LightConstants.LIGHTMAP_SHADOWSONLY;
         } else {
             defines["LIGHTMAPEXCLUDED" + lightIndex] = false;
             defines["LIGHTMAPNOSPECULAR" + lightIndex] = false;
@@ -551,7 +552,7 @@ export class MaterialHelper {
 
         let lightIndex = 0;
         const state = {
-            needNormals: false,
+            needNormals: defines._needNormals, // prevents overriding previous reflection or other needs for normals
             needRebuild: false,
             lightmapMode: false,
             shadowEnabled: false,

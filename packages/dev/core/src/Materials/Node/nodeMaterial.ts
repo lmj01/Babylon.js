@@ -2,6 +2,7 @@
 import type { NodeMaterialBlock } from "./nodeMaterialBlock";
 import { PushMaterial } from "../pushMaterial";
 import type { Scene } from "../../scene";
+import { ScenePerformancePriority } from "../../scene";
 import { AbstractMesh } from "../../Meshes/abstractMesh";
 import { Matrix, Vector2 } from "../../Maths/math.vector";
 import { Color3, Color4 } from "../../Maths/math.color";
@@ -57,6 +58,7 @@ import { TrigonometryBlock, TrigonometryBlockOperations } from "./Blocks/trigono
 import { NodeMaterialSystemValues } from "./Enums/nodeMaterialSystemValues";
 import type { ImageSourceBlock } from "./Blocks/Dual/imageSourceBlock";
 import { EngineStore } from "../../Engines/engineStore";
+import type { Material } from "../material";
 
 const onCreatedEffectParameters = { effect: null as unknown as Effect, subMesh: null as unknown as Nullable<SubMesh> };
 
@@ -72,7 +74,7 @@ export interface INodeMaterialEditorOptions {
     editorURL?: string;
 }
 
-/** @hidden */
+/** @internal */
 export class NodeMaterialDefines extends MaterialDefines implements IImageProcessingConfigurationDefines {
     public NORMAL = false;
     public TANGENT = false;
@@ -110,6 +112,7 @@ export class NodeMaterialDefines extends MaterialDefines implements IImageProces
     public COLORGRADING3D = false;
     public SAMPLER3DGREENDEPTH = false;
     public SAMPLER3DBGRMAP = false;
+    public DITHER = false;
     public IMAGEPROCESSINGPOSTPROCESS = false;
     public SKIPFINALCOLORCLAMP = false;
 
@@ -264,7 +267,7 @@ export class NodeMaterial extends PushMaterial {
 
     /**
      * Specifies the mode of the node material
-     * @hidden
+     * @internal
      */
     @serialize("mode")
     public _mode: NodeMaterialModes = NodeMaterialModes.Material;
@@ -1143,6 +1146,19 @@ export class NodeMaterial extends PushMaterial {
         this._createEffectForParticles(particleSystem, BaseParticleSystem.BLENDMODE_MULTIPLY, onCompiled, onError);
     }
 
+    /**
+     * Use this material as the shadow depth wrapper of a target material
+     * @param targetMaterial defines the target material
+     */
+    public createAsShadowDepthWrapper(targetMaterial: Material) {
+        if (this.mode !== NodeMaterialModes.Material) {
+            console.log("Incompatible material mode");
+            return;
+        }
+
+        targetMaterial.shadowDepthWrapper = new BABYLON.ShadowDepthWrapper(this, this.getScene());
+    }
+
     private _processDefines(
         mesh: AbstractMesh,
         defines: NodeMaterialDefines,
@@ -1333,6 +1349,10 @@ export class NodeMaterial extends PushMaterial {
         subMesh.effect._wasPreviouslyReady = true;
         subMesh.effect._wasPreviouslyUsingInstances = useInstances;
 
+        if (scene.performancePriority !== ScenePerformancePriority.BackwardCompatible) {
+            this.checkReadyOnlyOnce = true;
+        }
+
         return true;
     }
 
@@ -1481,7 +1501,7 @@ export class NodeMaterial extends PushMaterial {
             block.dispose();
         }
 
-        this.attachedBlocks = [];
+        this.attachedBlocks.length = 0;
         (this._sharedData as any) = null;
         (this._vertexCompilationState as any) = null;
         (this._fragmentCompilationState as any) = null;
@@ -1506,7 +1526,7 @@ export class NodeMaterial extends PushMaterial {
     /**
      * Launch the node material editor
      * @param config Define the configuration of the editor
-     * @return a promise fulfilled when the node editor is visible
+     * @returns a promise fulfilled when the node editor is visible
      */
     public edit(config?: INodeMaterialEditorOptions): Promise<void> {
         return new Promise((resolve) => {
@@ -1532,9 +1552,9 @@ export class NodeMaterial extends PushMaterial {
      * Clear the current material
      */
     public clear() {
-        this._vertexOutputNodes = [];
-        this._fragmentOutputNodes = [];
-        this.attachedBlocks = [];
+        this._vertexOutputNodes.length = 0;
+        this._fragmentOutputNodes.length = 0;
+        this.attachedBlocks.length = 0;
     }
 
     /**
@@ -1729,17 +1749,13 @@ export class NodeMaterial extends PushMaterial {
 
     /**
      * Loads the current Node Material from a url pointing to a file save by the Node Material Editor
+     * @deprecated Please use NodeMaterial.ParseFromFileAsync instead
      * @param url defines the url to load from
      * @param rootUrl defines the root URL for nested url in the node material
      * @returns a promise that will fulfil when the material is fully loaded
      */
-    public loadAsync(url: string, rootUrl: string = "") {
-        return this.getScene()
-            ._loadFileAsync(url)
-            .then((data) => {
-                const serializationObject = JSON.parse(data as string);
-                this.loadFromSerialization(serializationObject, rootUrl);
-            });
+    public async loadAsync(url: string, rootUrl: string = "") {
+        return NodeMaterial.ParseFromFileAsync("", url, this.getScene(), rootUrl, true, this);
     }
 
     private _gatherBlocks(rootNode: NodeMaterialBlock, list: NodeMaterialBlock[]) {
@@ -1899,7 +1915,7 @@ export class NodeMaterial extends PushMaterial {
      * @param rootUrl defines the root URL to use to load textures and relative dependencies
      * @param merge defines whether or not the source must be merged or replace the current content
      */
-    public loadFromSerialization(source: any, rootUrl: string = "", merge = false) {
+    public parseSerializedObject(source: any, rootUrl: string = "", merge = false) {
         if (!merge) {
             this.clear();
         }
@@ -1988,6 +2004,17 @@ export class NodeMaterial extends PushMaterial {
     }
 
     /**
+     * Clear the current graph and load a new one from a serialization object
+     * @param source defines the JSON representation of the material
+     * @param rootUrl defines the root URL to use to load textures and relative dependencies
+     * @param merge defines whether or not the source must be merged or replace the current content
+     * @deprecated Please use the parseSerializedObject method instead
+     */
+    public loadFromSerialization(source: any, rootUrl: string = "", merge = false) {
+        this.parseSerializedObject(source, rootUrl, merge);
+    }
+
+    /**
      * Makes a duplicate of the current material.
      * @param name defines the name to use for the new material
      * @param shareEffect defines if the clone material should share the same effect (default is false)
@@ -1999,7 +2026,7 @@ export class NodeMaterial extends PushMaterial {
         clone.id = name;
         clone.name = name;
 
-        clone.loadFromSerialization(serializationObject);
+        clone.parseSerializedObject(serializationObject);
         clone._buildId = this._buildId;
         clone.build(false, !shareEffect);
 
@@ -2016,7 +2043,7 @@ export class NodeMaterial extends PushMaterial {
     public static Parse(source: any, scene: Scene, rootUrl: string = ""): NodeMaterial {
         const nodeMaterial = SerializationHelper.Parse(() => new NodeMaterial(source.name, scene), source, scene, rootUrl);
 
-        nodeMaterial.loadFromSerialization(source, rootUrl);
+        nodeMaterial.parseSerializedObject(source, rootUrl);
         nodeMaterial.build();
 
         return nodeMaterial;
@@ -2029,22 +2056,26 @@ export class NodeMaterial extends PushMaterial {
      * @param scene defines the hosting scene
      * @param rootUrl defines the root URL for nested url in the node material
      * @param skipBuild defines whether to build the node material
+     * @param targetMaterial defines a material to use instead of creating a new one
      * @returns a promise that will resolve to the new node material
      */
-    public static ParseFromFileAsync(name: string, url: string, scene: Scene, rootUrl: string = "", skipBuild: boolean = false): Promise<NodeMaterial> {
-        const material = new NodeMaterial(name, scene);
+    public static async ParseFromFileAsync(
+        name: string,
+        url: string,
+        scene: Scene,
+        rootUrl: string = "",
+        skipBuild: boolean = false,
+        targetMaterial?: NodeMaterial
+    ): Promise<NodeMaterial> {
+        const material = targetMaterial ?? new NodeMaterial(name, scene);
 
-        return new Promise((resolve, reject) => {
-            return material
-                .loadAsync(url, rootUrl)
-                .then(() => {
-                    if (!skipBuild) {
-                        material.build();
-                    }
-                    resolve(material);
-                })
-                .catch(reject);
-        });
+        const data = await scene._loadFileAsync(url);
+        const serializationObject = JSON.parse(data as string);
+        material.parseSerializedObject(serializationObject, rootUrl);
+        if (!skipBuild) {
+            material.build();
+        }
+        return material;
     }
 
     /**
@@ -2064,7 +2095,7 @@ export class NodeMaterial extends PushMaterial {
         skipBuild: boolean = false
     ): Promise<NodeMaterial> {
         if (snippetId === "_BLANK") {
-            return Promise.resolve(this.CreateDefault("blank", scene));
+            return Promise.resolve(NodeMaterial.CreateDefault("blank", scene));
         }
 
         return new Promise((resolve, reject) => {
@@ -2080,7 +2111,7 @@ export class NodeMaterial extends PushMaterial {
                             nodeMaterial.uniqueId = scene.getUniqueId();
                         }
 
-                        nodeMaterial.loadFromSerialization(serializationObject);
+                        nodeMaterial.parseSerializedObject(serializationObject);
                         nodeMaterial.snippetId = snippetId;
 
                         try {

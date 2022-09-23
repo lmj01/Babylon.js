@@ -412,7 +412,7 @@ export class Color3 {
     private static _BlackReadOnly = Color3.Black() as DeepImmutable<Color3>;
 
     /**
-     * Convert Hue, saturation and value to a Color3 (RGB)
+     * Converts Hue, saturation and value to a Color3 (RGB)
      * @param hue defines the hue
      * @param saturation defines the saturation
      * @param value defines the value
@@ -448,6 +448,19 @@ export class Color3 {
 
         const m = value - chroma;
         result.set(r + m, g + m, b + m);
+    }
+
+    /**
+     * Converts Hue, saturation and value to a new Color3 (RGB)
+     * @param hue defines the hue (value between 0 and 360)
+     * @param saturation defines the saturation (value between 0 and 1)
+     * @param value defines the value (value between 0 and 1)
+     * @returns a new Color3 object
+     */
+    public static FromHSV(hue: number, saturation: number, value: number): Color3 {
+        const result = new Color3(0, 0, 0);
+        Color3.HSVtoRGBToRef(hue, saturation, value, result);
+        return result;
     }
 
     /**
@@ -1231,7 +1244,7 @@ export class Color4 {
 }
 
 /**
- * @hidden
+ * @internal
  */
 export class TmpColors {
     public static Color3: Color3[] = ArrayTools.BuildArray(3, Color3.Black);

@@ -57,7 +57,7 @@ if (typeof self !== "undefined" && !Object.prototype.hasOwnProperty.call(self, "
 
 /**
  * Returns _native only after it has been defined by BabylonNative.
- * @hidden
+ * @internal
  */
 export function AcquireNativeObjectAsync(): Promise<INative> {
     return new Promise((resolve) => {
@@ -71,9 +71,7 @@ export function AcquireNativeObjectAsync(): Promise<INative> {
 
 /**
  * Registers a constructor on the _native object. See NativeXRFrame for an example.
- * @param typeName
- * @param constructor
- * @hidden
+ * @internal
  */
 export async function RegisterNativeTypeAsync<Type>(typeName: string, constructor: Type) {
     ((await AcquireNativeObjectAsync()) as any)[typeName] = constructor;
@@ -161,9 +159,7 @@ class NativePipelineContext implements IPipelineContext {
     }
 
     /**
-     * @param uniformName
-     * @param matrix
-     * @hidden
+     * @internal
      */
     public _cacheMatrix(uniformName: string, matrix: IMatrixLike): boolean {
         const cache = this._valueCache[uniformName];
@@ -178,10 +174,7 @@ class NativePipelineContext implements IPipelineContext {
     }
 
     /**
-     * @param uniformName
-     * @param x
-     * @param y
-     * @hidden
+     * @internal
      */
     public _cacheFloat2(uniformName: string, x: number, y: number): boolean {
         let cache = this._valueCache[uniformName];
@@ -205,11 +198,7 @@ class NativePipelineContext implements IPipelineContext {
     }
 
     /**
-     * @param uniformName
-     * @param x
-     * @param y
-     * @param z
-     * @hidden
+     * @internal
      */
     public _cacheFloat3(uniformName: string, x: number, y: number, z: number): boolean {
         let cache = this._valueCache[uniformName];
@@ -237,12 +226,7 @@ class NativePipelineContext implements IPipelineContext {
     }
 
     /**
-     * @param uniformName
-     * @param x
-     * @param y
-     * @param z
-     * @param w
-     * @hidden
+     * @internal
      */
     public _cacheFloat4(uniformName: string, x: number, y: number, z: number, w: number): boolean {
         let cache = this._valueCache[uniformName];
@@ -740,7 +724,7 @@ export interface NativeEngineOptions {
     adaptToDeviceRatio?: boolean;
 }
 
-/** @hidden */
+/** @internal */
 class CommandBufferEncoder {
     private readonly _commandStream: NativeDataStream;
     private readonly _pending = new Array<NativeData>();
@@ -813,7 +797,7 @@ class CommandBufferEncoder {
     }
 }
 
-/** @hidden */
+/** @internal */
 export class NativeEngine extends Engine {
     // This must match the protocol version in NativeEngine.cpp
     private static readonly PROTOCOL_VERSION = 6;
@@ -890,7 +874,7 @@ export class NativeEngine extends Engine {
             drawBuffersExtension: false,
             depthTextureExtension: false,
             vertexArrayObject: true,
-            instancedArrays: false,
+            instancedArrays: true,
             supportOcclusionQuery: false,
             canUseTimestampForTimerQuery: false,
             blendMinMax: false,
@@ -927,6 +911,7 @@ export class NativeEngine extends Engine {
             needShaderCodeInlining: true,
             needToAlwaysBindUniformBuffers: false,
             supportRenderPasses: true,
+            supportSpriteInstancing: false,
             _collectUbosUpdatedInFrame: false,
         };
 
@@ -998,16 +983,14 @@ export class NativeEngine extends Engine {
         this._engine.dispose();
     }
 
-    /** @hidden */
+    /** @internal */
     public static _createNativeDataStream(): NativeDataStream {
         return new NativeDataStream();
     }
 
     /**
      * Can be used to override the current requestAnimationFrame requester.
-     * @param bindedRenderFunction
-     * @param requester
-     * @hidden
+     * @internal
      */
     protected _queueNewFrame(bindedRenderFunction: any, requester?: any): number {
         // Use the provided requestAnimationFrame, unless the requester is the window. In that case, we will default to the Babylon Native version of requestAnimationFrame.
@@ -1088,7 +1071,13 @@ export class NativeEngine extends Engine {
         return buffer;
     }
 
-    protected _recordVertexArrayObject(vertexArray: any, vertexBuffers: { [key: string]: VertexBuffer }, indexBuffer: Nullable<NativeDataBuffer>, effect: Effect): void {
+    protected _recordVertexArrayObject(
+        vertexArray: any,
+        vertexBuffers: { [key: string]: VertexBuffer },
+        indexBuffer: Nullable<NativeDataBuffer>,
+        effect: Effect,
+        overrideVertexBuffers?: { [kind: string]: Nullable<VertexBuffer> }
+    ): void {
         if (indexBuffer) {
             this._engine.recordIndexBuffer(vertexArray, indexBuffer.nativeIndexBuffer!);
         }
@@ -1098,10 +1087,18 @@ export class NativeEngine extends Engine {
             const location = effect.getAttributeLocation(index);
             if (location >= 0) {
                 const kind = attributes[index];
-                const vertexBuffer = vertexBuffers[kind];
+                let vertexBuffer: Nullable<VertexBuffer> = null;
+
+                if (overrideVertexBuffers) {
+                    vertexBuffer = overrideVertexBuffers[kind];
+                }
+                if (!vertexBuffer) {
+                    vertexBuffer = vertexBuffers[kind];
+                }
+
                 if (vertexBuffer) {
                     const buffer = vertexBuffer.getBuffer() as Nullable<NativeDataBuffer>;
-                    if (buffer) {
+                    if (buffer && buffer.nativeVertexBuffer) {
                         this._engine.recordVertexBuffer(
                             vertexArray,
                             buffer.nativeVertexBuffer!,
@@ -1128,9 +1125,14 @@ export class NativeEngine extends Engine {
         this.bindVertexArrayObject(this._boundBuffersVertexArray);
     }
 
-    public recordVertexArrayObject(vertexBuffers: { [key: string]: VertexBuffer }, indexBuffer: Nullable<NativeDataBuffer>, effect: Effect): WebGLVertexArrayObject {
+    public recordVertexArrayObject(
+        vertexBuffers: { [key: string]: VertexBuffer },
+        indexBuffer: Nullable<NativeDataBuffer>,
+        effect: Effect,
+        overrideVertexBuffers?: { [kind: string]: Nullable<VertexBuffer> }
+    ): WebGLVertexArrayObject {
         const vertexArray = this._engine.createVertexArray();
-        this._recordVertexArrayObject(vertexArray, vertexBuffers, indexBuffer, effect);
+        this._recordVertexArrayObject(vertexArray, vertexBuffers, indexBuffer, effect, overrideVertexBuffers);
         return vertexArray;
     }
 
@@ -1240,8 +1242,7 @@ export class NativeEngine extends Engine {
     }
 
     /**
-     * @param pipelineContext
-     * @hidden
+     * @internal
      */
     public _isRenderingStateCompiled(pipelineContext: IPipelineContext): boolean {
         // TODO: support async shader compilcation
@@ -1249,9 +1250,7 @@ export class NativeEngine extends Engine {
     }
 
     /**
-     * @param pipelineContext
-     * @param action
-     * @hidden
+     * @internal
      */
     public _executeWhenRenderingStateIsCompiled(pipelineContext: IPipelineContext, action: () => void) {
         // TODO: support async shader compilcation
@@ -2271,7 +2270,7 @@ export class NativeEngine extends Engine {
         }
 
         if (scene) {
-            scene._addPendingData(texture);
+            scene.addPendingData(texture);
         }
         texture.url = url;
         texture.generateMipMaps = !noMipmap;
@@ -2295,7 +2294,7 @@ export class NativeEngine extends Engine {
 
         const onInternalError = (message?: string, exception?: any) => {
             if (scene) {
-                scene._removePendingData(texture);
+                scene.removePendingData(texture);
             }
 
             if (url === originalUrl) {
@@ -2324,7 +2323,7 @@ export class NativeEngine extends Engine {
             const onload = (data: ArrayBufferView) => {
                 if (!texture._hardwareTexture) {
                     if (scene) {
-                        scene._removePendingData(texture);
+                        scene.removePendingData(texture);
                     }
 
                     return;
@@ -2349,7 +2348,7 @@ export class NativeEngine extends Engine {
                         this._setTextureSampling(underlyingResource, filter);
 
                         if (scene) {
-                            scene._removePendingData(texture);
+                            scene.removePendingData(texture);
                         }
 
                         texture.onLoadedObservable.notifyObservers(texture);
@@ -2427,8 +2426,7 @@ export class NativeEngine extends Engine {
     }
 
     /**
-     * @param framebuffer
-     * @hidden
+     * @internal
      */
     public _releaseFramebufferObjects(framebuffer: Nullable<WebGLFramebuffer>): void {
         if (framebuffer) {
@@ -2438,7 +2436,7 @@ export class NativeEngine extends Engine {
         }
     }
 
-    /** @hidden */
+    /** @internal */
     /**
      * Engine abstraction for loading and creating an image bitmap from a given source string.
      * @param imageSource source to load the image from.
@@ -2634,10 +2632,7 @@ export class NativeEngine extends Engine {
     }
 
     /**
-     * @param isMulti
-     * @param isCube
-     * @param size
-     * @hidden
+     * @internal
      */
     public _createHardwareRenderTargetWrapper(isMulti: boolean, isCube: boolean, size: TextureSize): RenderTargetWrapper {
         const rtWrapper = new NativeRenderTargetWrapper(isMulti, isCube, size, this);
@@ -2890,9 +2885,7 @@ export class NativeEngine extends Engine {
     }
 
     /**
-     * @param channel
-     * @param texture
-     * @hidden
+     * @internal
      */
     public _bindTexture(channel: number, texture: InternalTexture): void {
         const uniform = this._boundUniforms[channel];
@@ -2925,7 +2918,7 @@ export class NativeEngine extends Engine {
      * Create a canvas
      * @param width width
      * @param height height
-     * @return ICanvas interface
+     * @returns ICanvas interface
      */
     public createCanvas(width: number, height: number): ICanvas {
         if (!_native.Canvas) {
@@ -2939,7 +2932,7 @@ export class NativeEngine extends Engine {
 
     /**
      * Create an image to use with canvas
-     * @return IImage interface
+     * @returns IImage interface
      */
     public createCanvasImage(): IImage {
         if (!_native.Canvas) {
@@ -2976,14 +2969,7 @@ export class NativeEngine extends Engine {
     }
 
     /**
-     * @param texture
-     * @param internalFormat
-     * @param width
-     * @param height
-     * @param data
-     * @param faceIndex
-     * @param lod
-     * @hidden
+     * @internal
      */
     public _uploadCompressedDataToTextureDirectly(
         texture: InternalTexture,
@@ -2998,33 +2984,21 @@ export class NativeEngine extends Engine {
     }
 
     /**
-     * @param texture
-     * @param imageData
-     * @param faceIndex
-     * @param lod
-     * @hidden
+     * @internal
      */
     public _uploadDataToTextureDirectly(texture: InternalTexture, imageData: ArrayBufferView, faceIndex: number = 0, lod: number = 0): void {
         throw new Error("_uploadDataToTextureDirectly not implemented.");
     }
 
     /**
-     * @param texture
-     * @param imageData
-     * @param faceIndex
-     * @param lod
-     * @hidden
+     * @internal
      */
     public _uploadArrayBufferViewToTexture(texture: InternalTexture, imageData: ArrayBufferView, faceIndex: number = 0, lod: number = 0): void {
         throw new Error("_uploadArrayBufferViewToTexture not implemented.");
     }
 
     /**
-     * @param texture
-     * @param image
-     * @param faceIndex
-     * @param lod
-     * @hidden
+     * @internal
      */
     public _uploadImageToTexture(texture: InternalTexture, image: HTMLImageElement, faceIndex: number = 0, lod: number = 0) {
         throw new Error("_uploadArrayBufferViewToTexture not implemented.");
@@ -3217,5 +3191,42 @@ export class NativeEngine extends Engine {
         // TODO
         const result = { ascent: 0, height: 0, descent: 0 };
         return result;
+    }
+
+    public _readTexturePixels(
+        texture: InternalTexture,
+        width: number,
+        height: number,
+        faceIndex?: number,
+        level?: number,
+        buffer?: Nullable<ArrayBufferView>,
+        flushRenderer?: boolean,
+        noDataConversion?: boolean,
+        x?: number,
+        y?: number
+    ): Promise<ArrayBufferView> {
+        if (faceIndex !== undefined && faceIndex !== -1) {
+            throw new Error(`Reading cubemap faces is not supported, but faceIndex is ${faceIndex}.`);
+        }
+
+        return this._engine
+            .readTexture(
+                texture._hardwareTexture?.underlyingResource,
+                level ?? 0,
+                x ?? 0,
+                y ?? 0,
+                width,
+                height,
+                buffer?.buffer ?? null,
+                buffer?.byteOffset ?? 0,
+                buffer?.byteLength ?? 0
+            )
+            .then((rawBuffer) => {
+                if (!buffer) {
+                    buffer = new Uint8Array(rawBuffer);
+                }
+
+                return buffer;
+            });
     }
 }

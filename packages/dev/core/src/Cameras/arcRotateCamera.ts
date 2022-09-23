@@ -531,11 +531,11 @@ export class ArcRotateCamera extends TargetCamera {
     @serialize()
     public useInputToRestoreState = true;
 
-    /** @hidden */
+    /** @internal */
     public _viewMatrix = new Matrix();
-    /** @hidden */
+    /** @internal */
     public _useCtrlForPanning: boolean;
-    /** @hidden */
+    /** @internal */
     public _panningMouseButton: number;
 
     /**
@@ -543,7 +543,7 @@ export class ArcRotateCamera extends TargetCamera {
      */
     public inputs: ArcRotateCameraInputsManager;
 
-    /** @hidden */
+    /** @internal */
     public _reset: () => void;
 
     /**
@@ -719,7 +719,7 @@ export class ArcRotateCamera extends TargetCamera {
     }
 
     // Cache
-    /** @hidden */
+    /** @internal */
     public _initCache(): void {
         super._initCache();
         this._cache._target = new Vector3(Number.MAX_VALUE, Number.MAX_VALUE, Number.MAX_VALUE);
@@ -730,8 +730,7 @@ export class ArcRotateCamera extends TargetCamera {
     }
 
     /**
-     * @param ignoreParentClass
-     * @hidden
+     * @internal
      */
     public _updateCache(ignoreParentClass?: boolean): void {
         if (!ignoreParentClass) {
@@ -785,7 +784,7 @@ export class ArcRotateCamera extends TargetCamera {
     }
 
     /**
-     * @hidden
+     * @internal
      * Restored camera state. You must call storeState() first
      */
     public _restoreStateValues(): boolean {
@@ -809,7 +808,7 @@ export class ArcRotateCamera extends TargetCamera {
     }
 
     // Synchronized
-    /** @hidden */
+    /** @internal */
     public _isSynchronizedViewMatrix(): boolean {
         if (!super._isSynchronizedViewMatrix()) {
             return false;
@@ -901,7 +900,7 @@ export class ArcRotateCamera extends TargetCamera {
         }
     }
 
-    /** @hidden */
+    /** @internal */
     public _checkInputs(): void {
         //if (async) collision inspection was triggered, don't update the camera's position - until the collision callback was called.
         if (this._collisionTriggered) {
@@ -911,6 +910,7 @@ export class ArcRotateCamera extends TargetCamera {
         this.inputs.checkInputs();
         // Inertia
         if (this.inertialAlphaOffset !== 0 || this.inertialBetaOffset !== 0 || this.inertialRadiusOffset !== 0) {
+            const directionModifier = this.invertRotation ? -1 : 1;
             let inertialAlphaOffset = this.inertialAlphaOffset;
             if (this.beta <= 0) {
                 inertialAlphaOffset *= -1;
@@ -921,9 +921,9 @@ export class ArcRotateCamera extends TargetCamera {
             if (this.parent && this.parent._getWorldMatrixDeterminant() < 0) {
                 inertialAlphaOffset *= -1;
             }
-            this.alpha += inertialAlphaOffset;
+            this.alpha += inertialAlphaOffset * directionModifier;
 
-            this.beta += this.inertialBetaOffset;
+            this.beta += this.inertialBetaOffset * directionModifier;
 
             this.radius -= this.inertialRadiusOffset;
             this.inertialAlphaOffset *= this.inertia;
@@ -1112,7 +1112,7 @@ export class ArcRotateCamera extends TargetCamera {
         }
     }
 
-    /** @hidden */
+    /** @internal */
     public _getViewMatrix(): Matrix {
         // Compute
         const cosa = Math.cos(this.alpha);
@@ -1281,7 +1281,7 @@ export class ArcRotateCamera extends TargetCamera {
     }
 
     /**
-     * @hidden
+     * @internal
      * @override
      * Override Camera._updateRigCameras
      */
@@ -1318,7 +1318,7 @@ export class ArcRotateCamera extends TargetCamera {
 
     /**
      * Gets the current object class name.
-     * @return the class name
+     * @returns the class name
      */
     public getClassName(): string {
         return "ArcRotateCamera";

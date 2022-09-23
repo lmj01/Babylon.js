@@ -69,6 +69,9 @@ export interface ISpriteManager extends IDisposable {
     /** Defines the default height of a cell in the spritesheet */
     cellHeight: number;
 
+    /** @internal */
+    _wasDispatched: boolean;
+
     /**
      * Tests the intersection of a sprite with a specific ray.
      * @param ray The ray we are sending to test the collision
@@ -118,6 +121,9 @@ export class SpriteManager implements ISpriteManager {
     public layerMask: number = 0x0fffffff;
     /** Gets or sets a boolean indicating if the sprites are pickable */
     public isPickable = false;
+
+    /** @internal */
+    public _wasDispatched = false;
 
     /**
      * An event triggered when the manager is disposed.
@@ -728,7 +734,7 @@ export class SpriteManager implements ISpriteManager {
      * @param rootUrl defines the root URL to use to load textures and relative dependencies
      * @returns a promise that will resolve to the new sprite manager
      */
-    public static CreateFromSnippetAsync(snippetId: string, scene: Scene, rootUrl: string = ""): Promise<SpriteManager> {
+    public static ParseFromSnippetAsync(snippetId: string, scene: Scene, rootUrl: string = ""): Promise<SpriteManager> {
         if (snippetId === "_BLANK") {
             return Promise.resolve(new SpriteManager("Default sprite manager", "//playground.babylonjs.com/textures/player.png", 500, 64, scene));
         }
@@ -755,4 +761,14 @@ export class SpriteManager implements ISpriteManager {
             request.send();
         });
     }
+
+    /**
+     * Creates a sprite manager from a snippet saved by the sprite editor
+     * @deprecated Please use ParseFromSnippetAsync instead
+     * @param snippetId defines the snippet to load (can be set to _BLANK to create a default one)
+     * @param scene defines the hosting scene
+     * @param rootUrl defines the root URL to use to load textures and relative dependencies
+     * @returns a promise that will resolve to the new sprite manager
+     */
+    public static CreateFromSnippetAsync = SpriteManager.ParseFromSnippetAsync;
 }

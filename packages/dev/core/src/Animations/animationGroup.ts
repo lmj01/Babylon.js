@@ -60,7 +60,7 @@ export class AnimationGroup implements IDisposable {
     private _loopAnimation = false;
     private _isAdditive = false;
 
-    /** @hidden */
+    /** @internal */
     public _parentContainer: Nullable<AbstractScene> = null;
 
     /**
@@ -309,7 +309,7 @@ export class AnimationGroup implements IDisposable {
     }
 
     private _animationLoopCount: number;
-    private _animationLoopFlags: boolean[];
+    private _animationLoopFlags: boolean[] = [];
 
     private _processLoop(animatable: Animatable, targetedAnimation: TargetedAnimation, index: number) {
         animatable.onAnimationLoop = () => {
@@ -325,7 +325,7 @@ export class AnimationGroup implements IDisposable {
             if (this._animationLoopCount === this._targetedAnimations.length) {
                 this.onAnimationGroupLoopObservable.notifyObservers(this);
                 this._animationLoopCount = 0;
-                this._animationLoopFlags = [];
+                this._animationLoopFlags.length = 0;
             }
         };
     }
@@ -347,7 +347,7 @@ export class AnimationGroup implements IDisposable {
         this._loopAnimation = loop;
 
         this._animationLoopCount = 0;
-        this._animationLoopFlags = [];
+        this._animationLoopFlags.length = 0;
 
         for (let index = 0; index < this._targetedAnimations.length; index++) {
             const targetedAnimation = this._targetedAnimations[index];
@@ -486,7 +486,7 @@ export class AnimationGroup implements IDisposable {
     /**
      * Set animation weight for all animatables
      * @param weight defines the weight to use
-     * @return the animationGroup
+     * @returns the animationGroup
      * @see https://doc.babylonjs.com/babylon101/animations#animation-weights
      */
     public setWeightForAllAnimatables(weight: number): AnimationGroup {
@@ -501,7 +501,7 @@ export class AnimationGroup implements IDisposable {
     /**
      * Synchronize and normalize all animatables with a source animatable
      * @param root defines the root animatable to synchronize with (null to stop synchronizing)
-     * @return the animationGroup
+     * @returns the animationGroup
      * @see https://doc.babylonjs.com/babylon101/animations#animation-weights
      */
     public syncAllAnimationsWith(root: Nullable<Animatable>): AnimationGroup {
@@ -516,7 +516,7 @@ export class AnimationGroup implements IDisposable {
     /**
      * Goes to a specific frame in this animation group
      * @param frame the frame number to go to
-     * @return the animationGroup
+     * @returns the animationGroup
      */
     public goToFrame(frame: number): AnimationGroup {
         if (!this._isStarted) {
@@ -535,8 +535,8 @@ export class AnimationGroup implements IDisposable {
      * Dispose all associated resources
      */
     public dispose(): void {
-        this._targetedAnimations = [];
-        this._animatables = [];
+        this._targetedAnimations.length = 0;
+        this._animatables.length = 0;
 
         // Remove from scene
         const index = this._scene.animationGroups.indexOf(this);

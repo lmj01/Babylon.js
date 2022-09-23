@@ -548,12 +548,12 @@ ThinEngine.prototype.createRawCubeTextureFromUrl = function (
 ): InternalTexture {
     const gl = this._gl;
     const texture = this.createRawCubeTexture(null, size, format, type, !noMipmap, invertY, samplingMode, null);
-    scene?._addPendingData(texture);
+    scene?.addPendingData(texture);
     texture.url = url;
     this._internalTexturesCache.push(texture);
 
     const onerror = (request?: IWebRequest, exception?: any) => {
-        scene?._removePendingData(texture);
+        scene?.removePendingData(texture);
         if (onError && request) {
             onError(request.status + " " + request.statusText, exception);
         }
@@ -601,7 +601,7 @@ ThinEngine.prototype.createRawCubeTextureFromUrl = function (
 
         texture.isReady = true;
         // this.resetTextureCache();
-        scene?._removePendingData(texture);
+        scene?.removePendingData(texture);
 
         texture.onLoadedObservable.notifyObservers(texture);
         texture.onLoadedObservable.clear();
@@ -626,11 +626,7 @@ ThinEngine.prototype.createRawCubeTextureFromUrl = function (
 };
 
 /**
- * @param rgbData
- * @param width
- * @param height
- * @param textureType
- * @hidden
+ * @internal
  */
 // eslint-disable-next-line @typescript-eslint/naming-convention
 function _convertRGBtoRGBATextureData(rgbData: any, width: number, height: number, textureType: number): ArrayBufferView {
@@ -670,7 +666,7 @@ function _convertRGBtoRGBATextureData(rgbData: any, width: number, height: numbe
 /**
  * Create a function for createRawTexture3D/createRawTexture2DArray
  * @param is3D true for TEXTURE_3D and false for TEXTURE_2D_ARRAY
- * @hidden
+ * @internal
  */
 // eslint-disable-next-line @typescript-eslint/naming-convention
 function _makeCreateRawTextureFunction(is3D: boolean) {
@@ -741,7 +737,7 @@ ThinEngine.prototype.createRawTexture3D = _makeCreateRawTextureFunction(true);
 /**
  * Create a function for updateRawTexture3D/updateRawTexture2DArray
  * @param is3D true for TEXTURE_3D and false for TEXTURE_2D_ARRAY
- * @hidden
+ * @internal
  */
 // eslint-disable-next-line @typescript-eslint/naming-convention
 function _makeUpdateRawTextureFunction(is3D: boolean) {

@@ -2,6 +2,7 @@ import type { Nullable, DeepImmutableObject } from "../types";
 import { Mesh } from "../Meshes/mesh";
 import { VertexBuffer, Buffer } from "../Buffers/buffer";
 import { Matrix, Vector3, TmpVectors } from "../Maths/math.vector";
+import { Logger } from "../Misc/logger";
 
 declare module "./mesh" {
     export interface Mesh {
@@ -64,7 +65,7 @@ declare module "./mesh" {
 
         /**
          * Gets the list of world matrices
-         * @return an array containing all the world matrices from the thin instances
+         * @returns an array containing all the world matrices from the thin instances
          */
         thinInstanceGetWorldMatrices(): Matrix[];
 
@@ -91,16 +92,16 @@ declare module "./mesh" {
          */
         thinInstanceRefreshBoundingInfo(forceRefreshParentInfo?: boolean, applySkeleton?: boolean, applyMorph?: boolean): void;
 
-        /** @hidden */
+        /** @internal */
         _thinInstanceInitializeUserStorage(): void;
 
-        /** @hidden */
+        /** @internal */
         _thinInstanceUpdateBufferSize(kind: string, numInstances?: number): void;
 
-        /** @hidden */
+        /** @internal */
         _thinInstanceCreateMatrixBuffer(kind: string, buffer: Nullable<Float32Array>, staticBuffer: boolean): Buffer;
 
-        /** @hidden */
+        /** @internal */
         _userThinInstanceBuffersStorage: {
             data: { [key: string]: Float32Array };
             sizes: { [key: string]: number };
@@ -111,6 +112,11 @@ declare module "./mesh" {
 }
 
 Mesh.prototype.thinInstanceAdd = function (matrix: DeepImmutableObject<Matrix> | Array<DeepImmutableObject<Matrix>>, refresh: boolean = true): number {
+    if (!this.getScene().getEngine().getCaps().instancedArrays) {
+        Logger.Error("Thin Instances are not supported on this device as Instanced Array extension not supported");
+        return -1;
+    }
+
     this._thinInstanceUpdateBufferSize("matrix", Array.isArray(matrix) ? matrix.length : 1);
 
     const index = this._thinInstanceDataStorage.instancesCount;

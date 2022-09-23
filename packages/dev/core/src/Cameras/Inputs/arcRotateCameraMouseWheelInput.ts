@@ -12,6 +12,7 @@ import { Epsilon } from "../../Maths/math.constants";
 import type { IWheelEvent } from "../../Events/deviceInputEvents";
 import { EventConstants } from "../../Events/deviceInputEvents";
 import { Scalar } from "../../Maths/math.scalar";
+import { Tools } from "../../Misc/tools";
 
 /**
  * Firefox uses a different scheme to report scroll distances to other
@@ -75,10 +76,9 @@ export class ArcRotateCameraMouseWheelInput implements ICameraInput<ArcRotateCam
     /**
      * Attach the input controls to a specific dom element to get the input from.
      * @param noPreventDefault Defines whether event caught by the controls should call preventdefault() (https://developer.mozilla.org/en-US/docs/Web/API/Event/preventDefault)
-     * This param is no longer used because wheel events should be treated as passive.
      */
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     public attachControl(noPreventDefault?: boolean): void {
+        noPreventDefault = Tools.BackCompatCameraNoPreventDefault(arguments);
         this._wheel = (p) => {
             //sanity check - this should be a PointerWheel event.
             if (p.type !== PointerEventTypes.POINTERWHEEL) {
@@ -86,18 +86,9 @@ export class ArcRotateCameraMouseWheelInput implements ICameraInput<ArcRotateCam
             }
             const event = <IWheelEvent>p.event;
             let delta = 0;
-
-            const mouseWheelLegacyEvent = event as any;
-            let wheelDelta = 0;
-
             const platformScale = event.deltaMode === EventConstants.DOM_DELTA_LINE ? ffMultiplier : 1; // If this happens to be set to DOM_DELTA_LINE, adjust accordingly
-            if (event.deltaY !== undefined) {
-                wheelDelta = -(event.deltaY * platformScale);
-            } else if ((<any>event).wheelDeltaY !== undefined) {
-                wheelDelta = -((<any>event).wheelDeltaY * platformScale);
-            } else {
-                wheelDelta = mouseWheelLegacyEvent.wheelDelta;
-            }
+
+            const wheelDelta = -(event.deltaY * platformScale);
 
             if (this.customComputeDeltaFromMouseWheel) {
                 delta = this.customComputeDeltaFromMouseWheel(wheelDelta, this, event);
@@ -127,6 +118,12 @@ export class ArcRotateCameraMouseWheelInput implements ICameraInput<ArcRotateCam
                     this._zoomToMouse(delta);
                 } else {
                     this.camera.inertialRadiusOffset += delta;
+                }
+            }
+
+            if (event.preventDefault) {
+                if (!noPreventDefault) {
+                    event.preventDefault();
                 }
             }
         };

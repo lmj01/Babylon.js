@@ -305,7 +305,7 @@ export class VideoTexture extends Texture {
     };
 
     /**
-     * @hidden Internal method to initiate `update`.
+     * @internal Internal method to initiate `update`.
      */
     public _rebuild(): void {
         this.update();
@@ -422,7 +422,9 @@ export class VideoTexture extends Texture {
         video.setAttribute("playsinline", "");
         video.muted = true;
 
-        if (video.mozSrcObject !== undefined) {
+        if (video.isNative) {
+            // No additional configuration needed for native
+        } else if (video.mozSrcObject !== undefined) {
             // hack for Firefox < 19
             video.mozSrcObject = stream;
         } else {
