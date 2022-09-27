@@ -22,3 +22,7 @@ export class Node implements IBehaviorAware<Node> {
 class Object3D extends EventDispatcher {
 }
 ```
+
+# EventSystem
+
+使用observable观察者模式

@@ -8,7 +8,7 @@
     },
     "devDependencies": {
         "@alex_neo/jest-expect-message": "~1.0.5",
-        "@dev/build-tools": "^1.0.0",
+        "@dev/build-tools": "file:packages/dev/buildTools",
         "@nrwl/cli": "^14.3.5",
         "@nrwl/tao": "^14.3.5",
         "@nrwl/workspace": "^14.3.5",
@@ -90,6 +90,7 @@
         "lint:fix": "eslint ./packages/**/src/**/*.{ts,tsx,js,json} --fix",
         "update-all-dependencies": "npm update -ws",
         "prepare-snapshot": "npm run build:snapshot -w @tools/babylon-server && build-tools -c ps",
+        "playground": "npm run serve:dev -w @tools/playground",
         "start": "concurrently --kill-others -m 2 -n dev-watch,cdn-server \"npm run watch:dev:skip-compile\" \"npm run serve -w @tools/babylon-server\""
     },
     "engines": {
