@@ -26,3 +26,11 @@ class Object3D extends EventDispatcher {
 # EventSystem
 
 使用observable观察者模式
+
+## Ammo.js
+
+Ammo.js 使用Emscripten将 Bullet物理引擎 直接移植到JavaScript
+
+## Monaco Editor
+
+monaco基于浏览器，而VSCode基于electron
