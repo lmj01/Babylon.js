@@ -2,6 +2,11 @@
     "root": "https://cdn.babylonjs.com",
     "tests": [
         {
+            "title": "Negative scaling with instances",
+            "playgroundId": "#Z3YS9T#0",
+            "referenceImage": "negative scaling with instances.png"
+        },
+        {
             "title": "Iridescence",
             "playgroundId": "#2FDQT5#1505",
             "referenceImage": "iridescence.png"
@@ -1381,7 +1386,7 @@
         {
             "title": "Sample depth texture",
             "renderCount": 5,
-            "playgroundId": "#8RU8Q3#108",
+            "playgroundId": "#8RU8Q3#146",
             "excludedEngines": ["webgl1"],
             "referenceImage": "sampleDepthTexture.png"
         },
@@ -1460,6 +1465,36 @@
             "title": "Serialize scene without materials",
             "playgroundId": "#PH4DEZ#1",
             "referenceImage": "serializeWithoutMaterials.png"
+        },
+        {
+            "title": "UI unaffected by post-process",
+            "playgroundId": "#XJVHWQ",
+            "referenceImage": "uiUnaffected.png"
+        },
+        {
+            "title": "Billboard with scaled parent",
+            "playgroundId": "#1ZMALK",
+            "referenceImage": "billboardParentScale.png"
+        },
+        {
+            "title": "Load GUI snippet with unicode",
+            "playgroundId": "#YS93KY",
+            "referenceImage": "loadGuiSnippetWithUnicode.png",
+            "renderCount": 50
+        },
+        {
+            "title": "Parse GUI json with unicode",
+            "playgroundId": "#ERVGT5",
+            "referenceImage": "parseGuiJsonWithUnicode.png",
+            "renderCount": 50
+        },
+        {
+            "title": "Multi shadow generators per light",
+            "playgroundId": "#LMQGSX#2",
+            "referenceImage": "multiSGPerLight.png",
+            "errorRatio": 2,
+            "renderCount": 5,
+            "excludedEngines": ["webgl1"]
         }
     ]
 }

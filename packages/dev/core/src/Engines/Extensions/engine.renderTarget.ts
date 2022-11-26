@@ -37,7 +37,7 @@ declare module "../../Engines/thinEngine" {
 
         /**
          * Updates the sample count of a render target texture
-         * @see https://doc.babylonjs.com/features/webgl2#multisample-render-targets
+         * @see https://doc.babylonjs.com/setup/support/webGL2#multisample-render-targets
          * @param rtWrapper defines the render target wrapper to update
          * @param samples defines the sample count to set
          * @returns the effective sample count (could be 0 if multisample render targets are not supported)
@@ -66,6 +66,7 @@ ThinEngine.prototype.createRenderTargetTexture = function (this: ThinEngine, siz
         fullOptions.generateDepthBuffer = !!options.generateDepthBuffer;
         fullOptions.generateStencilBuffer = !!options.generateStencilBuffer;
         fullOptions.noColorTarget = !!options.noColorTarget;
+        fullOptions.samples = options.samples;
     } else {
         fullOptions.generateDepthBuffer = true;
         fullOptions.generateStencilBuffer = false;
@@ -96,6 +97,8 @@ ThinEngine.prototype.createRenderTargetTexture = function (this: ThinEngine, siz
     rtWrapper._generateStencilBuffer = fullOptions.generateStencilBuffer ? true : false;
 
     rtWrapper.setTextures(texture);
+
+    this.updateRenderTargetTextureSampleCount(rtWrapper, fullOptions.samples ?? 1);
 
     return rtWrapper;
 };
@@ -133,7 +136,8 @@ ThinEngine.prototype._createDepthStencilTexture = function (size: TextureSize, o
         size,
         internalOptions.generateStencil,
         internalOptions.comparisonFunction === 0 ? false : internalOptions.bilinearFiltering,
-        internalOptions.comparisonFunction
+        internalOptions.comparisonFunction,
+        internalOptions.samples
     );
 
     if (internalOptions.depthTextureFormat !== undefined) {
@@ -276,6 +280,7 @@ ThinEngine.prototype.updateRenderTargetTextureSampleCount = function (rtWrapper:
     }
 
     rtWrapper.texture.samples = samples;
+    rtWrapper._samples = samples;
     rtWrapper._depthStencilBuffer = this._setupFramebufferDepthAttachments(
         rtWrapper._generateStencilBuffer,
         rtWrapper._generateDepthBuffer,

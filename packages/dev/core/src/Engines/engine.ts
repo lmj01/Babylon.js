@@ -472,7 +472,7 @@ export class Engine extends ThinEngine {
 
     /**
      * Gets the audio engine
-     * @see https://doc.babylonjs.com/how_to/playing_sounds_and_music
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/audio/playingSoundsMusic
      * @ignorenaming
      */
     // eslint-disable-next-line @typescript-eslint/naming-convention
@@ -525,7 +525,7 @@ export class Engine extends ThinEngine {
     private _performanceMonitor = new PerformanceMonitor();
     /**
      * Gets the performance monitor attached to this engine
-     * @see https://doc.babylonjs.com/how_to/optimizing_your_scene#engineinstrumentation
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/optimize_your_scene#engineinstrumentation
      */
     public get performanceMonitor(): PerformanceMonitor {
         return this._performanceMonitor;
@@ -547,7 +547,7 @@ export class Engine extends ThinEngine {
     /**
      * (WebGPU only) True (default) to be in compatibility mode, meaning rendering all existing scenes without artifacts (same rendering than WebGL).
      * Setting the property to false will improve performances but may not work in some scenes if some precautions are not taken.
-     * See https://doc.babylonjs.com/advanced_topics/webGPU/webGPUOptimization/webGPUNonCompatibilityMode for more details
+     * See https://doc.babylonjs.com/setup/support/webGPU/webGPUOptimization/webGPUNonCompatibilityMode for more details
      */
     public get compatibilityMode() {
         return this._compatibilityMode;
@@ -599,19 +599,9 @@ export class Engine extends ThinEngine {
             this._sharedInit(canvas, !!options.doNotHandleTouchAction, options.audioEngine!);
 
             if (IsWindowObjectExist()) {
-                const anyDoc = document as any;
-
                 // Fullscreen
                 this._onFullscreenChange = () => {
-                    if (anyDoc.fullscreen !== undefined) {
-                        this.isFullscreen = anyDoc.fullscreen;
-                    } else if (anyDoc.mozFullScreen !== undefined) {
-                        this.isFullscreen = anyDoc.mozFullScreen;
-                    } else if (anyDoc.webkitIsFullScreen !== undefined) {
-                        this.isFullscreen = anyDoc.webkitIsFullScreen;
-                    } else if (anyDoc.msIsFullScreen !== undefined) {
-                        this.isFullscreen = anyDoc.msIsFullScreen;
-                    }
+                    this.isFullscreen = !!document.fullscreenElement;
 
                     // Pointer lock
                     if (this.isFullscreen && this._pointerLockRequested && canvas) {
@@ -620,22 +610,14 @@ export class Engine extends ThinEngine {
                 };
 
                 document.addEventListener("fullscreenchange", this._onFullscreenChange, false);
-                document.addEventListener("mozfullscreenchange", this._onFullscreenChange, false);
                 document.addEventListener("webkitfullscreenchange", this._onFullscreenChange, false);
-                document.addEventListener("msfullscreenchange", this._onFullscreenChange, false);
 
                 // Pointer lock
                 this._onPointerLockChange = () => {
-                    this.isPointerLock =
-                        anyDoc.mozPointerLockElement === canvas ||
-                        anyDoc.webkitPointerLockElement === canvas ||
-                        anyDoc.msPointerLockElement === canvas ||
-                        anyDoc.pointerLockElement === canvas;
+                    this.isPointerLock = document.pointerLockElement === canvas;
                 };
 
                 document.addEventListener("pointerlockchange", this._onPointerLockChange, false);
-                document.addEventListener("mspointerlockchange", this._onPointerLockChange, false);
-                document.addEventListener("mozpointerlockchange", this._onPointerLockChange, false);
                 document.addEventListener("webkitpointerlockchange", this._onPointerLockChange, false);
 
                 // Create Audio Engine if needed.
@@ -772,7 +754,7 @@ export class Engine extends ThinEngine {
 
     /**
      * Gets a boolean indicating that the engine is running in deterministic lock step mode
-     * @see https://doc.babylonjs.com/babylon101/animations#deterministic-lockstep
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/animation/advanced_animations#deterministic-lockstep
      * @returns true if engine is in deterministic lock step mode
      */
     public isDeterministicLockStep(): boolean {
@@ -781,7 +763,7 @@ export class Engine extends ThinEngine {
 
     /**
      * Gets the max steps when engine is running in deterministic lock step
-     * @see https://doc.babylonjs.com/babylon101/animations#deterministic-lockstep
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/animation/advanced_animations#deterministic-lockstep
      * @returns the max steps
      */
     public getLockstepMaxSteps(): number {
@@ -1151,7 +1133,7 @@ export class Engine extends ThinEngine {
     /**
      * Call this function to leave webVR mode
      * Will do nothing if webVR is not supported or if there is no webVR device
-     * @see https://doc.babylonjs.com/how_to/webvr_camera
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/cameras/webVRCamera
      */
     public disableVR() {
         // Do nothing as the engine side effect will overload it
@@ -1951,7 +1933,6 @@ export class Engine extends ThinEngine {
 
         this._renderingCanvas.setAttribute("touch-action", "none");
         this._renderingCanvas.style.touchAction = "none";
-        (this._renderingCanvas.style as any).msTouchAction = "none";
         (this._renderingCanvas.style as any).webkitTapHighlightColor = "transparent";
     }
 
@@ -1959,7 +1940,7 @@ export class Engine extends ThinEngine {
 
     /**
      * Display the loading screen
-     * @see https://doc.babylonjs.com/how_to/creating_a_custom_loading_screen
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/customLoadingScreen
      */
     public displayLoadingUI(): void {
         if (!IsWindowObjectExist()) {
@@ -1973,7 +1954,7 @@ export class Engine extends ThinEngine {
 
     /**
      * Hide the loading screen
-     * @see https://doc.babylonjs.com/how_to/creating_a_custom_loading_screen
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/customLoadingScreen
      */
     public hideLoadingUI(): void {
         if (!IsWindowObjectExist()) {
@@ -1987,7 +1968,7 @@ export class Engine extends ThinEngine {
 
     /**
      * Gets the current loading screen object
-     * @see https://doc.babylonjs.com/how_to/creating_a_custom_loading_screen
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/customLoadingScreen
      */
     public get loadingScreen(): ILoadingScreen {
         if (!this._loadingScreen && this._renderingCanvas) {
@@ -1998,7 +1979,7 @@ export class Engine extends ThinEngine {
 
     /**
      * Sets the current loading screen object
-     * @see https://doc.babylonjs.com/how_to/creating_a_custom_loading_screen
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/customLoadingScreen
      */
     public set loadingScreen(loadingScreen: ILoadingScreen) {
         this._loadingScreen = loadingScreen;
@@ -2006,7 +1987,7 @@ export class Engine extends ThinEngine {
 
     /**
      * Sets the current loading screen text
-     * @see https://doc.babylonjs.com/how_to/creating_a_custom_loading_screen
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/customLoadingScreen
      */
     public set loadingUIText(text: string) {
         this.loadingScreen.loadingUIText = text;
@@ -2014,7 +1995,7 @@ export class Engine extends ThinEngine {
 
     /**
      * Sets the current loading screen background color
-     * @see https://doc.babylonjs.com/how_to/creating_a_custom_loading_screen
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/customLoadingScreen
      */
     public set loadingUIBackgroundColor(color: string) {
         this.loadingScreen.loadingUIBackgroundColor = color;
@@ -2037,8 +2018,6 @@ export class Engine extends ThinEngine {
      * @param element defines the DOM element to promote
      */
     static _RequestPointerlock(element: HTMLElement): void {
-        element.requestPointerLock =
-            element.requestPointerLock || (<any>element).msRequestPointerLock || (<any>element).mozRequestPointerLock || (<any>element).webkitRequestPointerLock;
         if (element.requestPointerLock) {
             element.requestPointerLock();
             element.focus();
@@ -2049,9 +2028,6 @@ export class Engine extends ThinEngine {
      * Asks the browser to exit pointerlock mode
      */
     static _ExitPointerlock(): void {
-        const anyDoc = document as any;
-        document.exitPointerLock = document.exitPointerLock || anyDoc.msExitPointerLock || anyDoc.mozExitPointerLock || anyDoc.webkitExitPointerLock;
-
         if (document.exitPointerLock) {
             document.exitPointerLock();
         }
@@ -2062,7 +2038,7 @@ export class Engine extends ThinEngine {
      * @param element defines the DOM element to promote
      */
     static _RequestFullscreen(element: HTMLElement): void {
-        const requestFunction = element.requestFullscreen || (<any>element).msRequestFullscreen || (<any>element).webkitRequestFullscreen || (<any>element).mozRequestFullScreen;
+        const requestFunction = element.requestFullscreen || (<any>element).webkitRequestFullscreen;
         if (!requestFunction) {
             return;
         }
@@ -2077,12 +2053,8 @@ export class Engine extends ThinEngine {
 
         if (document.exitFullscreen) {
             document.exitFullscreen();
-        } else if (anyDoc.mozCancelFullScreen) {
-            anyDoc.mozCancelFullScreen();
         } else if (anyDoc.webkitCancelFullScreen) {
             anyDoc.webkitCancelFullScreen();
-        } else if (anyDoc.msCancelFullScreen) {
-            anyDoc.msCancelFullScreen();
         }
     }
 

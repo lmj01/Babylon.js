@@ -2,10 +2,9 @@ import * as React from "react";
 import { LineContainerComponent } from "../../sharedComponents/lineContainerComponent";
 import { CheckBoxLineComponent } from "../../sharedComponents/checkBoxLineComponent";
 import type { InputBlock } from "core/Materials/Node/Blocks/Input/inputBlock";
-import type { IPropertyDescriptionForEdition, IEditablePropertyListOption } from "core/Materials/Node/nodeMaterialDecorator";
+import type { IPropertyDescriptionForEdition, IEditablePropertyListOption, IEditablePropertyOption } from "core/Materials/Node/nodeMaterialDecorator";
 import { PropertyTypeForEdition } from "core/Materials/Node/nodeMaterialDecorator";
 import { NodeMaterialBlockTargets } from "core/Materials/Node/Enums/nodeMaterialBlockTargets";
-import type { Scene } from "core/scene";
 import type { NodeMaterialBlock } from "core/Materials/Node/nodeMaterialBlock";
 import type { IPropertyComponentProps } from "shared-ui-components/nodeGraphSystem/interfaces/propertyComponentProps";
 import { TextInputLineComponent } from "shared-ui-components/lines/textInputLineComponent";
@@ -98,7 +97,11 @@ export class GenericPropertyTabComponent extends React.Component<IPropertyCompon
         super(props);
     }
 
-    forceRebuild(notifiers?: { rebuild?: boolean; update?: boolean; activatePreviewCommand?: boolean; callback?: (scene: Scene) => void }) {
+    forceRebuild(propertyName: string, notifiers?: IEditablePropertyOption["notifiers"]) {
+        if (notifiers?.onValidation && !notifiers?.onValidation(this.props.nodeData.data as NodeMaterialBlock, propertyName)) {
+            return;
+        }
+
         if (!notifiers || notifiers.update) {
             this.props.stateManager.onUpdateRequiredObservable.notifyObservers(this.props.nodeData.data as NodeMaterialBlock);
         }
@@ -111,7 +114,7 @@ export class GenericPropertyTabComponent extends React.Component<IPropertyCompon
             (this.props.stateManager.data as GlobalState).onPreviewCommandActivated.notifyObservers(true);
         }
 
-        notifiers?.callback?.((this.props.stateManager.data as GlobalState).nodeMaterial.getScene());
+        notifiers?.callback?.((this.props.stateManager.data as GlobalState).nodeMaterial.getScene(), this.props.nodeData.data as NodeMaterialBlock);
     }
 
     render() {
@@ -137,7 +140,13 @@ export class GenericPropertyTabComponent extends React.Component<IPropertyCompon
             switch (type) {
                 case PropertyTypeForEdition.Boolean: {
                     components.push(
-                        <CheckBoxLineComponent label={displayName} target={block} propertyName={propertyName} onValueChanged={() => this.forceRebuild(options.notifiers)} />
+                        <CheckBoxLineComponent
+                            key={`checkBox-${propertyName}`}
+                            label={displayName}
+                            target={block}
+                            propertyName={propertyName}
+                            onValueChanged={() => this.forceRebuild(propertyName, options.notifiers)}
+                        />
                     );
                     break;
                 }
@@ -146,16 +155,18 @@ export class GenericPropertyTabComponent extends React.Component<IPropertyCompon
                     if (cantDisplaySlider) {
                         components.push(
                             <FloatLineComponent
+                                key={`float-${propertyName}`}
                                 lockObject={this.props.stateManager.lockObject}
                                 label={displayName}
                                 propertyName={propertyName}
                                 target={block}
-                                onChange={() => this.forceRebuild(options.notifiers)}
+                                onChange={() => this.forceRebuild(propertyName, options.notifiers)}
                             />
                         );
                     } else {
                         components.push(
                             <SliderLineComponent
+                                key={`slider-${propertyName}`}
                                 lockObject={this.props.stateManager.lockObject}
                                 label={displayName}
                                 target={block}
@@ -163,7 +174,7 @@ export class GenericPropertyTabComponent extends React.Component<IPropertyCompon
                                 step={Math.abs((options.max as number) - (options.min as number)) / 100.0}
                                 minimum={Math.min(options.min as number, options.max as number)}
                                 maximum={options.max as number}
-                                onChange={() => this.forceRebuild(options.notifiers)}
+                                onChange={() => this.forceRebuild(propertyName, options.notifiers)}
                             />
                         );
                     }
@@ -172,6 +183,7 @@ export class GenericPropertyTabComponent extends React.Component<IPropertyCompon
                 case PropertyTypeForEdition.Int: {
                     components.push(
                         <FloatLineComponent
+                            key={`int-${propertyName}`}
                             lockObject={this.props.stateManager.lockObject}
                             digits={0}
                             step={"1"}
@@ -179,7 +191,7 @@ export class GenericPropertyTabComponent extends React.Component<IPropertyCompon
                             label={displayName}
                             propertyName={propertyName}
                             target={block}
-                            onChange={() => this.forceRebuild(options.notifiers)}
+                            onChange={() => this.forceRebuild(propertyName, options.notifiers)}
                         />
                     );
                     break;
@@ -187,11 +199,12 @@ export class GenericPropertyTabComponent extends React.Component<IPropertyCompon
                 case PropertyTypeForEdition.Vector2: {
                     components.push(
                         <Vector2LineComponent
+                            key={`vector2-${propertyName}`}
                             lockObject={this.props.stateManager.lockObject}
                             label={displayName}
                             propertyName={propertyName}
                             target={block}
-                            onChange={() => this.forceRebuild(options.notifiers)}
+                            onChange={() => this.forceRebuild(propertyName, options.notifiers)}
                         />
                     );
                     break;
@@ -199,11 +212,12 @@ export class GenericPropertyTabComponent extends React.Component<IPropertyCompon
                 case PropertyTypeForEdition.List: {
                     components.push(
                         <OptionsLineComponent
+                            key={`options-${propertyName}`}
                             label={displayName}
                             options={options.options as IEditablePropertyListOption[]}
                             target={block}
                             propertyName={propertyName}
-                            onSelect={() => this.forceRebuild(options.notifiers)}
+                            onSelect={() => this.forceRebuild(propertyName, options.notifiers)}
                         />
                     );
                     break;
@@ -214,7 +228,9 @@ export class GenericPropertyTabComponent extends React.Component<IPropertyCompon
         return (
             <>
                 {groups.map((group) => (
-                    <LineContainerComponent title={group}>{componentList[group]}</LineContainerComponent>
+                    <LineContainerComponent key={`group-${group}`} title={group}>
+                        {componentList[group]}
+                    </LineContainerComponent>
                 ))}
             </>
         );

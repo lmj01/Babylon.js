@@ -32,7 +32,7 @@ declare type Animation = import("../../../Animations/animation").Animation;
 
 /**
  * The default rendering pipeline can be added to a scene to apply common post processing effects such as anti-aliasing or depth of field.
- * See https://doc.babylonjs.com/how_to/using_default_rendering_pipeline
+ * See https://doc.babylonjs.com/features/featuresDeepDive/postProcesses/defaultRenderingPipeline
  */
 export class DefaultRenderingPipeline extends PostProcessRenderPipeline implements IDisposable, IAnimatable {
     private _scene: Scene;
@@ -40,25 +40,25 @@ export class DefaultRenderingPipeline extends PostProcessRenderPipeline implemen
     /**
      * ID of the sharpen post process,
      */
-    private readonly SharpenPostProcessId: string = "SharpenPostProcessEffect";
+    private readonly SharpenPostProcessId = "SharpenPostProcessEffect";
     /**
      * @ignore
      * ID of the image processing post process;
      */
-    readonly ImageProcessingPostProcessId: string = "ImageProcessingPostProcessEffect";
+    readonly ImageProcessingPostProcessId = "ImageProcessingPostProcessEffect";
     /**
      * @ignore
      * ID of the Fast Approximate Anti-Aliasing post process;
      */
-    readonly FxaaPostProcessId: string = "FxaaPostProcessEffect";
+    readonly FxaaPostProcessId = "FxaaPostProcessEffect";
     /**
      * ID of the chromatic aberration post process,
      */
-    private readonly ChromaticAberrationPostProcessId: string = "ChromaticAberrationPostProcessEffect";
+    private readonly ChromaticAberrationPostProcessId = "ChromaticAberrationPostProcessEffect";
     /**
      * ID of the grain post process
      */
-    private readonly GrainPostProcessId: string = "GrainPostProcessEffect";
+    private readonly GrainPostProcessId = "GrainPostProcessEffect";
 
     // Post-processes
     /**
@@ -113,6 +113,17 @@ export class DefaultRenderingPipeline extends PostProcessRenderPipeline implemen
     private _grainEnabled: boolean = false;
 
     private _buildAllowed = true;
+
+    /**
+     * Enable or disable automatic building of the pipeline when effects are enabled and disabled.
+     * If false, you will have to manually call prepare() to update the pipeline.
+     */
+    public get automaticBuild() {
+        return this._buildAllowed;
+    }
+    public set automaticBuild(value: boolean) {
+        this._buildAllowed = value;
+    }
 
     /**
      * This is triggered each time the pipeline has been built.
@@ -245,7 +256,7 @@ export class DefaultRenderingPipeline extends PostProcessRenderPipeline implemen
     private _rebuildBloom() {
         // recreate bloom and dispose old as this setting is not dynamic
         const oldBloom = this.bloom;
-        this.bloom = new BloomEffect(this._scene, this.bloomScale, this._bloomWeight, this.bloomKernel, this._defaultPipelineTextureType, false);
+        this.bloom = new BloomEffect(this._scene, this.bloomScale, this._bloomWeight, this.bloomKernel / this._hardwareScaleLevel, this._defaultPipelineTextureType, false);
         this.bloom.threshold = oldBloom.threshold;
         for (let i = 0; i < this._cameras.length; i++) {
             oldBloom.disposeEffects(this._cameras[i]);
@@ -408,14 +419,14 @@ export class DefaultRenderingPipeline extends PostProcessRenderPipeline implemen
     }
 
     /**
-     * @constructor
-     * @param name - The rendering pipeline name (default: "")
-     * @param hdr - If high dynamic range textures should be used (default: true)
-     * @param scene - The scene linked to this pipeline (default: the last created scene)
-     * @param cameras - The array of cameras that the rendering pipeline will be attached to (default: scene.cameras)
-     * @param automaticBuild - if false, you will have to manually call prepare() to update the pipeline (default: true)
+     * Instantiates a DefaultRenderingPipeline.
+     * @param name The rendering pipeline name (default: "")
+     * @param hdr If high dynamic range textures should be used (default: true)
+     * @param scene The scene linked to this pipeline (default: the last created scene)
+     * @param cameras The array of cameras that the rendering pipeline will be attached to (default: scene.cameras)
+     * @param automaticBuild If false, you will have to manually call prepare() to update the pipeline (default: true)
      */
-    constructor(name: string = "", hdr: boolean = true, scene: Scene = EngineStore.LastCreatedScene!, cameras?: Camera[], automaticBuild = true) {
+    constructor(name = "", hdr = true, scene: Scene = EngineStore.LastCreatedScene!, cameras?: Camera[], automaticBuild = true) {
         super(scene.getEngine(), name);
         this._cameras = cameras || scene.cameras;
         this._cameras = this._cameras.slice();
@@ -443,6 +454,7 @@ export class DefaultRenderingPipeline extends PostProcessRenderPipeline implemen
         scene.postProcessRenderPipelineManager.addPipeline(this);
 
         const engine = this._scene.getEngine();
+
         // Create post processes before hand so they can be modified before enabled.
         // Block compilation flag is set to true to avoid compilation prior to use, these will be updated on first use in build pipeline.
         this.sharpen = new SharpenPostProcess("sharpen", 1.0, null, Texture.BILINEAR_SAMPLINGMODE, engine, false, this._defaultPipelineTextureType, true);
@@ -457,7 +469,14 @@ export class DefaultRenderingPipeline extends PostProcessRenderPipeline implemen
 
         this.depthOfField = new DepthOfFieldEffect(this._scene, null, this._depthOfFieldBlurLevel, this._defaultPipelineTextureType, true);
 
-        this.bloom = new BloomEffect(this._scene, this._bloomScale, this._bloomWeight, this.bloomKernel, this._defaultPipelineTextureType, true);
+        // To keep the bloom sizes consistent across different display densities, factor in the hardware scaling level.
+        this._hardwareScaleLevel = engine.getHardwareScalingLevel();
+        this._resizeObserver = engine.onResizeObservable.add(() => {
+            this._hardwareScaleLevel = engine.getHardwareScalingLevel();
+            this.bloomKernel = this._bloomKernel;
+        });
+
+        this.bloom = new BloomEffect(this._scene, this._bloomScale, this._bloomWeight, this.bloomKernel / this._hardwareScaleLevel, this._defaultPipelineTextureType, true);
 
         this.chromaticAberration = new ChromaticAberrationPostProcess(
             "ChromaticAberration",
@@ -489,11 +508,6 @@ export class DefaultRenderingPipeline extends PostProcessRenderPipeline implemen
             },
             true
         );
-
-        this._resizeObserver = engine.onResizeObservable.add(() => {
-            this._hardwareScaleLevel = engine.getHardwareScalingLevel();
-            this.bloomKernel = this._bloomKernel;
-        });
 
         this._imageProcessingConfigurationObserver = this._scene.imageProcessingConfiguration.onUpdateParameters.add(() => {
             this.bloom._downscale._exposure = this._scene.imageProcessingConfiguration.exposure;

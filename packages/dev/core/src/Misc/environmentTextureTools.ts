@@ -20,6 +20,7 @@ import "../Materials/Textures/baseTexture.polynomial";
 
 import "../Shaders/rgbdEncode.fragment";
 import "../Shaders/rgbdDecode.fragment";
+import { DumpTools } from "../Misc/dumpTools";
 
 const DefaultEnvironmentTextureImageType = "image/png";
 const CurrentVersion = 2;
@@ -289,7 +290,7 @@ export async function CreateEnvTextureAsync(texture: BaseTexture, options: Creat
 
             const rgbdEncodedData = await engine._readTexturePixels(tempTexture, faceWidth, faceWidth);
 
-            const imageEncodedData = await Tools.DumpDataAsync(faceWidth, faceWidth, rgbdEncodedData, imageType, undefined, false, true, options.imageQuality);
+            const imageEncodedData = await DumpTools.DumpDataAsync(faceWidth, faceWidth, rgbdEncodedData, imageType, undefined, false, true, options.imageQuality);
 
             specularTextures[i * 6 + face] = imageEncodedData as ArrayBuffer;
 
@@ -615,7 +616,7 @@ export function UploadLevelsAsync(texture: InternalTexture, imageData: ArrayBuff
 
                 // Wrap in a base texture for easy binding.
                 const lodTexture = new BaseTexture(null);
-                lodTexture.isCube = true;
+                lodTexture._isCube = true;
                 lodTexture._texture = glTextureFromLod;
                 lodTextures![mipmapIndex] = lodTexture;
 

@@ -135,7 +135,10 @@ export class RenderingManager {
         }
     }
 
-    public getRenderingGroup(id: number) {
+    /**
+     * Gets the rendering group with the specified id.
+     */
+    public getRenderingGroup(id: number): RenderingGroup {
         const renderingGroupId = id || 0;
 
         this._prepareRenderingGroup(renderingGroupId);
@@ -232,6 +235,23 @@ export class RenderingManager {
             const renderingGroup = this._renderingGroups[index];
             if (renderingGroup) {
                 renderingGroup.prepare();
+            }
+        }
+    }
+
+    /**
+     * Resets the sprites information of the group to prepare a new frame
+     * @internal
+     */
+    public resetSprites(): void {
+        if (this.maintainStateBetweenFrames) {
+            return;
+        }
+
+        for (let index = RenderingManager.MIN_RENDERINGGROUPS; index < RenderingManager.MAX_RENDERINGGROUPS; index++) {
+            const renderingGroup = this._renderingGroups[index];
+            if (renderingGroup) {
+                renderingGroup.prepareSprites();
             }
         }
     }

@@ -60,8 +60,6 @@ import { ReadFile, RequestFile, LoadFile } from "./Misc/fileTools";
 import type { IClipPlanesHolder } from "./Misc/interfaces/iClipPlanesHolder";
 import type { IPointerEvent } from "./Events/deviceInputEvents";
 import { LightConstants } from "./Lights/lightConstants";
-import type { IComputePressureData } from "./Misc/computePressure";
-import { ComputePressureObserverWrapper } from "./Misc/computePressure";
 import { _ObserveArray } from "./Misc/arrayTools";
 
 declare type Ray = import("./Culling/ray").Ray;
@@ -142,7 +140,7 @@ export enum ScenePerformancePriority {
 
 /**
  * Represents a scene to be rendered by the engine.
- * @see https://doc.babylonjs.com/features/scene
+ * @see https://doc.babylonjs.com/features/featuresDeepDive/scene
  */
 export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHolder {
     /** The fog is deactivated */
@@ -156,12 +154,12 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
 
     /**
      * Gets or sets the minimum deltatime when deterministic lock step is enabled
-     * @see https://doc.babylonjs.com/babylon101/animations#deterministic-lockstep
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/animation/advanced_animations#deterministic-lockstep
      */
     public static MinDeltaTime = 1.0;
     /**
      * Gets or sets the maximum deltatime when deterministic lock step is enabled
-     * @see https://doc.babylonjs.com/babylon101/animations#deterministic-lockstep
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/animation/advanced_animations#deterministic-lockstep
      */
     public static MaxDeltaTime = 1000.0;
 
@@ -775,13 +773,13 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
     public skipPointerUpPicking = false;
 
     /** Callback called when a pointer move is detected */
-    public onPointerMove: (evt: IPointerEvent, pickInfo: PickingInfo, type: PointerEventTypes) => void;
+    public onPointerMove?: (evt: IPointerEvent, pickInfo: PickingInfo, type: PointerEventTypes) => void;
     /** Callback called when a pointer down is detected  */
-    public onPointerDown: (evt: IPointerEvent, pickInfo: PickingInfo, type: PointerEventTypes) => void;
+    public onPointerDown?: (evt: IPointerEvent, pickInfo: PickingInfo, type: PointerEventTypes) => void;
     /** Callback called when a pointer up is detected  */
-    public onPointerUp: (evt: IPointerEvent, pickInfo: Nullable<PickingInfo>, type: PointerEventTypes) => void;
+    public onPointerUp?: (evt: IPointerEvent, pickInfo: Nullable<PickingInfo>, type: PointerEventTypes) => void;
     /** Callback called when a pointer pick is detected */
-    public onPointerPick: (evt: IPointerEvent, pickInfo: PickingInfo) => void;
+    public onPointerPick?: (evt: IPointerEvent, pickInfo: PickingInfo) => void;
 
     /**
      * Gets or sets a predicate used to select candidate faces for a pointer move event
@@ -798,6 +796,12 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
      * Observable event triggered each time an input event is received from the rendering canvas
      */
     public onPointerObservable = new Observable<PointerInfo>();
+
+    /**
+     * Observable to handle camera pointer inputs
+     * @internal
+     */
+    public _onCameraInputObservable = new Observable<PointerInfo>();
 
     /**
      * Gets the pointer coordinates without any translation (ie. straight out of the pointer event)
@@ -932,7 +936,7 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
 
     /**
      * Sets the step Id used by deterministic lock step
-     * @see https://doc.babylonjs.com/babylon101/animations#deterministic-lockstep
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/animation/advanced_animations#deterministic-lockstep
      * @param newStepId defines the step Id
      */
     public setStepId(newStepId: number): void {
@@ -941,7 +945,7 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
 
     /**
      * Gets the step Id used by deterministic lock step
-     * @see https://doc.babylonjs.com/babylon101/animations#deterministic-lockstep
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/animation/advanced_animations#deterministic-lockstep
      * @returns the step Id
      */
     public getStepId(): number {
@@ -950,7 +954,7 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
 
     /**
      * Gets the internal step used by deterministic lock step
-     * @see https://doc.babylonjs.com/babylon101/animations#deterministic-lockstep
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/animation/advanced_animations#deterministic-lockstep
      * @returns the internal step
      */
     public getInternalStep(): number {
@@ -962,7 +966,7 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
     private _fogEnabled = true;
     /**
      * Gets or sets a boolean indicating if fog is enabled on this scene
-     * @see https://doc.babylonjs.com/babylon101/environment#fog
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/environment/environment_introduction#fog
      * (Default is true)
      */
     public set fogEnabled(value: boolean) {
@@ -979,7 +983,7 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
     private _fogMode = Scene.FOGMODE_NONE;
     /**
      * Gets or sets the fog mode to use
-     * @see https://doc.babylonjs.com/babylon101/environment#fog
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/environment/environment_introduction#fog
      * | mode | value |
      * | --- | --- |
      * | FOGMODE_NONE | 0 |
@@ -1000,25 +1004,25 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
 
     /**
      * Gets or sets the fog color to use
-     * @see https://doc.babylonjs.com/babylon101/environment#fog
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/environment/environment_introduction#fog
      * (Default is Color3(0.2, 0.2, 0.3))
      */
     public fogColor = new Color3(0.2, 0.2, 0.3);
     /**
      * Gets or sets the fog density to use
-     * @see https://doc.babylonjs.com/babylon101/environment#fog
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/environment/environment_introduction#fog
      * (Default is 0.1)
      */
     public fogDensity = 0.1;
     /**
      * Gets or sets the fog start distance to use
-     * @see https://doc.babylonjs.com/babylon101/environment#fog
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/environment/environment_introduction#fog
      * (Default is 0)
      */
     public fogStart = 0;
     /**
      * Gets or sets the fog end distance to use
-     * @see https://doc.babylonjs.com/babylon101/environment#fog
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/environment/environment_introduction#fog
      * (Default is 1000)
      */
     public fogEnd = 1000.0;
@@ -1183,7 +1187,7 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
     // Collisions
     /**
      * Gets or sets a boolean indicating if collisions are enabled on this scene
-     * @see https://doc.babylonjs.com/babylon101/cameras,_mesh_collisions_and_gravity
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/cameras/camera_collisions
      */
     public collisionsEnabled = true;
 
@@ -1201,7 +1205,7 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
 
     /**
      * Defines the gravity applied to this scene (used only for collisions)
-     * @see https://doc.babylonjs.com/babylon101/cameras,_mesh_collisions_and_gravity
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/cameras/camera_collisions
      */
     public gravity = new Vector3(0, -9.807, 0);
 
@@ -1250,13 +1254,13 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
     // Offline support
     /**
      * Gets or sets the current offline provider to use to store scene data
-     * @see https://doc.babylonjs.com/how_to/caching_resources_in_indexeddb
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/optimizeCached
      */
     public offlineProvider: IOfflineProvider;
 
     /**
      * Gets or sets the action manager associated with the scene
-     * @see https://doc.babylonjs.com/how_to/how_to_use_actions
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/events/actions
      */
     public actionManager: AbstractActionManager;
 
@@ -1337,7 +1341,7 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
     /**
      * Gets the scene's rendering manager
      */
-    public get renderingManager() {
+    public get renderingManager(): RenderingManager {
         return this._renderingManager;
     }
 
@@ -1526,9 +1530,18 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
     public _afterCameraDrawStage = Stage.Create<CameraStageAction>();
     /**
      * @internal
+     * Defines the actions happening just after the post processing
+     */
+    public _afterCameraPostProcessStage = Stage.Create<CameraStageAction>();
+    /**
+     * @internal
      * Defines the actions happening just after a render target has been drawn.
      */
     public _afterRenderTargetDrawStage = Stage.Create<RenderTargetStageAction>();
+    /**
+     * Defines the actions happening just after the post processing on a render target
+     */
+    public _afterRenderTargetPostProcessStage = Stage.Create<RenderTargetStageAction>();
     /**
      * @internal
      * Defines the actions happening just after rendering all cameras and computing intersections.
@@ -1612,20 +1625,6 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
 
         if (!options || !options.virtual) {
             this._engine.onNewSceneAddedObservable.notifyObservers(this);
-        }
-
-        if (ComputePressureObserverWrapper.IsAvailable) {
-            this._computePressureObserver = new ComputePressureObserverWrapper(
-                (update) => {
-                    this.onComputePressureChanged.notifyObservers(update);
-                },
-                {
-                    // Thresholds divide the interval [0.0 .. 1.0] into ranges.
-                    cpuUtilizationThresholds: [0.25, 0.5, 0.75, 0.9],
-                    cpuSpeedThresholds: [0.5],
-                }
-            );
-            this._computePressureObserver.observe("cpu");
         }
     }
 
@@ -1760,7 +1759,7 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
 
     /**
      * Gets the performance counter for total vertices
-     * @see https://doc.babylonjs.com/how_to/optimizing_your_scene#instrumentation
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/optimize_your_scene#instrumentation
      */
     public get totalVerticesPerfCounter(): PerfCounter {
         return this._totalVertices;
@@ -1776,7 +1775,7 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
 
     /**
      * Gets the performance counter for active indices
-     * @see https://doc.babylonjs.com/how_to/optimizing_your_scene#instrumentation
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/optimize_your_scene#instrumentation
      */
     public get totalActiveIndicesPerfCounter(): PerfCounter {
         return this._activeIndices;
@@ -1792,7 +1791,7 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
 
     /**
      * Gets the performance counter for active particles
-     * @see https://doc.babylonjs.com/how_to/optimizing_your_scene#instrumentation
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/optimize_your_scene#instrumentation
      */
     public get activeParticlesPerfCounter(): PerfCounter {
         return this._activeParticles;
@@ -1808,7 +1807,7 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
 
     /**
      * Gets the performance counter for active bones
-     * @see https://doc.babylonjs.com/how_to/optimizing_your_scene#instrumentation
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/optimize_your_scene#instrumentation
      */
     public get activeBonesPerfCounter(): PerfCounter {
         return this._activeBones;
@@ -2161,7 +2160,7 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
      * @param checkRenderTargets true to also check that the meshes rendered as part of a render target are ready (default: false)
      */
     public executeWhenReady(func: () => void, checkRenderTargets = false): void {
-        this.onReadyObservable.add(func);
+        this.onReadyObservable.addOnce(func);
 
         if (this._executeWhenReadyTimeoutId !== null) {
             return;
@@ -2895,39 +2894,58 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
         return null;
     }
 
-    /**
-     * Get a material using its unique id
-     * @param uniqueId defines the material's unique id
-     * @returns the material or null if none found.
-     */
-    public getMaterialByUniqueID(uniqueId: number): Nullable<Material> {
+    private _getMaterial(allowMultiMaterials: boolean, predicate: (m: Material) => boolean): Nullable<Material> {
         for (let index = 0; index < this.materials.length; index++) {
-            if (this.materials[index].uniqueId === uniqueId) {
-                return this.materials[index];
+            const material = this.materials[index];
+            if (predicate(material)) {
+                return material;
+            }
+        }
+        if (allowMultiMaterials) {
+            for (let index = 0; index < this.multiMaterials.length; index++) {
+                const material = this.multiMaterials[index];
+                if (predicate(material)) {
+                    return material;
+                }
             }
         }
 
         return null;
+    }
+
+    /**
+     * Get a material using its unique id
+     * @param uniqueId defines the material's unique id
+     * @param allowMultiMaterials determines whether multimaterials should be considered
+     * @returns the material or null if none found.
+     */
+    public getMaterialByUniqueID(uniqueId: number, allowMultiMaterials: boolean = false): Nullable<Material> {
+        return this._getMaterial(allowMultiMaterials, (m) => m.uniqueId === uniqueId);
     }
 
     /**
      * get a material using its id
      * @param id defines the material's Id
+     * @param allowMultiMaterials determines whether multimaterials should be considered
      * @returns the material or null if none found.
      */
-    public getMaterialById(id: string): Nullable<Material> {
-        for (let index = 0; index < this.materials.length; index++) {
-            if (this.materials[index].id === id) {
-                return this.materials[index];
-            }
-        }
-
-        return null;
+    public getMaterialById(id: string, allowMultiMaterials: boolean = false): Nullable<Material> {
+        return this._getMaterial(allowMultiMaterials, (m) => m.id === id);
     }
 
     /**
-     * Gets a the last added material using a given id
-     * @param id defines the material's Id
+     * Gets a material using its name
+     * @param name defines the material's name
+     * @param allowMultiMaterials determines whether multimaterials should be considered
+     * @returns the material or null if none found.
+     */
+    public getMaterialByName(name: string, allowMultiMaterials: boolean = false): Nullable<Material> {
+        return this._getMaterial(allowMultiMaterials, (m) => m.name === name);
+    }
+
+    /**
+     * Gets a last added material using a given id
+     * @param id defines the material's id
      * @param allowMultiMaterials determines whether multimaterials should be considered
      * @returns the last material with the given id or null if none found.
      */
@@ -2942,21 +2960,6 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
                 if (this.multiMaterials[index].id === id) {
                     return this.multiMaterials[index];
                 }
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Gets a material using its name
-     * @param name defines the material's name
-     * @returns the material or null if none found.
-     */
-    public getMaterialByName(name: string): Nullable<Material> {
-        for (let index = 0; index < this.materials.length; index++) {
-            if (this.materials[index].name === name) {
-                return this.materials[index];
             }
         }
 
@@ -3778,6 +3781,7 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
 
     /** @internal */
     public _activeMeshesFrozen = false;
+    /** @internal */
     public _activeMeshesFrozenButKeepClipping = false;
     private _skipEvaluateActiveMeshesCompletely = false;
 
@@ -3882,6 +3886,8 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
                     this._activeParticleSystems.data[i].animate();
                 }
             }
+
+            this._renderingManager.resetSprites();
 
             return;
         }
@@ -4224,6 +4230,11 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
             this.postProcessManager._finalizeFrame(camera.isIntermediate, texture);
         }
 
+        // After post process
+        for (const step of this._afterCameraPostProcessStage) {
+            step.action(this.activeCamera);
+        }
+
         // Reset some special arrays
         this._renderTargets.reset();
 
@@ -4539,8 +4550,6 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
         }
 
         // Multi-cameras?
-        // save current active camera, following calls will change it, discarding user settings
-        const activeCamera = this._activeCamera;
         if (this.activeCameras && this.activeCameras.length > 0) {
             for (let cameraIndex = 0; cameraIndex < this.activeCameras.length; cameraIndex++) {
                 this._processSubCameras(this.activeCameras[cameraIndex], cameraIndex > 0);
@@ -4552,7 +4561,6 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
 
             this._processSubCameras(this.activeCamera, !!this.activeCamera.outputRenderTarget);
         }
-        this._activeCamera = activeCamera;
 
         // Intersection checks
         this._checkIntersections();
@@ -4595,6 +4603,7 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
     /**
      * Freeze all materials
      * A frozen material will not be updatable but should be faster to render
+     * Note: multimaterials will not be frozen, but their submaterials will
      */
     public freezeMaterials(): void {
         for (let i = 0; i < this.materials.length; i++) {
@@ -4728,13 +4737,10 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
         this.onTextureRemovedObservable.clear();
         this.onPrePointerObservable.clear();
         this.onPointerObservable.clear();
+        this._onCameraInputObservable.clear();
         this.onPreKeyboardObservable.clear();
         this.onKeyboardObservable.clear();
         this.onActiveCameraChanged.clear();
-        this.onComputePressureChanged.clear();
-
-        this._computePressureObserver?.unobserve("cpu");
-        this._computePressureObserver = undefined;
 
         this.detachControl();
 
@@ -4956,6 +4962,14 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
         throw _WarnImport("Ray");
     }
 
+    /** @internal */
+    public get _pickingAvailable(): boolean {
+        return false;
+    }
+
+    /** @internal */
+    public _registeredActions: number = 0;
+
     /** Launch a ray to try to pick a mesh in the scene
      * @param x position on screen
      * @param y position on screen
@@ -4972,11 +4986,9 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
         fastCheck?: boolean,
         camera?: Nullable<Camera>,
         trianglePredicate?: TrianglePickingPredicate
-    ): Nullable<PickingInfo> {
+    ): PickingInfo {
         // Dummy info if picking as not been imported
-        const pi = new PickingInfo();
-        pi._pickingUnavailable = true;
-        return pi;
+        return new PickingInfo();
     }
 
     /** Launch a ray to try to pick a mesh in the scene using only bounding information of the main mesh (not using submeshes)
@@ -4989,9 +5001,7 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
      */
     public pickWithBoundingInfo(x: number, y: number, predicate?: (mesh: AbstractMesh) => boolean, fastCheck?: boolean, camera?: Nullable<Camera>): Nullable<PickingInfo> {
         // Dummy info if picking as not been imported
-        const pi = new PickingInfo();
-        pi._pickingUnavailable = true;
-        return pi;
+        return new PickingInfo();
     }
 
     /** Use the given ray to pick a mesh in the scene
@@ -5384,12 +5394,4 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
     public getPerfCollector(): PerformanceViewerCollector {
         throw _WarnImport("performanceViewerSceneExtension");
     }
-
-    private _computePressureObserver: ComputePressureObserverWrapper | undefined;
-
-    /**
-     * An event triggered when the cpu usage/speed meets certain thresholds.
-     * Note: Compute pressure is an experimental API.
-     */
-    public onComputePressureChanged = new Observable<IComputePressureData>();
 }

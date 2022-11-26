@@ -11,10 +11,11 @@ import type { ICanvasRenderingContext } from "core/Engines/ICanvas";
 import { DynamicTexture } from "core/Materials/Textures/dynamicTexture";
 import { Texture } from "core/Materials/Textures/texture";
 import { Constants } from "core/Engines/constants";
+import { Observable } from "core/Misc/observable";
 
 /**
  * Root class for 2D containers
- * @see https://doc.babylonjs.com/how_to/gui#containers
+ * @see https://doc.babylonjs.com/features/featuresDeepDive/gui/gui#containers
  */
 export class Container extends Control {
     /** @internal */
@@ -209,6 +210,9 @@ export class Container extends Control {
         this._reOrderControl(control);
 
         this._markAsDirty();
+
+        this.onControlAddedObservable.notifyObservers(control);
+
         return this;
     }
 
@@ -247,8 +251,20 @@ export class Container extends Control {
         }
 
         this._markAsDirty();
+
+        this.onControlRemovedObservable.notifyObservers(control);
         return this;
     }
+
+    /**
+     * An event triggered when any control is added to this container.
+     */
+    public onControlAddedObservable = new Observable<Nullable<Control>>();
+
+    /**
+     * An event triggered when any control is removed from this container.
+     */
+    public onControlRemovedObservable = new Observable<Nullable<Control>>();
 
     /**
      * @internal

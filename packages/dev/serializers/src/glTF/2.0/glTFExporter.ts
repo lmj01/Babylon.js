@@ -19,7 +19,7 @@ import type {
 import { AccessorType, ImageMimeType, MeshPrimitiveMode, AccessorComponentType, CameraType } from "babylonjs-gltf2interface";
 
 import type { FloatArray, Nullable, IndicesArray } from "core/types";
-import type { Matrix } from "core/Maths/math.vector";
+import { Matrix, TmpVectors } from "core/Maths/math.vector";
 import { Vector2, Vector3, Vector4, Quaternion } from "core/Maths/math.vector";
 import { Color3, Color4 } from "core/Maths/math.color";
 import { Tools } from "core/Misc/tools";
@@ -48,6 +48,9 @@ import { _GLTFAnimation } from "./glTFAnimation";
 import { Camera } from "core/Cameras/camera";
 import { EngineStore } from "core/Engines/engineStore";
 import { MultiMaterial } from "core/Materials/multiMaterial";
+
+// Matrix that converts handedness on the X-axis.
+const convertHandednessMatrix = Matrix.Compose(new Vector3(-1, 1, 1), Quaternion.Identity(), Vector3.Zero());
 
 /**
  * Utility interface for storing vertex attribute data
@@ -152,9 +155,9 @@ export class _Exporter {
      * Stores a map of the image data, where the key is the file name and the value
      * is the image data
      */
-    public _imageData: { [fileName: string]: { data: Uint8Array; mimeType: ImageMimeType } };
+    public _imageData: { [fileName: string]: { data: ArrayBuffer; mimeType: ImageMimeType } };
 
-    protected _orderedImageData: Array<{ data: Uint8Array; mimeType: ImageMimeType }>;
+    protected _orderedImageData: Array<{ data: ArrayBuffer; mimeType: ImageMimeType }>;
 
     /**
      * Stores a map of the unique id of a node to its index in the node array
@@ -1054,7 +1057,7 @@ export class _Exporter {
     private _generateJSON(shouldUseGlb: boolean, glTFPrefix?: string, prettyPrint?: boolean): string {
         const buffer: IBuffer = { byteLength: this._totalByteLength };
         let imageName: string;
-        let imageData: { data: Uint8Array; mimeType: ImageMimeType };
+        let imageData: { data: ArrayBuffer; mimeType: ImageMimeType };
         let bufferView: IBufferView;
         let byteOffset: number = this._totalByteLength;
 
@@ -1106,8 +1109,8 @@ export class _Exporter {
                         imageData = this._imageData[image.uri];
                         this._orderedImageData.push(imageData);
                         imageName = image.uri.split(".")[0] + " image";
-                        bufferView = _GLTFUtilities._CreateBufferView(0, byteOffset, imageData.data.length, undefined, imageName);
-                        byteOffset += imageData.data.buffer.byteLength;
+                        bufferView = _GLTFUtilities._CreateBufferView(0, byteOffset, imageData.data.byteLength, undefined, imageName);
+                        byteOffset += imageData.data.byteLength;
                         this._bufferViews.push(bufferView);
                         image.bufferView = this._bufferViews.length - 1;
                         image.name = imageName;
@@ -1281,7 +1284,7 @@ export class _Exporter {
 
             // binary data
             for (let i = 0; i < this._orderedImageData.length; ++i) {
-                glbData.push(this._orderedImageData[i].data.buffer);
+                glbData.push(this._orderedImageData[i].data);
             }
 
             glbData.push(binPaddingBuffer);
@@ -1867,14 +1870,9 @@ export class _Exporter {
      */
     private _isBabylonCoordinateSystemConvertingNode(node: Node): boolean {
         if (node instanceof TransformNode) {
-            if (node.name !== "__root__") {
-                return false;
-            }
-
             // Transform
-            const matrix = node.getWorldMatrix();
-
-            if (matrix.determinant() === 1) {
+            const matrix = node.getWorldMatrix().multiplyToRef(convertHandednessMatrix, TmpVectors.Matrix[0]);
+            if (!matrix.isIdentity()) {
                 return false;
             }
 
@@ -1883,11 +1881,9 @@ export class _Exporter {
                 return false;
             }
 
-            if (this._includeCoordinateSystemConversionNodes) {
-                return false;
-            }
             return true;
         }
+
         return false;
     }
 
@@ -1918,6 +1914,10 @@ export class _Exporter {
 
         // Check if root nodes converting to left-handed are present
         babylonScene.rootNodes.forEach((rootNode) => {
+            if (this._includeCoordinateSystemConversionNodes) {
+                return;
+            }
+
             if (this._isBabylonCoordinateSystemConvertingNode(rootNode)) {
                 rootNodesToLeftHanded.push(rootNode);
 

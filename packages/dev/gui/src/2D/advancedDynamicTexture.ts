@@ -29,12 +29,13 @@ import { WebRequest } from "core/Misc/webRequest";
 import type { IPointerEvent, IWheelEvent } from "core/Events/deviceInputEvents";
 import { RandomGUID } from "core/Misc/guid";
 import { GetClass } from "core/Misc/typeStore";
+import { DecodeBase64ToBinary } from "core/Misc/stringTools";
 
 declare type StandardMaterial = import("core/Materials/standardMaterial").StandardMaterial;
 
 /**
  * Class used to create texture to support 2D GUI elements
- * @see https://doc.babylonjs.com/how_to/gui
+ * @see https://doc.babylonjs.com/features/featuresDeepDive/gui/gui
  */
 export class AdvancedDynamicTexture extends DynamicTexture {
     /** Define the Uurl to load snippets */
@@ -167,7 +168,7 @@ export class AdvancedDynamicTexture extends DynamicTexture {
     /**
      * Gets or sets the ideal width used to design controls.
      * The GUI will then rescale everything accordingly
-     * @see https://doc.babylonjs.com/how_to/gui#adaptive-scaling
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/gui/gui#adaptive-scaling
      */
     public get idealWidth(): number {
         return this._idealWidth;
@@ -183,7 +184,7 @@ export class AdvancedDynamicTexture extends DynamicTexture {
     /**
      * Gets or sets the ideal height used to design controls.
      * The GUI will then rescale everything accordingly
-     * @see https://doc.babylonjs.com/how_to/gui#adaptive-scaling
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/gui/gui#adaptive-scaling
      */
     public get idealHeight(): number {
         return this._idealHeight;
@@ -198,7 +199,7 @@ export class AdvancedDynamicTexture extends DynamicTexture {
     }
     /**
      * Gets or sets a boolean indicating if the smallest ideal value must be used if idealWidth and idealHeight are both set
-     * @see https://doc.babylonjs.com/how_to/gui#adaptive-scaling
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/gui/gui#adaptive-scaling
      */
     public get useSmallestIdeal(): boolean {
         return this._useSmallestIdeal;
@@ -213,7 +214,7 @@ export class AdvancedDynamicTexture extends DynamicTexture {
     }
     /**
      * Gets or sets a boolean indicating if adaptive scaling must be used
-     * @see https://doc.babylonjs.com/how_to/gui#adaptive-scaling
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/gui/gui#adaptive-scaling
      */
     public get renderAtIdealSize(): boolean {
         return this._renderAtIdealSize;
@@ -228,7 +229,7 @@ export class AdvancedDynamicTexture extends DynamicTexture {
 
     /**
      * Gets the ratio used when in "ideal mode"
-     * @see https://doc.babylonjs.com/how_to/gui#adaptive-scaling
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/gui/gui#adaptive-scaling
      * */
     public get idealRatio(): number {
         let rwidth: number = 0;
@@ -473,7 +474,7 @@ export class AdvancedDynamicTexture extends DynamicTexture {
     /**
      * Helper function used to create a new style
      * @returns a new style
-     * @see https://doc.babylonjs.com/how_to/gui#styles
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/gui/gui#styles
      */
     public createStyle(): Style {
         return new Style(this);
@@ -818,7 +819,20 @@ export class AdvancedDynamicTexture extends DynamicTexture {
         this._cleanControlAfterRemovalFromList(this._lastControlOver, control);
     }
 
-    private _translateToPicking(scene: Scene, tempViewport: Viewport, pi: Nullable<PointerInfoPre>) {
+    /**
+     * This function will run a pointer event on this ADT and will trigger any pointer events on any controls
+     * This will work on a fullscreen ADT only. For mesh based ADT, simulate pointer events using the scene directly.
+     * @param x pointer X on the canvas for the picking
+     * @param y pointer Y on the canvas for the picking
+     * @param pi optional pointer information
+     */
+    public pick(x: number, y: number, pi: Nullable<PointerInfoPre> = null) {
+        if (this._isFullscreen && this._scene) {
+            this._translateToPicking(this._scene, new Viewport(0, 0, 0, 0), pi, x, y);
+        }
+    }
+
+    private _translateToPicking(scene: Scene, tempViewport: Viewport, pi: Nullable<PointerInfoPre>, x: number = scene.pointerX, y: number = scene.pointerY) {
         const camera = scene.cameraToUseForPointers || scene.activeCamera;
         const engine = scene.getEngine();
         const originalCameraToUseForPointers = scene.cameraToUseForPointers;
@@ -835,10 +849,10 @@ export class AdvancedDynamicTexture extends DynamicTexture {
                 camera.rigCameras.forEach((rigCamera) => {
                     // generate the viewport of this camera
                     rigCamera.viewport.toGlobalToRef(engine.getRenderWidth(), engine.getRenderHeight(), rigViewport);
-                    const x = scene.pointerX / engine.getHardwareScalingLevel() - rigViewport.x;
-                    const y = scene.pointerY / engine.getHardwareScalingLevel() - (engine.getRenderHeight() - rigViewport.y - rigViewport.height);
+                    const transformedX = x / engine.getHardwareScalingLevel() - rigViewport.x;
+                    const transformedY = y / engine.getHardwareScalingLevel() - (engine.getRenderHeight() - rigViewport.y - rigViewport.height);
                     // check if the pointer is in the camera's viewport
-                    if (x < 0 || y < 0 || x > rigViewport.width || y > rigViewport.height) {
+                    if (transformedX < 0 || transformedY < 0 || x > rigViewport.width || y > rigViewport.height) {
                         // out of viewport - don't use this camera
                         return;
                     }
@@ -855,19 +869,19 @@ export class AdvancedDynamicTexture extends DynamicTexture {
             }
         }
 
-        const x = scene.pointerX / engine.getHardwareScalingLevel() - tempViewport.x;
-        const y = scene.pointerY / engine.getHardwareScalingLevel() - (engine.getRenderHeight() - tempViewport.y - tempViewport.height);
+        const transformedX = x / engine.getHardwareScalingLevel() - tempViewport.x;
+        const transformedY = y / engine.getHardwareScalingLevel() - (engine.getRenderHeight() - tempViewport.y - tempViewport.height);
         this._shouldBlockPointer = false;
         // Do picking modifies _shouldBlockPointer
         if (pi) {
             const pointerId = (pi.event as IPointerEvent).pointerId || this._defaultMousePointerId;
-            this._doPicking(x, y, pi, pi.type, pointerId, pi.event.button, (<IWheelEvent>pi.event).deltaX, (<IWheelEvent>pi.event).deltaY);
+            this._doPicking(transformedX, transformedY, pi, pi.type, pointerId, pi.event.button, (<IWheelEvent>pi.event).deltaX, (<IWheelEvent>pi.event).deltaY);
             // Avoid overwriting a true skipOnPointerObservable to false
             if (this._shouldBlockPointer || this._capturingControl[pointerId]) {
                 pi.skipOnPointerObservable = true;
             }
         } else {
-            this._doPicking(x, y, null, PointerEventTypes.POINTERMOVE, this._defaultMousePointerId, 0);
+            this._doPicking(transformedX, transformedY, null, PointerEventTypes.POINTERMOVE, this._defaultMousePointerId, 0);
         }
         // if overridden by a rig camera - reset back to the original value
         scene.cameraToUseForPointers = originalCameraToUseForPointers;
@@ -1022,6 +1036,11 @@ export class AdvancedDynamicTexture extends DynamicTexture {
         if (!scene) {
             return;
         }
+
+        if (this._pointerObserver) {
+            scene.onPointerObservable.remove(this._pointerObserver);
+        }
+
         this._pointerObserver = scene.onPointerObservable.add((pi) => {
             if (
                 pi.type !== PointerEventTypes.POINTERMOVE &&
@@ -1293,7 +1312,13 @@ export class AdvancedDynamicTexture extends DynamicTexture {
             request.addEventListener("readystatechange", () => {
                 if (request.readyState == 4) {
                     if (request.status == 200) {
-                        const gui = snippet ? JSON.parse(JSON.parse(request.responseText).jsonPayload).gui : request.responseText;
+                        let gui;
+                        if (snippet) {
+                            const payload = JSON.parse(JSON.parse(request.responseText).jsonPayload);
+                            gui = payload.encodedGui ? new TextDecoder("utf-8").decode(DecodeBase64ToBinary(payload.encodedGui)) : payload.gui;
+                        } else {
+                            gui = request.responseText;
+                        }
                         const serializationObject = JSON.parse(gui);
                         resolve(serializationObject);
                     } else {

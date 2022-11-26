@@ -13,6 +13,11 @@ import { EngineStore } from "core/Engines/engineStore";
  * Class used to create 2D images
  */
 export class Image extends Control {
+    /**
+     *  Specifies an alternate text for the image, if the image for some reason cannot be displayed.
+     */
+    public alt?: string;
+
     private _workingCanvas: Nullable<ICanvas> = null;
 
     private _domImage: IImage;
@@ -278,7 +283,7 @@ export class Image extends Control {
 
     /**
      * Gets or sets a boolean indicating if the image can force its container to adapt its size
-     * @see https://doc.babylonjs.com/how_to/gui#image
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/gui/gui#image
      */
     @serialize()
     public get autoScale(): boolean {
@@ -631,7 +636,7 @@ export class Image extends Control {
 
     /**
      * Gets or sets the cell width to use when animation sheet is enabled
-     * @see https://doc.babylonjs.com/how_to/gui#image
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/gui/gui#image
      */
     @serialize()
     get cellWidth(): number {
@@ -648,7 +653,7 @@ export class Image extends Control {
 
     /**
      * Gets or sets the cell height to use when animation sheet is enabled
-     * @see https://doc.babylonjs.com/how_to/gui#image
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/gui/gui#image
      */
     @serialize()
     get cellHeight(): number {
@@ -665,7 +670,7 @@ export class Image extends Control {
 
     /**
      * Gets or sets the cell id to use (this will turn on the animation sheet mode)
-     * @see https://doc.babylonjs.com/how_to/gui#image
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/gui/gui#image
      */
     @serialize()
     get cellId(): number {

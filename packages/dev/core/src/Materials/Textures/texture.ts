@@ -67,7 +67,7 @@ export interface ITextureCreationOptions {
 
 /**
  * This represents a texture in babylon. It can be easily loaded from a network, base64 or html input.
- * @see https://doc.babylonjs.com/babylon101/materials#texture
+ * @see https://doc.babylonjs.com/features/featuresDeepDive/materials/using/materials_introduction#texture
  */
 export class Texture extends BaseTexture {
     /**
@@ -183,28 +183,28 @@ export class Texture extends BaseTexture {
 
     /**
      * Define an offset on the texture to offset the u coordinates of the UVs
-     * @see https://doc.babylonjs.com/how_to/more_materials#offsetting
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/materials/using/moreMaterials#offsetting
      */
     @serialize()
     public uOffset = 0;
 
     /**
      * Define an offset on the texture to offset the v coordinates of the UVs
-     * @see https://doc.babylonjs.com/how_to/more_materials#offsetting
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/materials/using/moreMaterials#offsetting
      */
     @serialize()
     public vOffset = 0;
 
     /**
      * Define an offset on the texture to scale the u coordinates of the UVs
-     * @see https://doc.babylonjs.com/how_to/more_materials#tiling
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/materials/using/moreMaterials#tiling
      */
     @serialize()
     public uScale = 1.0;
 
     /**
      * Define an offset on the texture to scale the v coordinates of the UVs
-     * @see https://doc.babylonjs.com/how_to/more_materials#tiling
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/materials/using/moreMaterials#tiling
      */
     @serialize()
     public vScale = 1.0;
@@ -212,7 +212,7 @@ export class Texture extends BaseTexture {
     /**
      * Define an offset on the texture to rotate around the u coordinates of the UVs
      * The angle is defined in radians.
-     * @see https://doc.babylonjs.com/how_to/more_materials
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/materials/using/moreMaterials
      */
     @serialize()
     public uAng = 0;
@@ -220,7 +220,7 @@ export class Texture extends BaseTexture {
     /**
      * Define an offset on the texture to rotate around the v coordinates of the UVs
      * The angle is defined in radians.
-     * @see https://doc.babylonjs.com/how_to/more_materials
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/materials/using/moreMaterials
      */
     @serialize()
     public vAng = 0;
@@ -228,7 +228,7 @@ export class Texture extends BaseTexture {
     /**
      * Define an offset on the texture to rotate around the w coordinates of the UVs (in case of 3d texture)
      * The angle is defined in radians.
-     * @see https://doc.babylonjs.com/how_to/more_materials
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/materials/using/moreMaterials
      */
     @serialize()
     public wAng = 0;
@@ -266,7 +266,7 @@ export class Texture extends BaseTexture {
 
     /**
      * List of inspectable custom properties (used by the Inspector)
-     * @see https://doc.babylonjs.com/how_to/debug_layer#extensibility
+     * @see https://doc.babylonjs.com/toolsAndResources/inspector#extensibility
      */
     public inspectableCustomProperties: Nullable<IInspectable[]> = null;
 
@@ -287,12 +287,18 @@ export class Texture extends BaseTexture {
     private _cachedUAng: number = -1;
     private _cachedVAng: number = -1;
     private _cachedWAng: number = -1;
-    private _cachedProjectionMatrixId: number = -1;
+    private _cachedReflectionProjectionMatrixId: number = -1;
     private _cachedURotationCenter: number = -1;
     private _cachedVRotationCenter: number = -1;
     private _cachedWRotationCenter: number = -1;
     private _cachedHomogeneousRotationInUVTransform: boolean = false;
-    private _cachedCoordinatesMode: number = -1;
+
+    private _cachedReflectionTextureMatrix: Nullable<Matrix> = null;
+    private _cachedReflectionUOffset = -1;
+    private _cachedReflectionVOffset = -1;
+    private _cachedReflectionUScale = 0;
+    private _cachedReflectionVScale = 0;
+    private _cachedReflectionCoordinatesMode = -1;
 
     /** @internal */
     public _buffer: Nullable<string | ArrayBuffer | ArrayBufferView | HTMLImageElement | Blob | ImageBitmap> = null;
@@ -339,7 +345,7 @@ export class Texture extends BaseTexture {
     /**
      * Instantiates a new texture.
      * This represents a texture in babylon. It can be easily loaded from a network, base64 or html input.
-     * @see https://doc.babylonjs.com/babylon101/materials#texture
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/materials/using/materials_introduction#texture
      * @param url defines the url of the picture to load as a texture
      * @param sceneOrEngine defines the scene or engine the texture will belong to
      * @param noMipmapOrOptions defines if the texture will require mip maps or not or set of all options to create the texture
@@ -742,60 +748,60 @@ export class Texture extends BaseTexture {
         const scene = this.getScene();
 
         if (!scene) {
-            return this._cachedTextureMatrix!;
+            return this._cachedReflectionTextureMatrix!;
         }
 
         if (
-            this.uOffset === this._cachedUOffset &&
-            this.vOffset === this._cachedVOffset &&
-            this.uScale === this._cachedUScale &&
-            this.vScale === this._cachedVScale &&
-            this.coordinatesMode === this._cachedCoordinatesMode
+            this.uOffset === this._cachedReflectionUOffset &&
+            this.vOffset === this._cachedReflectionVOffset &&
+            this.uScale === this._cachedReflectionUScale &&
+            this.vScale === this._cachedReflectionVScale &&
+            this.coordinatesMode === this._cachedReflectionCoordinatesMode
         ) {
             if (this.coordinatesMode === Texture.PROJECTION_MODE) {
-                if (this._cachedProjectionMatrixId === scene.getProjectionMatrix().updateFlag) {
-                    return this._cachedTextureMatrix!;
+                if (this._cachedReflectionProjectionMatrixId === scene.getProjectionMatrix().updateFlag) {
+                    return this._cachedReflectionTextureMatrix!;
                 }
             } else {
-                return this._cachedTextureMatrix!;
+                return this._cachedReflectionTextureMatrix!;
             }
         }
 
-        if (!this._cachedTextureMatrix) {
-            this._cachedTextureMatrix = Matrix.Zero();
+        if (!this._cachedReflectionTextureMatrix) {
+            this._cachedReflectionTextureMatrix = Matrix.Zero();
         }
 
         if (!this._projectionModeMatrix) {
             this._projectionModeMatrix = Matrix.Zero();
         }
 
-        const flagMaterialsAsTextureDirty = this._cachedCoordinatesMode !== this.coordinatesMode;
+        const flagMaterialsAsTextureDirty = this._cachedReflectionCoordinatesMode !== this.coordinatesMode;
 
-        this._cachedUOffset = this.uOffset;
-        this._cachedVOffset = this.vOffset;
-        this._cachedUScale = this.uScale;
-        this._cachedVScale = this.vScale;
-        this._cachedCoordinatesMode = this.coordinatesMode;
+        this._cachedReflectionUOffset = this.uOffset;
+        this._cachedReflectionVOffset = this.vOffset;
+        this._cachedReflectionUScale = this.uScale;
+        this._cachedReflectionVScale = this.vScale;
+        this._cachedReflectionCoordinatesMode = this.coordinatesMode;
 
         switch (this.coordinatesMode) {
             case Texture.PLANAR_MODE: {
-                Matrix.IdentityToRef(this._cachedTextureMatrix);
-                (<any>this._cachedTextureMatrix)[0] = this.uScale;
-                (<any>this._cachedTextureMatrix)[5] = this.vScale;
-                (<any>this._cachedTextureMatrix)[12] = this.uOffset;
-                (<any>this._cachedTextureMatrix)[13] = this.vOffset;
+                Matrix.IdentityToRef(this._cachedReflectionTextureMatrix);
+                (<any>this._cachedReflectionTextureMatrix)[0] = this.uScale;
+                (<any>this._cachedReflectionTextureMatrix)[5] = this.vScale;
+                (<any>this._cachedReflectionTextureMatrix)[12] = this.uOffset;
+                (<any>this._cachedReflectionTextureMatrix)[13] = this.vOffset;
                 break;
             }
             case Texture.PROJECTION_MODE: {
                 Matrix.FromValuesToRef(0.5, 0.0, 0.0, 0.0, 0.0, -0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, this._projectionModeMatrix);
 
                 const projectionMatrix = scene.getProjectionMatrix();
-                this._cachedProjectionMatrixId = projectionMatrix.updateFlag;
-                projectionMatrix.multiplyToRef(this._projectionModeMatrix, this._cachedTextureMatrix);
+                this._cachedReflectionProjectionMatrixId = projectionMatrix.updateFlag;
+                projectionMatrix.multiplyToRef(this._projectionModeMatrix, this._cachedReflectionTextureMatrix);
                 break;
             }
             default:
-                Matrix.IdentityToRef(this._cachedTextureMatrix);
+                Matrix.IdentityToRef(this._cachedReflectionTextureMatrix);
                 break;
         }
 
@@ -807,7 +813,7 @@ export class Texture extends BaseTexture {
             });
         }
 
-        return this._cachedTextureMatrix;
+        return this._cachedReflectionTextureMatrix;
     }
 
     /**
