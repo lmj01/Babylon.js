@@ -798,12 +798,6 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
     public onPointerObservable = new Observable<PointerInfo>();
 
     /**
-     * Observable to handle camera pointer inputs
-     * @internal
-     */
-    public _onCameraInputObservable = new Observable<PointerInfo>();
-
-    /**
      * Gets the pointer coordinates without any translation (ie. straight out of the pointer event)
      */
     public get unTranslatedPointer(): Vector2 {
@@ -4067,7 +4061,7 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
         // we assume the framebuffer currently bound is the right one
         if (camera && camera._multiviewTexture) {
             // no clearing?
-        } else if (camera && camera.outputRenderTarget) {
+        } else if (camera && camera.outputRenderTarget && !camera._renderingMultiview) {
             const rtt = camera.outputRenderTarget;
             if (rtt.onClearObservable.hasObservers()) {
                 rtt.onClearObservable.notifyObservers(this._engine);
@@ -4693,7 +4687,11 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
         this._activeRequests.length = 0;
 
         // Events
-        this.onDisposeObservable.notifyObservers(this);
+        try {
+            this.onDisposeObservable.notifyObservers(this);
+        } catch (e) {
+            console.error("An error occurred while calling onDisposeObservable!", e);
+        }
 
         this.onDisposeObservable.clear();
         this.onBeforeRenderObservable.clear();
@@ -4737,7 +4735,6 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
         this.onTextureRemovedObservable.clear();
         this.onPrePointerObservable.clear();
         this.onPointerObservable.clear();
-        this._onCameraInputObservable.clear();
         this.onPreKeyboardObservable.clear();
         this.onKeyboardObservable.clear();
         this.onActiveCameraChanged.clear();
