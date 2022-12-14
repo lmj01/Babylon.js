@@ -37,7 +37,7 @@ declare module "../../Engines/thinEngine" {
 
         /**
          * Updates the sample count of a render target texture
-         * @see https://doc.babylonjs.com/features/webgl2#multisample-render-targets
+         * @see https://doc.babylonjs.com/setup/support/webGL2#multisample-render-targets
          * @param rtWrapper defines the render target wrapper to update
          * @param samples defines the sample count to set
          * @returns the effective sample count (could be 0 if multisample render targets are not supported)
@@ -61,18 +61,20 @@ ThinEngine.prototype._createHardwareRenderTargetWrapper = function (isMulti: boo
 ThinEngine.prototype.createRenderTargetTexture = function (this: ThinEngine, size: TextureSize, options: boolean | RenderTargetCreationOptions): RenderTargetWrapper {
     const rtWrapper = this._createHardwareRenderTargetWrapper(false, false, size) as WebGLRenderTargetWrapper;
 
-    const fullOptions: RenderTargetCreationOptions = {};
+    let generateDepthBuffer = true;
+    let generateStencilBuffer = false;
+    let noColorAttachment = false;
+    let colorAttachment: InternalTexture | undefined = undefined;
+    let samples = 1;
     if (options !== undefined && typeof options === "object") {
-        fullOptions.generateDepthBuffer = !!options.generateDepthBuffer;
-        fullOptions.generateStencilBuffer = !!options.generateStencilBuffer;
-        fullOptions.noColorTarget = !!options.noColorTarget;
-    } else {
-        fullOptions.generateDepthBuffer = true;
-        fullOptions.generateStencilBuffer = false;
-        fullOptions.noColorTarget = false;
+        generateDepthBuffer = !!options.generateDepthBuffer;
+        generateStencilBuffer = !!options.generateStencilBuffer;
+        noColorAttachment = !!options.noColorAttachment;
+        colorAttachment = options.colorAttachment;
+        samples = options.samples ?? 1;
     }
 
-    const texture = fullOptions.noColorTarget ? null : this._createInternalTexture(size, options, true, InternalTextureSource.RenderTarget);
+    const texture = colorAttachment || (noColorAttachment ? null : this._createInternalTexture(size, options, true, InternalTextureSource.RenderTarget));
     const width = (<{ width: number; height: number; layers?: number }>size).width || <number>size;
     const height = (<{ width: number; height: number; layers?: number }>size).height || <number>size;
 
@@ -82,7 +84,7 @@ ThinEngine.prototype.createRenderTargetTexture = function (this: ThinEngine, siz
     // Create the framebuffer
     const framebuffer = gl.createFramebuffer();
     this._bindUnboundFramebuffer(framebuffer);
-    rtWrapper._depthStencilBuffer = this._setupFramebufferDepthAttachments(fullOptions.generateStencilBuffer ? true : false, fullOptions.generateDepthBuffer, width, height);
+    rtWrapper._depthStencilBuffer = this._setupFramebufferDepthAttachments(generateStencilBuffer, generateDepthBuffer, width, height);
 
     // No need to rebind on every frame
     if (texture && !texture.is2DArray) {
@@ -92,10 +94,12 @@ ThinEngine.prototype.createRenderTargetTexture = function (this: ThinEngine, siz
     this._bindUnboundFramebuffer(currentFrameBuffer);
 
     rtWrapper._framebuffer = framebuffer;
-    rtWrapper._generateDepthBuffer = fullOptions.generateDepthBuffer;
-    rtWrapper._generateStencilBuffer = fullOptions.generateStencilBuffer ? true : false;
+    rtWrapper._generateDepthBuffer = generateDepthBuffer;
+    rtWrapper._generateStencilBuffer = generateStencilBuffer;
 
     rtWrapper.setTextures(texture);
+
+    this.updateRenderTargetTextureSampleCount(rtWrapper, samples);
 
     return rtWrapper;
 };
@@ -133,7 +137,8 @@ ThinEngine.prototype._createDepthStencilTexture = function (size: TextureSize, o
         size,
         internalOptions.generateStencil,
         internalOptions.comparisonFunction === 0 ? false : internalOptions.bilinearFiltering,
-        internalOptions.comparisonFunction
+        internalOptions.comparisonFunction,
+        internalOptions.samples
     );
 
     if (internalOptions.depthTextureFormat !== undefined) {
@@ -276,6 +281,7 @@ ThinEngine.prototype.updateRenderTargetTextureSampleCount = function (rtWrapper:
     }
 
     rtWrapper.texture.samples = samples;
+    rtWrapper._samples = samples;
     rtWrapper._depthStencilBuffer = this._setupFramebufferDepthAttachments(
         rtWrapper._generateStencilBuffer,
         rtWrapper._generateDepthBuffer,

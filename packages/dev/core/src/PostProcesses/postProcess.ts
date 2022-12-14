@@ -19,6 +19,7 @@ import { GetClass, RegisterClass } from "../Misc/typeStore";
 import { DrawWrapper } from "../Materials/drawWrapper";
 import type { AbstractScene } from "../abstractScene";
 import type { RenderTargetWrapper } from "../Engines/renderTargetWrapper";
+import { ShaderLanguage } from "../Materials/shaderLanguage";
 
 declare type Scene = import("../scene").Scene;
 declare type InternalTexture = import("../Materials/Textures/internalTexture").InternalTexture;
@@ -26,6 +27,28 @@ declare type WebVRFreeCamera = import("../Cameras/VR/webVRCamera").WebVRFreeCame
 declare type Animation = import("../Animations/animation").Animation;
 declare type PrePassRenderer = import("../Rendering/prePassRenderer").PrePassRenderer;
 declare type PrePassEffectConfiguration = import("../Rendering/prePassEffectConfiguration").PrePassEffectConfiguration;
+
+/**
+ * Allows for custom processing of the shader code used by a post process
+ */
+export type PostProcessCustomShaderCodeProcessing = {
+    /**
+     * If provided, will be called two times with the vertex and fragment code so that this code can be updated after the #include have been processed
+     */
+    processCodeAfterIncludes?: (postProcessName: string, shaderType: string, code: string) => string;
+    /**
+     * If provided, will be called two times with the vertex and fragment code so that this code can be updated before it is compiled by the GPU
+     */
+    processFinalCode?: (postProcessName: string, shaderType: string, code: string) => string;
+    /**
+     * If provided, will be called before creating the effect to collect additional custom bindings (defines, uniforms, samplers)
+     */
+    defineCustomBindings?: (postProcessName: string, defines: Nullable<string>, uniforms: string[], samplers: string[]) => Nullable<string>;
+    /**
+     * If provided, will be called when binding inputs to the shader code to allow the user to add custom bindings
+     */
+    bindCustomBindings?: (postProcessName: string, effect: Effect) => void;
+};
 
 /**
  * Size options for a post process
@@ -36,11 +59,32 @@ type TextureCache = { texture: RenderTargetWrapper; postProcessChannel: number; 
 
 /**
  * PostProcess can be used to apply a shader to a texture after it has been rendered
- * See https://doc.babylonjs.com/how_to/how_to_use_postprocesses
+ * See https://doc.babylonjs.com/features/featuresDeepDive/postProcesses/usePostProcesses
  */
 export class PostProcess {
     /** @internal */
     public _parentContainer: Nullable<AbstractScene> = null;
+
+    private static _CustomShaderCodeProcessing: { [postProcessName: string]: PostProcessCustomShaderCodeProcessing } = {};
+
+    /**
+     * Registers a shader code processing with a post process name.
+     * @param postProcessName name of the post process. Use null for the fallback shader code processing. This is the shader code processing that will be used in case no specific shader code processing has been associated to a post process name
+     * @param customShaderCodeProcessing shader code processing to associate to the post process name
+     * @returns
+     */
+    public static RegisterShaderCodeProcessing(postProcessName: Nullable<string>, customShaderCodeProcessing?: PostProcessCustomShaderCodeProcessing) {
+        if (!customShaderCodeProcessing) {
+            delete PostProcess._CustomShaderCodeProcessing[postProcessName ?? ""];
+            return;
+        }
+
+        PostProcess._CustomShaderCodeProcessing[postProcessName ?? ""] = customShaderCodeProcessing;
+    }
+
+    private static _GetShaderCodeProcessing(postProcessName: string) {
+        return PostProcess._CustomShaderCodeProcessing[postProcessName] ?? PostProcess._CustomShaderCodeProcessing[""];
+    }
 
     /**
      * Gets or sets the unique id of the post process
@@ -121,7 +165,7 @@ export class PostProcess {
 
     /**
      * List of inspectable custom properties (used by the Inspector)
-     * @see https://doc.babylonjs.com/how_to/debug_layer#extensibility
+     * @see https://doc.babylonjs.com/toolsAndResources/inspector#extensibility
      */
     public inspectableCustomProperties: IInspectable[];
 
@@ -157,9 +201,7 @@ export class PostProcess {
         this._samples = Math.min(n, this._engine.getCaps().maxMSAASamples);
 
         this._textures.forEach((texture) => {
-            if (texture.samples !== this._samples) {
-                this._engine.updateRenderTargetTextureSampleCount(texture, this._samples);
-            }
+            texture.setSamples(this._samples);
         });
     }
 
@@ -178,6 +220,7 @@ export class PostProcess {
     private _renderId = 0;
     private _textureType: number;
     private _textureFormat: number;
+    private _shaderLanguage: ShaderLanguage;
 
     /**
      * if externalTextureSamplerBinding is true, the "apply" method won't bind the textureSampler texture, it is expected to be done by the "outside" (by the onApplyObservable observer most probably).
@@ -211,6 +254,7 @@ export class PostProcess {
     protected _indexParameters: any;
     private _shareOutputWithPostProcess: Nullable<PostProcess>;
     private _texelSize = Vector2.Zero();
+
     /** @internal */
     public _forcedOutputTexture: Nullable<RenderTargetWrapper>;
 
@@ -392,7 +436,8 @@ export class PostProcess {
         vertexUrl: string = "postprocess",
         indexParameters?: any,
         blockCompilation = false,
-        textureFormat = Constants.TEXTUREFORMAT_RGBA
+        textureFormat = Constants.TEXTUREFORMAT_RGBA,
+        shaderLanguage = ShaderLanguage.GLSL
     ) {
         this.name = name;
         if (camera != null) {
@@ -412,6 +457,7 @@ export class PostProcess {
         this._reusable = reusable || false;
         this._textureType = textureType;
         this._textureFormat = textureFormat;
+        this._shaderLanguage = shaderLanguage;
 
         this._samplers = samplers || [];
         this._samplers.push("textureSampler");
@@ -500,17 +546,40 @@ export class PostProcess {
         vertexUrl?: string,
         fragmentUrl?: string
     ) {
+        const customShaderCodeProcessing = PostProcess._GetShaderCodeProcessing(this.name);
+        if (customShaderCodeProcessing?.defineCustomBindings) {
+            const newUniforms = uniforms?.slice() ?? [];
+            newUniforms.push(...this._parameters);
+
+            const newSamplers = samplers?.slice() ?? [];
+            newSamplers.push(...this._samplers);
+
+            defines = customShaderCodeProcessing.defineCustomBindings(this.name, defines, newUniforms, newSamplers);
+            uniforms = newUniforms;
+            samplers = newSamplers;
+        }
         this._postProcessDefines = defines;
         this._drawWrapper.effect = this._engine.createEffect(
             { vertex: vertexUrl ?? this._vertexUrl, fragment: fragmentUrl ?? this._fragmentUrl },
-            ["position"],
-            uniforms || this._parameters,
-            samplers || this._samplers,
-            defines !== null ? defines : "",
-            undefined,
-            onCompiled,
-            onError,
-            indexParameters || this._indexParameters
+            {
+                attributes: ["position"],
+                uniformsNames: uniforms || this._parameters,
+                uniformBuffersNames: [],
+                samplers: samplers || this._samplers,
+                defines: defines !== null ? defines : "",
+                fallbacks: null,
+                onCompiled: onCompiled ?? null,
+                onError: onError ?? null,
+                indexParameters: indexParameters || this._indexParameters,
+                processCodeAfterIncludes: customShaderCodeProcessing?.processCodeAfterIncludes
+                    ? (shaderType: string, code: string) => customShaderCodeProcessing!.processCodeAfterIncludes!(this.name, shaderType, code)
+                    : null,
+                processFinalCode: customShaderCodeProcessing?.processFinalCode
+                    ? (shaderType: string, code: string) => customShaderCodeProcessing!.processFinalCode!(this.name, shaderType, code)
+                    : null,
+                shaderLanguage: this._shaderLanguage,
+            },
+            this._engine
         );
     }
 
@@ -533,7 +602,8 @@ export class PostProcess {
                 this._textureCache[i].texture.width === textureSize.width &&
                 this._textureCache[i].texture.height === textureSize.height &&
                 this._textureCache[i].postProcessChannel === channel &&
-                this._textureCache[i].texture._generateDepthBuffer === textureOptions.generateDepthBuffer
+                this._textureCache[i].texture._generateDepthBuffer === textureOptions.generateDepthBuffer &&
+                this._textureCache[i].texture.samples === textureOptions.samples
             ) {
                 return this._textureCache[i].texture;
             }
@@ -590,6 +660,7 @@ export class PostProcess {
             samplingMode: this.renderTargetSamplingMode,
             type: this._textureType,
             format: this._textureFormat,
+            samples: this._samples,
         };
 
         this._textures.push(this._createRenderTargetTexture(textureSize, textureOptions, 0));
@@ -786,6 +857,8 @@ export class PostProcess {
         // Parameters
         this._drawWrapper.effect.setVector2("scale", this._scaleRatio);
         this.onApplyObservable.notifyObservers(this._drawWrapper.effect);
+
+        PostProcess._GetShaderCodeProcessing(this.name)?.bindCustomBindings?.(this.name, this._drawWrapper.effect);
 
         return this._drawWrapper.effect;
     }

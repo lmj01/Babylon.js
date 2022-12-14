@@ -28,6 +28,7 @@ import { _WarnImport } from "../Misc/devTools";
 import type { DataBuffer } from "../Buffers/dataBuffer";
 import { EffectFallbacks } from "../Materials/effectFallbacks";
 import { DrawWrapper } from "../Materials/drawWrapper";
+import { addClipPlaneUniforms, bindClipPlane, prepareDefinesForClipPlanes } from "../Materials/clipPlaneMaterialHelper";
 
 /**
  * Effect layer options. This helps customizing the behaviour
@@ -399,12 +400,8 @@ export abstract class EffectLayer {
             this._mainTexture.setMaterialForRendering(mesh, material);
         }
 
-        this._mainTexture.customIsReadyFunction = (mesh: AbstractMesh, refreshRate: number) => {
-            if (!mesh.isReady(false)) {
-                return false;
-            }
-            if (refreshRate === 0 && mesh.subMeshes) {
-                // full check: check that the effects are ready
+        this._mainTexture.customIsReadyFunction = (mesh: AbstractMesh, refreshRate: number, preWarm?: boolean) => {
+            if ((preWarm || refreshRate === 0) && mesh.subMeshes) {
                 for (let i = 0; i < mesh.subMeshes.length; ++i) {
                     const subMesh = mesh.subMeshes[i];
                     const material = subMesh.getMaterial();
@@ -648,25 +645,7 @@ export abstract class EffectLayer {
         }
 
         // ClipPlanes
-        const scene = this._scene;
-        if (scene.clipPlane) {
-            defines.push("#define CLIPPLANE");
-        }
-        if (scene.clipPlane2) {
-            defines.push("#define CLIPPLANE2");
-        }
-        if (scene.clipPlane3) {
-            defines.push("#define CLIPPLANE3");
-        }
-        if (scene.clipPlane4) {
-            defines.push("#define CLIPPLANE4");
-        }
-        if (scene.clipPlane5) {
-            defines.push("#define CLIPPLANE5");
-        }
-        if (scene.clipPlane6) {
-            defines.push("#define CLIPPLANE6");
-        }
+        prepareDefinesForClipPlanes(material, this._scene, defines);
 
         this._addCustomEffectDefines(defines);
 
@@ -675,30 +654,28 @@ export abstract class EffectLayer {
         const cachedDefines = drawWrapper.defines as string;
         const join = defines.join("\n");
         if (cachedDefines !== join) {
+            const uniforms = [
+                "world",
+                "mBones",
+                "viewProjection",
+                "glowColor",
+                "morphTargetInfluences",
+                "boneTextureWidth",
+                "diffuseMatrix",
+                "emissiveMatrix",
+                "opacityMatrix",
+                "opacityIntensity",
+                "morphTargetTextureInfo",
+                "morphTargetTextureIndices",
+            ];
+
+            addClipPlaneUniforms(uniforms);
+
             drawWrapper.setEffect(
                 this._engine.createEffect(
                     "glowMapGeneration",
                     attribs,
-                    [
-                        "world",
-                        "mBones",
-                        "viewProjection",
-                        "glowColor",
-                        "morphTargetInfluences",
-                        "boneTextureWidth",
-                        "diffuseMatrix",
-                        "emissiveMatrix",
-                        "opacityMatrix",
-                        "opacityIntensity",
-                        "morphTargetTextureInfo",
-                        "morphTargetTextureIndices",
-                        "vClipPlane",
-                        "vClipPlane2",
-                        "vClipPlane3",
-                        "vClipPlane4",
-                        "vClipPlane5",
-                        "vClipPlane6",
-                    ],
+                    uniforms,
                     ["diffuseSampler", "emissiveSampler", "opacitySampler", "boneSampler", "morphTargets"],
                     join,
                     fallbacks,
@@ -888,7 +865,7 @@ export abstract class EffectLayer {
         this.onBeforeRenderMeshToEffect.notifyObservers(ownerMesh);
 
         if (this._useMeshMaterial(renderingMesh)) {
-            renderingMesh.render(subMesh, hardwareInstancedRendering, replacementMesh || undefined);
+            renderingMesh.render(subMesh, enableAlphaMode, replacementMesh || undefined);
         } else if (this._isReady(subMesh, hardwareInstancedRendering, this._emissiveTextureAndColor.texture)) {
             const renderingMaterial = effectiveMesh._internalAbstractMeshDataInfo._materialForRenderPass?.[engine.currentRenderPassId];
 
@@ -984,7 +961,7 @@ export abstract class EffectLayer {
                 }
 
                 // Clip planes
-                MaterialHelper.BindClipPlane(effect, scene);
+                bindClipPlane(effect, material, scene);
             }
 
             // Draw

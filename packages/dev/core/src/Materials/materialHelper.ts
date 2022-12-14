@@ -18,7 +18,8 @@ import type { BaseTexture } from "../Materials/Textures/baseTexture";
 import type { MaterialDefines } from "./materialDefines";
 import { Color3 } from "../Maths/math.color";
 import type { EffectFallbacks } from "./effectFallbacks";
-import { ThinMaterialHelper } from "./thinMaterialHelper";
+import { prepareDefinesForClipPlanes } from "./clipPlaneMaterialHelper";
+import type { Material } from "./material";
 
 /**
  * "Static Class" containing the most commonly used helper while dealing with material for rendering purpose.
@@ -106,9 +107,35 @@ export class MaterialHelper {
     }
 
     /**
+     * Helper used to prepare the defines relative to the active camera
+     * @param scene defines the current scene
+     * @param defines specifies the list of active defines
+     * @returns true if the defines have been updated, else false
+     */
+    public static PrepareDefinesForCamera(scene: Scene, defines: any): boolean {
+        let changed = false;
+
+        if (scene.activeCamera) {
+            const wasOrtho = defines["CAMERA_ORTHOGRAPHIC"] ? 1 : 0;
+            const wasPersp = defines["CAMERA_PERSPECTIVE"] ? 1 : 0;
+            const isOrtho = scene.activeCamera.mode === Camera.ORTHOGRAPHIC_CAMERA ? 1 : 0;
+            const isPersp = scene.activeCamera.mode === Camera.PERSPECTIVE_CAMERA ? 1 : 0;
+
+            if (wasOrtho ^ isOrtho || wasPersp ^ isPersp) {
+                defines["CAMERA_ORTHOGRAPHIC"] = isOrtho === 1;
+                defines["CAMERA_PERSPECTIVE"] = isPersp === 1;
+                changed = true;
+            }
+        }
+
+        return changed;
+    }
+
+    /**
      * Helper used to prepare the list of defines associated with frame values for shader compilation
      * @param scene defines the current scene
      * @param engine defines the current engine
+     * @param material defines the material we are compiling the shader for
      * @param defines specifies the list of active defines
      * @param useInstances defines if instances have to be turned on
      * @param useClipPlane defines if clip plane have to be turned on
@@ -117,54 +144,16 @@ export class MaterialHelper {
     public static PrepareDefinesForFrameBoundValues(
         scene: Scene,
         engine: Engine,
+        material: Material,
         defines: any,
         useInstances: boolean,
         useClipPlane: Nullable<boolean> = null,
         useThinInstances: boolean = false
     ): void {
-        let changed = false;
-        let useClipPlane1 = false;
-        let useClipPlane2 = false;
-        let useClipPlane3 = false;
-        let useClipPlane4 = false;
-        let useClipPlane5 = false;
-        let useClipPlane6 = false;
+        let changed = MaterialHelper.PrepareDefinesForCamera(scene, defines);
 
-        useClipPlane1 = useClipPlane == null ? scene.clipPlane !== undefined && scene.clipPlane !== null : useClipPlane;
-        useClipPlane2 = useClipPlane == null ? scene.clipPlane2 !== undefined && scene.clipPlane2 !== null : useClipPlane;
-        useClipPlane3 = useClipPlane == null ? scene.clipPlane3 !== undefined && scene.clipPlane3 !== null : useClipPlane;
-        useClipPlane4 = useClipPlane == null ? scene.clipPlane4 !== undefined && scene.clipPlane4 !== null : useClipPlane;
-        useClipPlane5 = useClipPlane == null ? scene.clipPlane5 !== undefined && scene.clipPlane5 !== null : useClipPlane;
-        useClipPlane6 = useClipPlane == null ? scene.clipPlane6 !== undefined && scene.clipPlane6 !== null : useClipPlane;
-
-        if (defines["CLIPPLANE"] !== useClipPlane1) {
-            defines["CLIPPLANE"] = useClipPlane1;
-            changed = true;
-        }
-
-        if (defines["CLIPPLANE2"] !== useClipPlane2) {
-            defines["CLIPPLANE2"] = useClipPlane2;
-            changed = true;
-        }
-
-        if (defines["CLIPPLANE3"] !== useClipPlane3) {
-            defines["CLIPPLANE3"] = useClipPlane3;
-            changed = true;
-        }
-
-        if (defines["CLIPPLANE4"] !== useClipPlane4) {
-            defines["CLIPPLANE4"] = useClipPlane4;
-            changed = true;
-        }
-
-        if (defines["CLIPPLANE5"] !== useClipPlane5) {
-            defines["CLIPPLANE5"] = useClipPlane5;
-            changed = true;
-        }
-
-        if (defines["CLIPPLANE6"] !== useClipPlane6) {
-            defines["CLIPPLANE6"] = useClipPlane6;
-            changed = true;
+        if (useClipPlane !== false) {
+            changed = prepareDefinesForClipPlanes(material, scene, defines);
         }
 
         if (defines["DEPTHPREPASS"] !== !engine.getColorWrite()) {
@@ -213,6 +202,9 @@ export class MaterialHelper {
         } else {
             defines["NUM_BONE_INFLUENCERS"] = 0;
             defines["BonesPerMesh"] = 0;
+            if (defines["BONETEXTURE"] !== undefined) {
+                defines["BONETEXTURE"] = false;
+            }
         }
     }
 
@@ -507,7 +499,7 @@ export class MaterialHelper {
         defines["SHADOWMEDIUMQUALITY" + lightIndex] = false;
 
         if (mesh && mesh.receiveShadows && scene.shadowsEnabled && light.shadowEnabled) {
-            const shadowGenerator = light.getShadowGenerator();
+            const shadowGenerator = light.getShadowGenerator(scene.activeCamera) ?? light.getShadowGenerator();
             if (shadowGenerator) {
                 const shadowMap = shadowGenerator.getShadowMap();
                 if (shadowMap) {
@@ -1017,14 +1009,5 @@ export class MaterialHelper {
             }
             effect.setFloat("logarithmicDepthConstant", 2.0 / (Math.log(camera.maxZ + 1.0) / Math.LN2));
         }
-    }
-
-    /**
-     * Binds the clip plane information from the scene to the effect.
-     * @param effect The effect we are binding the data to
-     * @param scene The scene the clip plane information are extracted from
-     */
-    public static BindClipPlane(effect: Effect, scene: Scene): void {
-        ThinMaterialHelper.BindClipPlane(effect, scene);
     }
 }

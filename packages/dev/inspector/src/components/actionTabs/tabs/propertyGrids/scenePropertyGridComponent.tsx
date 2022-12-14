@@ -27,6 +27,8 @@ import { ButtonLineComponent } from "shared-ui-components/lines/buttonLineCompon
 import { AnimationGridComponent } from "./animations/animationPropertyGridComponent";
 
 import "core/Physics/physicsEngineComponent";
+import "core/Physics/v1/physicsEngineComponent";
+import "core/Physics/v1/physicsEngineComponent";
 
 interface IScenePropertyGridComponentProps {
     globalState: GlobalState;
@@ -294,7 +296,7 @@ export class ScenePropertyGridComponent extends React.Component<IScenePropertyGr
                         step={0.1}
                         label="Vignette center X"
                         target={imageProcessing}
-                        propertyName="vignetteCentreX"
+                        propertyName="vignetteCenterX"
                         onPropertyChangedObservable={this.props.onPropertyChangedObservable}
                     />
                     <SliderLineComponent
@@ -304,7 +306,7 @@ export class ScenePropertyGridComponent extends React.Component<IScenePropertyGr
                         step={0.1}
                         label="Vignette center Y"
                         target={imageProcessing}
-                        propertyName="vignetteCentreY"
+                        propertyName="vignetteCenterY"
                         onPropertyChangedObservable={this.props.onPropertyChangedObservable}
                     />
                     <Color3LineComponent

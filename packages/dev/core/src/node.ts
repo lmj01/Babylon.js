@@ -12,6 +12,7 @@ import { _WarnImport } from "./Misc/devTools";
 import type { AbstractActionManager } from "./Actions/abstractActionManager";
 import type { IInspectable } from "./Misc/iInspectable";
 import type { AbstractScene } from "./abstractScene";
+import type { IAccessibilityTag } from "./IAccessibilityTag";
 
 declare type Animatable = import("./Animations/animatable").Animatable;
 declare type AnimationPropertiesOverride = import("./Animations/animationPropertiesOverride").AnimationPropertiesOverride;
@@ -117,9 +118,25 @@ export class Node implements IBehaviorAware<Node> {
 
     /**
      * List of inspectable custom properties (used by the Inspector)
-     * @see https://doc.babylonjs.com/how_to/debug_layer#extensibility
+     * @see https://doc.babylonjs.com/toolsAndResources/inspector#extensibility
      */
     public inspectableCustomProperties: IInspectable[];
+
+    /**
+     * Gets or sets the accessibility tag to describe the node for accessibility purpose.
+     */
+    public set accessibilityTag(value: Nullable<IAccessibilityTag>) {
+        this._accessibilityTag = value;
+        this.onAccessibilityTagChangedObservable.notifyObservers(value);
+    }
+
+    public get accessibilityTag() {
+        return this._accessibilityTag;
+    }
+
+    protected _accessibilityTag: Nullable<IAccessibilityTag> = null;
+
+    public onAccessibilityTagChangedObservable = new Observable<Nullable<IAccessibilityTag>>();
 
     /**
      * Gets or sets a boolean used to define if the node must be serialized
@@ -193,7 +210,7 @@ export class Node implements IBehaviorAware<Node> {
 
     /**
      * Gets or sets the parent of the node (without keeping the current position in the scene)
-     * @see https://doc.babylonjs.com/how_to/parenting
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/mesh/transforms/parent_pivot/parent
      */
     public set parent(parent: Nullable<Node>) {
         if (this._parentNode === parent) {
@@ -355,7 +372,7 @@ export class Node implements IBehaviorAware<Node> {
 
     /**
      * Attach a behavior to the node
-     * @see https://doc.babylonjs.com/features/behaviour
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/behaviors
      * @param behavior defines the behavior to attach
      * @param attachImmediately defines that the behavior must be attached even if the scene is still loading
      * @returns the current Node
@@ -383,7 +400,7 @@ export class Node implements IBehaviorAware<Node> {
 
     /**
      * Remove an attached behavior
-     * @see https://doc.babylonjs.com/features/behaviour
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/behaviors
      * @param behavior defines the behavior to attach
      * @returns the current Node
      */
@@ -402,7 +419,7 @@ export class Node implements IBehaviorAware<Node> {
 
     /**
      * Gets the list of attached behaviors
-     * @see https://doc.babylonjs.com/features/behaviour
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/behaviors
      */
     public get behaviors(): Behavior<Node>[] {
         return this._behaviors;
@@ -411,7 +428,7 @@ export class Node implements IBehaviorAware<Node> {
     /**
      * Gets an attached behavior by name
      * @param name defines the name of the behavior to look for
-     * @see https://doc.babylonjs.com/features/behaviour
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/behaviors
      * @returns null if behavior was not found else the requested behavior
      */
     public getBehaviorByName(name: string): Nullable<Behavior<Node>> {
@@ -589,10 +606,8 @@ export class Node implements IBehaviorAware<Node> {
             return;
         }
         this._nodeDataStorage._isEnabled = value;
-
-        this._nodeDataStorage._onEnabledStateChangedObservable.notifyObservers(value);
-
         this._syncParentEnabledState();
+        this._nodeDataStorage._onEnabledStateChangedObservable.notifyObservers(value);
     }
 
     /**

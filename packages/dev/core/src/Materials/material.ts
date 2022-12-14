@@ -44,6 +44,7 @@ import type {
 } from "./materialPluginEvent";
 import { MaterialPluginEvent } from "./materialPluginEvent";
 import type { ShaderCustomProcessingFunction } from "../Engines/Processors/shaderProcessingOptions";
+import type { IClipPlanesHolder } from "../Misc/interfaces/iClipPlanesHolder";
 
 declare type PrePassRenderer = import("../Rendering/prePassRenderer").PrePassRenderer;
 declare type Mesh = import("../Meshes/mesh").Mesh;
@@ -80,7 +81,7 @@ export interface ICustomShaderNameResolveOptions {
 /**
  * Base class for the main features of a material in Babylon.js
  */
-export class Material implements IAnimatable {
+export class Material implements IAnimatable, IClipPlanesHolder {
     /**
      * Returns the triangle fill mode
      */
@@ -293,7 +294,7 @@ export class Material implements IAnimatable {
 
     /**
      * List of inspectable custom properties (used by the Inspector)
-     * @see https://doc.babylonjs.com/how_to/debug_layer#extensibility
+     * @see https://doc.babylonjs.com/toolsAndResources/inspector#extensibility
      */
     public inspectableCustomProperties: IInspectable[];
 
@@ -367,6 +368,43 @@ export class Material implements IAnimatable {
      */
     public get cullBackFaces(): boolean {
         return this._cullBackFaces;
+    }
+
+    private _blockDirtyMechanism = false;
+
+    /**
+     * Block the dirty-mechanism for this specific material
+     * When set to false after being true the material will be marked as dirty.
+     */
+    public get blockDirtyMechanism(): boolean {
+        return this._blockDirtyMechanism;
+    }
+
+    public set blockDirtyMechanism(value: boolean) {
+        if (this._blockDirtyMechanism === value) {
+            return;
+        }
+
+        this._blockDirtyMechanism = value;
+
+        if (!value) {
+            this.markDirty();
+        }
+    }
+
+    /**
+     * This allows you to modify the material without marking it as dirty after every change.
+     * This function should be used if you need to make more than one dirty-enabling change to the material - adding a texture, setting a new fill mode and so on.
+     * The callback will pass the material as an argument, so you can make your changes to it.
+     * @param callback the callback to be executed that will update the material
+     */
+    public atomicMaterialsUpdate(callback: (material: this) => void): void {
+        this.blockDirtyMechanism = true;
+        try {
+            callback(this);
+        } finally {
+            this.blockDirtyMechanism = false;
+        }
     }
 
     /**
@@ -690,6 +728,36 @@ export class Material implements IAnimatable {
         this._fillMode = value;
         this.markAsDirty(Material.MiscDirtyFlag);
     }
+
+    /**
+     * Gets or sets the active clipplane 1
+     */
+    public clipPlane: Nullable<Plane>;
+
+    /**
+     * Gets or sets the active clipplane 2
+     */
+    public clipPlane2: Nullable<Plane>;
+
+    /**
+     * Gets or sets the active clipplane 3
+     */
+    public clipPlane3: Nullable<Plane>;
+
+    /**
+     * Gets or sets the active clipplane 4
+     */
+    public clipPlane4: Nullable<Plane>;
+
+    /**
+     * Gets or sets the active clipplane 5
+     */
+    public clipPlane5: Nullable<Plane>;
+
+    /**
+     * Gets or sets the active clipplane 6
+     */
+    public clipPlane6: Nullable<Plane>;
 
     /**
      * Gives access to the stencil properties of the material
@@ -1086,7 +1154,15 @@ export class Material implements IAnimatable {
         const reverse = orientation === Material.ClockWiseSideOrientation;
 
         engine.enableEffect(effect ? effect : this._getDrawWrapper());
-        engine.setState(this.backFaceCulling, this.zOffset, false, reverse, this.cullBackFaces, this.stencil, this.zOffsetUnits);
+        engine.setState(
+            this.backFaceCulling,
+            this.zOffset,
+            false,
+            reverse,
+            this._scene._mirroredCameraPosition ? !this.cullBackFaces : this.cullBackFaces,
+            this.stencil,
+            this.zOffsetUnits
+        );
 
         return reverse;
     }
@@ -1436,7 +1512,7 @@ export class Material implements IAnimatable {
      * @param flag defines a flag used to determine which parts of the material have to be marked as dirty
      */
     public markAsDirty(flag: number): void {
-        if (this.getScene().blockMaterialDirtyMechanism) {
+        if (this.getScene().blockMaterialDirtyMechanism || this._blockDirtyMechanism) {
             return;
         }
 
@@ -1497,7 +1573,7 @@ export class Material implements IAnimatable {
      * @param func defines a function which checks material defines against the submeshes
      */
     protected _markAllSubMeshesAsDirty(func: (defines: MaterialDefines) => void) {
-        if (this.getScene().blockMaterialDirtyMechanism) {
+        if (this.getScene().blockMaterialDirtyMechanism || this._blockDirtyMechanism) {
             return;
         }
 
@@ -1528,7 +1604,7 @@ export class Material implements IAnimatable {
      * Indicates that the scene should check if the rendering now needs a prepass
      */
     protected _markScenePrePassDirty() {
-        if (this.getScene().blockMaterialDirtyMechanism) {
+        if (this.getScene().blockMaterialDirtyMechanism || this._blockDirtyMechanism) {
             return;
         }
 

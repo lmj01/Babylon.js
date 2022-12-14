@@ -106,6 +106,7 @@ export class Observer<T> {
  */
 export class Observable<T> {
     private _observers = new Array<Observer<T>>();
+    private _numObserversMarkedAsDeleted = 0;
 
     /**
      * @internal
@@ -140,6 +141,7 @@ export class Observable<T> {
 
     /**
      * Gets the list of observers
+     * Note that observers that were recently deleted may still be present in the list because they are only really deleted on the next javascript tick!
      */
     public get observers(): Array<Observer<T>> {
         return this._observers;
@@ -247,6 +249,7 @@ export class Observable<T> {
      * @internal
      */
     public _deferUnregister(observer: Observer<T>): void {
+        this._numObserversMarkedAsDeleted++;
         observer.unregisterOnNextCall = false;
         observer._willBeUnregistered = true;
         setTimeout(() => {
@@ -264,6 +267,7 @@ export class Observable<T> {
         const index = this._observers.indexOf(observer);
 
         if (index !== -1) {
+            this._numObserversMarkedAsDeleted--;
             this._observers.splice(index, 1);
             return true;
         }
@@ -318,14 +322,14 @@ export class Observable<T> {
             }
 
             if (obs.mask & mask) {
+                if (obs.unregisterOnNextCall) {
+                    this._deferUnregister(obs);
+                }
+
                 if (obs.scope) {
                     state.lastReturnValue = obs.callback.apply(obs.scope, [eventData, state]);
                 } else {
                     state.lastReturnValue = obs.callback(eventData, state);
-                }
-
-                if (obs.unregisterOnNextCall) {
-                    this._deferUnregister(obs);
                 }
             }
             if (state.skipNextObservers) {
@@ -350,11 +354,11 @@ export class Observable<T> {
         state.mask = mask;
         state.skipNextObservers = false;
 
-        observer.callback(eventData, state);
-
         if (observer.unregisterOnNextCall) {
             this._deferUnregister(observer);
         }
+
+        observer.callback(eventData, state);
     }
 
     /**
@@ -362,7 +366,7 @@ export class Observable<T> {
      * @returns true is the Observable has at least one Observer registered
      */
     public hasObservers(): boolean {
-        return this._observers.length > 0;
+        return this._observers.length - this._numObserversMarkedAsDeleted > 0;
     }
 
     /**

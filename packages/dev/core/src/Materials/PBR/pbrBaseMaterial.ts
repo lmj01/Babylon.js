@@ -47,6 +47,7 @@ import { PBRAnisotropicConfiguration } from "./pbrAnisotropicConfiguration";
 import { PBRSheenConfiguration } from "./pbrSheenConfiguration";
 import { PBRSubSurfaceConfiguration } from "./pbrSubSurfaceConfiguration";
 import { DetailMapConfiguration } from "../material.detailMapConfiguration";
+import { addClipPlaneUniforms, bindClipPlane } from "../clipPlaneMaterialHelper";
 
 const onCreatedEffectParameters = { effect: null as unknown as Effect, subMesh: null as unknown as Nullable<SubMesh> };
 
@@ -237,6 +238,8 @@ export class PBRMaterialDefines extends MaterialDefines implements IImageProcess
     public POINTSIZE = false;
     public FOG = false;
     public LOGARITHMICDEPTH = false;
+    public CAMERA_ORTHOGRAPHIC = false;
+    public CAMERA_PERSPECTIVE = false;
 
     public FORCENORMALFORWARD = false;
 
@@ -271,7 +274,7 @@ export class PBRMaterialDefines extends MaterialDefines implements IImageProcess
  *
  * This offers the main features of a standard PBR material.
  * For more information, please refer to the documentation :
- * https://doc.babylonjs.com/how_to/physically_based_rendering
+ * https://doc.babylonjs.com/features/featuresDeepDive/materials/using/introToPBR
  */
 export abstract class PBRBaseMaterial extends PushMaterial {
     /**
@@ -1381,12 +1384,6 @@ export abstract class PBRBaseMaterial extends PushMaterial {
             "vBumpInfos",
             "vLightmapInfos",
             "mBones",
-            "vClipPlane",
-            "vClipPlane2",
-            "vClipPlane3",
-            "vClipPlane4",
-            "vClipPlane5",
-            "vClipPlane6",
             "albedoMatrix",
             "ambientMatrix",
             "opacityMatrix",
@@ -1464,6 +1461,7 @@ export abstract class PBRBaseMaterial extends PushMaterial {
 
         PrePassConfiguration.AddUniforms(uniforms);
         PrePassConfiguration.AddSamplers(samplers);
+        addClipPlaneUniforms(uniforms);
 
         if (ImageProcessingConfiguration) {
             ImageProcessingConfiguration.PrepareUniforms(uniforms, defines);
@@ -1841,7 +1839,7 @@ export abstract class PBRBaseMaterial extends PushMaterial {
         }
 
         // Values that need to be evaluated on every frame
-        MaterialHelper.PrepareDefinesForFrameBoundValues(scene, engine, defines, useInstances ? true : false, useClipPlane, useThinInstances);
+        MaterialHelper.PrepareDefinesForFrameBoundValues(scene, engine, this, defines, useInstances ? true : false, useClipPlane, useThinInstances);
 
         // External config
         this._eventInfo.defines = defines;
@@ -2275,7 +2273,7 @@ export abstract class PBRBaseMaterial extends PushMaterial {
             this._callbackPluginEventBindForSubMesh(this._eventInfo);
 
             // Clip plane
-            MaterialHelper.BindClipPlane(this._activeEffect, scene);
+            bindClipPlane(this._activeEffect, this, scene);
 
             this.bindEyePosition(effect);
         } else if (scene.getEngine()._features.needToAlwaysBindUniformBuffers) {
@@ -2319,6 +2317,7 @@ export abstract class PBRBaseMaterial extends PushMaterial {
 
     /**
      * Returns the animatable textures.
+     * If material have animatable metallic texture, then reflectivity texture will not be returned, even if it has animations.
      * @returns - Array of animatable textures.
      */
     public getAnimatables(): IAnimatable[] {
@@ -2356,6 +2355,18 @@ export abstract class PBRBaseMaterial extends PushMaterial {
 
         if (this._lightmapTexture && this._lightmapTexture.animations && this._lightmapTexture.animations.length > 0) {
             results.push(this._lightmapTexture);
+        }
+
+        if (this._metallicReflectanceTexture && this._metallicReflectanceTexture.animations && this._metallicReflectanceTexture.animations.length > 0) {
+            results.push(this._metallicReflectanceTexture);
+        }
+
+        if (this._reflectanceTexture && this._reflectanceTexture.animations && this._reflectanceTexture.animations.length > 0) {
+            results.push(this._reflectanceTexture);
+        }
+
+        if (this._microSurfaceTexture && this._microSurfaceTexture.animations && this._microSurfaceTexture.animations.length > 0) {
+            results.push(this._microSurfaceTexture);
         }
 
         return results;
@@ -2457,6 +2468,10 @@ export abstract class PBRBaseMaterial extends PushMaterial {
             return true;
         }
 
+        if (this._emissiveTexture === texture) {
+            return true;
+        }
+
         if (this._reflectivityTexture === texture) {
             return true;
         }
@@ -2490,18 +2505,20 @@ export abstract class PBRBaseMaterial extends PushMaterial {
 
     /**
      * Sets the required values to the prepass renderer.
+     * It can't be sets when subsurface scattering of this material is disabled.
+     * When scene have ability to enable subsurface prepass effect, it will enable.
      */
     public setPrePassRenderer(): boolean {
-        if (this.subSurface?.isScatteringEnabled) {
-            const subSurfaceConfiguration = this.getScene().enableSubSurfaceForPrePass();
-            if (subSurfaceConfiguration) {
-                subSurfaceConfiguration.enabled = true;
-            }
-
-            return true;
+        if (!this.subSurface?.isScatteringEnabled) {
+            return false;
         }
 
-        return false;
+        const subSurfaceConfiguration = this.getScene().enableSubSurfaceForPrePass();
+        if (subSurfaceConfiguration) {
+            subSurfaceConfiguration.enabled = true;
+        }
+
+        return true;
     }
 
     /**

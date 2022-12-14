@@ -311,7 +311,7 @@ export class GLTFFileLoader implements IDisposable, ISceneLoaderPluginAsync, ISc
 
     /**
      * Callback raised when the loader creates a skin after parsing the glTF properties of the skin node.
-     * @see https://doc.babylonjs.com/divingDeeper/importers/glTF/glTFSkinning#ignoring-the-transform-of-the-skinned-mesh
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/importers/glTF/glTFSkinning#ignoring-the-transform-of-the-skinned-mesh
      * @param node - the transform node that corresponds to the original glTF skin node used for animations
      * @param skinnedNode - the transform node that is the skinned mesh itself or the parent of the skinned meshes
      */
@@ -965,8 +965,8 @@ export class GLTFFileLoader implements IDisposable, ISceneLoaderPluginAsync, ISc
             }
 
             const length = dataReader.readUint32();
-            if (dataReader.buffer.byteLength !== 0 && length !== dataReader.buffer.byteLength) {
-                throw new Error(`Length in header does not match actual data length: ${length} != ${dataReader.buffer.byteLength}`);
+            if (!this.useRangeRequests && length !== dataReader.buffer.byteLength) {
+                Logger.Warn(`Length in header does not match actual data length: ${length} != ${dataReader.buffer.byteLength}`);
             }
 
             let unpacked: Promise<IGLTFLoaderData>;

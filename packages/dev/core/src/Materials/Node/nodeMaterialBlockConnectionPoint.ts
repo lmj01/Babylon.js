@@ -3,8 +3,7 @@ import { NodeMaterialBlockTargets } from "./Enums/nodeMaterialBlockTargets";
 import type { Nullable } from "../../types";
 import type { InputBlock } from "./Blocks/Input/inputBlock";
 import { Observable } from "../../Misc/observable";
-
-declare type NodeMaterialBlock = import("./nodeMaterialBlock").NodeMaterialBlock;
+import type { NodeMaterialBlock } from "./nodeMaterialBlock";
 
 /**
  * Enum used to define the compatibility state between two connection points
@@ -514,6 +513,20 @@ export class NodeMaterialConnectionPoint {
         this._enforceAssociatedVariableName = false;
         endpoint._enforceAssociatedVariableName = false;
         return this;
+    }
+
+    /**
+     * Fill the list of excluded connection point types with all types other than those passed in the parameter
+     * @param mask Types (ORed values of NodeMaterialBlockConnectionPointTypes) that are allowed, and thus will not be pushed to the excluded list
+     */
+    public addExcludedConnectionPointFromAllowedTypes(mask: number): void {
+        let bitmask = 1;
+        while (bitmask < NodeMaterialBlockConnectionPointTypes.All) {
+            if (!(mask & bitmask)) {
+                this.excludedConnectionPointTypes.push(bitmask);
+            }
+            bitmask = bitmask << 1;
+        }
     }
 
     /**

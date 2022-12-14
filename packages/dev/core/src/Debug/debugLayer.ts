@@ -4,6 +4,7 @@ import { Scene } from "../scene";
 import { Engine } from "../Engines/engine";
 import { EngineStore } from "../Engines/engineStore";
 import type { IInspectable } from "../Misc/iInspectable";
+import type { Camera } from "../Cameras/camera";
 
 // declare INSPECTOR namespace for compilation issue
 declare let INSPECTOR: any;
@@ -52,7 +53,7 @@ export interface IExplorerAdditionalChild {
     getClassName(): string;
     /**
      * List of inspectable custom properties (used by the Inspector)
-     * @see https://doc.babylonjs.com/how_to/debug_layer#extensibility
+     * @see https://doc.babylonjs.com/toolsAndResources/inspector#extensibility
      */
     inspectableCustomProperties: IInspectable[];
 }
@@ -123,6 +124,10 @@ export interface IInspectorOptions {
      * Optional initial tab (default to DebugLayerTab.Properties)
      */
     initialTab?: DebugLayerTab;
+    /**
+     * Optional camera to use to render the gizmos from the inspector (default to the scene.activeCamera or the latest from scene.activeCameras)
+     */
+    gizmoCamera?: Camera;
 }
 
 declare module "../scene" {
@@ -135,7 +140,7 @@ declare module "../scene" {
 
         /**
          * Gets the debug layer (aka Inspector) associated with the scene
-         * @see https://doc.babylonjs.com/features/playground_debuglayer
+         * @see https://doc.babylonjs.com/toolsAndResources/inspector
          */
         debugLayer: DebugLayer;
     }
@@ -180,7 +185,7 @@ export enum DebugLayerTab {
 /**
  * The debug layer (aka Inspector) is the go to tool in order to better understand
  * what is happening in your scene
- * @see https://doc.babylonjs.com/features/playground_debuglayer
+ * @see https://doc.babylonjs.com/toolsAndResources/inspector
  */
 export class DebugLayer {
     /**
@@ -231,7 +236,7 @@ export class DebugLayer {
      * Instantiates a new debug layer.
      * The debug layer (aka Inspector) is the go to tool in order to better understand
      * what is happening in your scene
-     * @see https://doc.babylonjs.com/features/playground_debuglayer
+     * @see https://doc.babylonjs.com/toolsAndResources/inspector
      * @param scene Defines the scene to inspect
      */
     constructor(scene?: Scene) {

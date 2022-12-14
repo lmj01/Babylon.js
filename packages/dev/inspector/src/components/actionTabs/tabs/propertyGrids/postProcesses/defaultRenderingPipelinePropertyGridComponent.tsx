@@ -65,8 +65,8 @@ export class DefaultRenderingPipelinePropertyGridComponent extends React.Compone
                                 lockObject={this.props.lockObject}
                                 label="Threshold"
                                 minimum={0}
-                                maximum={1}
-                                step={0.05}
+                                maximum={2.0}
+                                step={0.01}
                                 target={renderPipeline}
                                 propertyName="bloomThreshold"
                                 onPropertyChangedObservable={this.props.onPropertyChangedObservable}
@@ -371,7 +371,7 @@ export class DefaultRenderingPipelinePropertyGridComponent extends React.Compone
                                 step={0.1}
                                 label="Vignette center X"
                                 target={renderPipeline.imageProcessing}
-                                propertyName="vignetteCentreX"
+                                propertyName="vignetteCenterX"
                                 onPropertyChangedObservable={this.props.onPropertyChangedObservable}
                             />
                             <SliderLineComponent
@@ -381,7 +381,7 @@ export class DefaultRenderingPipelinePropertyGridComponent extends React.Compone
                                 step={0.1}
                                 label="Vignette center Y"
                                 target={renderPipeline.imageProcessing}
-                                propertyName="vignetteCentreY"
+                                propertyName="vignetteCenterY"
                                 onPropertyChangedObservable={this.props.onPropertyChangedObservable}
                             />
                             <Color3LineComponent

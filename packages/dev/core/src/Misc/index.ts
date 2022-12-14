@@ -55,10 +55,12 @@ export * from "./timer";
 export * from "./copyTools";
 export * from "./reflector";
 export * from "./domManagement";
-export * from "./computePressure";
+export * from "./pressureObserverWrapper";
 export * from "./PerformanceViewer/index";
 export * from "./coroutine";
 export * from "./guid";
 export * from "./error";
 // eslint-disable-next-line import/export
 export * from "./observableCoroutine";
+export * from "./copyTextureToTexture";
+export * from "./dumpTools";

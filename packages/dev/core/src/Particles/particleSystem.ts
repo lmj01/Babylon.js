@@ -41,10 +41,10 @@ import { Color4, Color3, TmpColors } from "../Maths/math.color";
 import type { ISize } from "../Maths/math.size";
 import type { BaseTexture } from "../Materials/Textures/baseTexture";
 import { ThinEngine } from "../Engines/thinEngine";
-import { ThinMaterialHelper } from "../Materials/thinMaterialHelper";
 import { MaterialHelper } from "../Materials/materialHelper";
 
 import "../Engines/Extensions/engine.alpha";
+import { addClipPlaneUniforms, prepareDefinesForClipPlanes, bindClipPlane } from "../Materials/clipPlaneMaterialHelper";
 
 declare type AbstractMesh = import("../Meshes/abstractMesh").AbstractMesh;
 declare type ProceduralTexture = import("../Materials/Textures/Procedurals/proceduralTexture").ProceduralTexture;
@@ -55,7 +55,7 @@ declare type Engine = import("../Engines/engine").Engine;
  * This represents a particle system in Babylon.
  * Particles are often small sprites used to simulate hard-to-reproduce phenomena like fire, smoke, water, or abstract visual effects like magic glitter and faery dust.
  * Particles can take different shapes while emitted like box, sphere, cone or you can write your custom function.
- * @example https://doc.babylonjs.com/babylon101/particles
+ * @example https://doc.babylonjs.com/features/featuresDeepDive/particles/particle_system/particle_system_intro
  */
 export class ParticleSystem extends BaseParticleSystem implements IDisposable, IAnimatable, IParticleSystem {
     /**
@@ -70,6 +70,10 @@ export class ParticleSystem extends BaseParticleSystem implements IDisposable, I
      * Special billboard mode where the particle will be biilboard to the camera but rotated to align with direction
      */
     public static readonly BILLBOARDMODE_STRETCHED = Constants.PARTICLES_BILLBOARDMODE_STRETCHED;
+    /**
+     * Special billboard mode where the particle will be billboard to the camera but only around the axis of the direction of particle emission
+     */
+    public static readonly BILLBOARDMODE_STRETCHED_LOCAL = Constants.PARTICLES_BILLBOARDMODE_STRETCHED_LOCAL;
 
     /**
      * This function can be defined to provide custom update for active particles.
@@ -157,6 +161,9 @@ export class ParticleSystem extends BaseParticleSystem implements IDisposable, I
     /** @internal */
     public _currentStartSize2 = 0;
 
+    /** Indicates that the update of particles is done in the animate function */
+    public readonly updateInAnimate = true;
+
     private readonly _rawTextureWidth = 256;
     private _rampGradientsTexture: Nullable<RawTexture>;
     private _useRampGradients = false;
@@ -168,7 +175,7 @@ export class ParticleSystem extends BaseParticleSystem implements IDisposable, I
     public defaultViewMatrix: Matrix;
 
     /** Gets or sets a boolean indicating that ramp gradients must be used
-     * @see https://doc.babylonjs.com/babylon101/particles#ramp-gradients
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/particles/particle_system/particle_system_intro#ramp-gradients
      */
     public get useRampGradients(): boolean {
         return this._useRampGradients;
@@ -206,6 +213,9 @@ export class ParticleSystem extends BaseParticleSystem implements IDisposable, I
      * Specifies if the particles are updated in emitter local space or world space
      */
     public isLocal = false;
+
+    /** Indicates that the particle system is CPU based */
+    public readonly isGPU = false;
 
     private _rootParticleSystem: Nullable<ParticleSystem>;
     //end of Sub-emitter
@@ -1087,7 +1097,7 @@ export class ParticleSystem extends BaseParticleSystem implements IDisposable, I
             this._vertexBufferSize += 1;
         }
 
-        if (!this._isBillboardBased || this.billboardMode === ParticleSystem.BILLBOARDMODE_STRETCHED) {
+        if (!this._isBillboardBased || this.billboardMode === ParticleSystem.BILLBOARDMODE_STRETCHED || this.billboardMode === ParticleSystem.BILLBOARDMODE_STRETCHED_LOCAL) {
             this._vertexBufferSize += 3;
         }
 
@@ -1123,7 +1133,7 @@ export class ParticleSystem extends BaseParticleSystem implements IDisposable, I
             dataOffset += 1;
         }
 
-        if (!this._isBillboardBased || this.billboardMode === ParticleSystem.BILLBOARDMODE_STRETCHED) {
+        if (!this._isBillboardBased || this.billboardMode === ParticleSystem.BILLBOARDMODE_STRETCHED || this.billboardMode === ParticleSystem.BILLBOARDMODE_STRETCHED_LOCAL) {
             const directionBuffer = this._vertexBuffer.createVertexBuffer("direction", dataOffset, 3, this._vertexBufferSize, this._useInstancing);
             this._vertexBuffers["direction"] = directionBuffer;
             dataOffset += 3;
@@ -1361,7 +1371,7 @@ export class ParticleSystem extends BaseParticleSystem implements IDisposable, I
                 this._vertexData[offset++] = direction.y;
                 this._vertexData[offset++] = direction.z;
             }
-        } else if (this.billboardMode === ParticleSystem.BILLBOARDMODE_STRETCHED) {
+        } else if (this.billboardMode === ParticleSystem.BILLBOARDMODE_STRETCHED || this.billboardMode === ParticleSystem.BILLBOARDMODE_STRETCHED_LOCAL) {
             this._vertexData[offset++] = particle.direction.x;
             this._vertexData[offset++] = particle.direction.y;
             this._vertexData[offset++] = particle.direction.z;
@@ -1713,20 +1723,9 @@ export class ParticleSystem extends BaseParticleSystem implements IDisposable, I
      * @internal
      */
     public static _GetEffectCreationOptions(isAnimationSheetEnabled = false, useLogarithmicDepth = false): string[] {
-        const effectCreationOption = [
-            "invView",
-            "view",
-            "projection",
-            "vClipPlane",
-            "vClipPlane2",
-            "vClipPlane3",
-            "vClipPlane4",
-            "vClipPlane5",
-            "vClipPlane6",
-            "textureMask",
-            "translationPivot",
-            "eyePosition",
-        ];
+        const effectCreationOption = ["invView", "view", "projection", "textureMask", "translationPivot", "eyePosition"];
+
+        addClipPlaneUniforms(effectCreationOption);
 
         if (isAnimationSheetEnabled) {
             effectCreationOption.push("particlesInfos");
@@ -1745,29 +1744,7 @@ export class ParticleSystem extends BaseParticleSystem implements IDisposable, I
      */
     public fillDefines(defines: Array<string>, blendMode: number) {
         if (this._scene) {
-            if (this._scene.clipPlane) {
-                defines.push("#define CLIPPLANE");
-            }
-
-            if (this._scene.clipPlane2) {
-                defines.push("#define CLIPPLANE2");
-            }
-
-            if (this._scene.clipPlane3) {
-                defines.push("#define CLIPPLANE3");
-            }
-
-            if (this._scene.clipPlane4) {
-                defines.push("#define CLIPPLANE4");
-            }
-
-            if (this._scene.clipPlane5) {
-                defines.push("#define CLIPPLANE5");
-            }
-
-            if (this._scene.clipPlane6) {
-                defines.push("#define CLIPPLANE6");
-            }
+            prepareDefinesForClipPlanes(this, this._scene, defines);
         }
 
         if (this._isAnimationSheetEnabled) {
@@ -1794,7 +1771,11 @@ export class ParticleSystem extends BaseParticleSystem implements IDisposable, I
                     defines.push("#define BILLBOARDY");
                     break;
                 case ParticleSystem.BILLBOARDMODE_STRETCHED:
+                case ParticleSystem.BILLBOARDMODE_STRETCHED_LOCAL:
                     defines.push("#define BILLBOARDSTRETCHED");
+                    if (this.billboardMode === ParticleSystem.BILLBOARDMODE_STRETCHED_LOCAL) {
+                        defines.push("#define BILLBOARDSTRETCHED_LOCAL");
+                    }
                     break;
                 case ParticleSystem.BILLBOARDMODE_ALL:
                     defines.push("#define BILLBOARDMODE_ALL");
@@ -1820,7 +1801,7 @@ export class ParticleSystem extends BaseParticleSystem implements IDisposable, I
         attributes.push(
             ...ParticleSystem._GetAttributeNamesOrOptions(
                 this._isAnimationSheetEnabled,
-                this._isBillboardBased && this.billboardMode !== ParticleSystem.BILLBOARDMODE_STRETCHED,
+                this._isBillboardBased && this.billboardMode !== ParticleSystem.BILLBOARDMODE_STRETCHED && this.billboardMode !== ParticleSystem.BILLBOARDMODE_STRETCHED_LOCAL,
                 this._useRampGradients
             )
         );
@@ -2071,9 +2052,7 @@ export class ParticleSystem extends BaseParticleSystem implements IDisposable, I
         const defines = effect.defines;
 
         if (this._scene) {
-            if (this._scene.clipPlane || this._scene.clipPlane2 || this._scene.clipPlane3 || this._scene.clipPlane4 || this._scene.clipPlane5 || this._scene.clipPlane6) {
-                ThinMaterialHelper.BindClipPlane(effect, this._scene);
-            }
+            bindClipPlane(effect, this, this._scene);
         }
 
         if (defines.indexOf("#define BILLBOARDMODE_ALL") >= 0) {
@@ -2253,9 +2232,10 @@ export class ParticleSystem extends BaseParticleSystem implements IDisposable, I
      * Clones the particle system.
      * @param name The name of the cloned object
      * @param newEmitter The new emitter to use
+     * @param cloneTexture Also clone the textures if true
      * @returns the cloned particle system
      */
-    public clone(name: string, newEmitter: any): ParticleSystem {
+    public clone(name: string, newEmitter: any, cloneTexture = false): ParticleSystem {
         const custom = { ...this._customWrappers };
         let program: any = null;
         const engine = this._engine as Engine;
@@ -2272,7 +2252,7 @@ export class ParticleSystem extends BaseParticleSystem implements IDisposable, I
             }
         }
 
-        const serialization = this.serialize();
+        const serialization = this.serialize(cloneTexture);
         const result = ParticleSystem.Parse(serialization, this._scene || this._engine, this._rootUrl);
         result.name = name;
         result.customShader = program;

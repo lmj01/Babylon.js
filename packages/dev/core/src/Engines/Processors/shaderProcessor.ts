@@ -30,7 +30,7 @@ export class ShaderProcessor {
         }
     }
 
-    public static Process(sourceCode: string, options: ProcessingOptions, callback: (migratedCode: string) => void, engine: ThinEngine) {
+    public static Process(sourceCode: string, options: ProcessingOptions, callback: (migratedCode: string, codeBeforeMigration: string) => void, engine: ThinEngine) {
         if (options.processor?.preProcessShaderCode) {
             sourceCode = options.processor.preProcessShaderCode(sourceCode, options.isFragment);
         }
@@ -39,11 +39,11 @@ export class ShaderProcessor {
                 codeWithIncludes = options.processCodeAfterIncludes(options.isFragment ? "fragment" : "vertex", codeWithIncludes);
             }
             const migratedCode = this._ProcessShaderConversion(codeWithIncludes, options, engine);
-            callback(migratedCode);
+            callback(migratedCode, codeWithIncludes);
         });
     }
 
-    public static PreProcess(sourceCode: string, options: ProcessingOptions, callback: (migratedCode: string) => void, engine: ThinEngine) {
+    public static PreProcess(sourceCode: string, options: ProcessingOptions, callback: (migratedCode: string, codeBeforeMigration: string) => void, engine: ThinEngine) {
         if (options.processor?.preProcessShaderCode) {
             sourceCode = options.processor.preProcessShaderCode(sourceCode, options.isFragment);
         }
@@ -52,7 +52,7 @@ export class ShaderProcessor {
                 codeWithIncludes = options.processCodeAfterIncludes(options.isFragment ? "fragment" : "vertex", codeWithIncludes);
             }
             const migratedCode = this._ApplyPreProcessing(codeWithIncludes, options, engine);
-            callback(migratedCode);
+            callback(migratedCode, codeWithIncludes);
         });
     }
 
@@ -307,7 +307,10 @@ export class ShaderProcessor {
 
         // Already converted
         if (options.processor.shaderLanguage === ShaderLanguage.GLSL && preparedSourceCode.indexOf("#version 3") !== -1) {
-            return preparedSourceCode.replace("#version 300 es", "");
+            preparedSourceCode = preparedSourceCode.replace("#version 300 es", "");
+            if (!options.processor.parseGLES3) {
+                return preparedSourceCode;
+            }
         }
 
         const defines = options.defines;

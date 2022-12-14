@@ -59,6 +59,9 @@ import { NodeMaterialSystemValues } from "./Enums/nodeMaterialSystemValues";
 import type { ImageSourceBlock } from "./Blocks/Dual/imageSourceBlock";
 import { EngineStore } from "../../Engines/engineStore";
 import type { Material } from "../material";
+import { MaterialHelper } from "../materialHelper";
+import type { TriPlanarBlock } from "./Blocks/triPlanarBlock";
+import type { BiPlanarBlock } from "./Blocks/biPlanarBlock";
 
 const onCreatedEffectParameters = { effect: null as unknown as Effect, subMesh: null as unknown as Nullable<SubMesh> };
 
@@ -118,6 +121,8 @@ export class NodeMaterialDefines extends MaterialDefines implements IImageProces
 
     /** MISC. */
     public BUMPDIRECTUV = 0;
+    public CAMERA_ORTHOGRAPHIC = false;
+    public CAMERA_PERSPECTIVE = false;
 
     constructor() {
         super();
@@ -148,6 +153,19 @@ export interface INodeMaterialOptions {
 }
 
 /**
+ * Blocks that manage a texture
+ */
+export type NodeMaterialTextureBlocks =
+    | TextureBlock
+    | ReflectionTextureBaseBlock
+    | RefractionBlock
+    | CurrentScreenBlock
+    | ParticleTextureBlock
+    | ImageSourceBlock
+    | TriPlanarBlock
+    | BiPlanarBlock;
+
+/**
  * Class used to create a node based material built by assembling shader blocks
  */
 export class NodeMaterial extends PushMaterial {
@@ -171,6 +189,24 @@ export class NodeMaterial extends PushMaterial {
 
     /** Gets or sets a boolean indicating that node materials should not deserialize textures from json / snippet content */
     public static IgnoreTexturesAtLoadTime = false;
+
+    /**
+     * Checks if a block is a texture block
+     * @param block The block to check
+     * @returns True if the block is a texture block
+     */
+    public static _BlockIsTextureBlock(block: NodeMaterialBlock): block is NodeMaterialTextureBlocks {
+        return (
+            block.getClassName() === "TextureBlock" ||
+            block.getClassName() === "ReflectionTextureBaseBlock" ||
+            block.getClassName() === "RefractionBlock" ||
+            block.getClassName() === "CurrentScreenBlock" ||
+            block.getClassName() === "ParticleTextureBlock" ||
+            block.getClassName() === "ImageSourceBlock" ||
+            block.getClassName() === "TriPlanarBlock" ||
+            block.getClassName() === "BiPlanarBlock"
+        );
+    }
 
     private BJSNODEMATERIALEDITOR = this._getGlobalNodeMaterialEditor();
 
@@ -1173,6 +1209,12 @@ export class NodeMaterial extends PushMaterial {
     }> {
         let result = null;
 
+        // Global defines
+        const scene = this.getScene();
+        if (MaterialHelper.PrepareDefinesForCamera(scene, defines)) {
+            defines.markAsMiscDirty();
+        }
+
         // Shared defines
         this._sharedData.blocksWithDefines.forEach((b) => {
             b.initializeDefines(mesh, this, defines, useInstances);
@@ -1449,14 +1491,32 @@ export class NodeMaterial extends PushMaterial {
 
     /**
      * Gets the list of texture blocks
+     * Note that this method will only return blocks that are reachable from the final block(s) and only after the material has been built!
      * @returns an array of texture blocks
      */
-    public getTextureBlocks(): (TextureBlock | ReflectionTextureBaseBlock | RefractionBlock | CurrentScreenBlock | ParticleTextureBlock | ImageSourceBlock)[] {
+    public getTextureBlocks(): NodeMaterialTextureBlocks[] {
         if (!this._sharedData) {
             return [];
         }
 
         return this._sharedData.textureBlocks;
+    }
+
+    /**
+     * Gets the list of all texture blocks
+     * Note that this method will scan all attachedBlocks and return blocks that are texture blocks
+     * @returns
+     */
+    public getAllTextureBlocks(): NodeMaterialTextureBlocks[] {
+        const textureBlocks: NodeMaterialTextureBlocks[] = [];
+
+        for (const block of this.attachedBlocks) {
+            if (NodeMaterial._BlockIsTextureBlock(block)) {
+                textureBlocks.push(block);
+            }
+        }
+
+        return textureBlocks;
     }
 
     /**

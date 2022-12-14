@@ -87,13 +87,13 @@ export interface GlslangOptions {
 export interface WebGPUEngineOptions extends GPURequestAdapterOptions {
     /**
      * If delta time between frames should be constant
-     * @see https://doc.babylonjs.com/babylon101/animations#deterministic-lockstep
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/animation/advanced_animations#deterministic-lockstep
      */
     deterministicLockstep?: boolean;
 
     /**
      * Maximum about of steps between frames (Default: 4)
-     * @see https://doc.babylonjs.com/babylon101/animations#deterministic-lockstep
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/animation/advanced_animations#deterministic-lockstep
      */
     lockstepMaxSteps?: number;
 
@@ -116,7 +116,7 @@ export interface WebGPUEngineOptions extends GPURequestAdapterOptions {
 
     /**
      * Defines if webaudio should be initialized as well
-     * @see http://doc.babylonjs.com/how_to/playing_sounds_and_music
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/audio/playingSoundsMusic
      */
     audioEngine?: boolean;
 
@@ -221,7 +221,6 @@ export class WebGPUEngine extends Engine {
     public _device: GPUDevice;
     private _deviceEnabledExtensions: GPUFeatureName[];
     private _context: GPUCanvasContext;
-    private _swapChainTexture: GPUTexture;
     private _mainPassSampleCount: number;
     /** @internal */
     public _textureHelper: WebGPUTextureHelper;
@@ -277,7 +276,6 @@ export class WebGPUEngine extends Engine {
     // This happens mainly during clear for the state
     // And when the frame starts to swap the target texture from the swap chain
     private _mainTexture: GPUTexture;
-    private _mainTextureLastCopy: GPUTexture;
     private _depthTexture: GPUTexture;
     private _mainTextureExtends: GPUExtent3D;
     private _depthTextureFormat: GPUTextureFormat | undefined;
@@ -483,7 +481,7 @@ export class WebGPUEngine extends Engine {
     /**
      * (WebGPU only) True (default) to be in compatibility mode, meaning rendering all existing scenes without artifacts (same rendering than WebGL).
      * Setting the property to false will improve performances but may not work in some scenes if some precautions are not taken.
-     * See https://doc.babylonjs.com/advanced_topics/webGPU/webGPUOptimization/webGPUNonCompatibilityMode for more details
+     * See https://doc.babylonjs.com/setup/support/webGPU/webGPUOptimization/webGPUNonCompatibilityMode for more details
      */
     public get compatibilityMode() {
         return this._compatibilityMode;
@@ -858,6 +856,8 @@ export class WebGPUEngine extends Engine {
             return;
         }
 
+        this.flushFramebuffer(false);
+
         this._mainTextureExtends = {
             width: this.getRenderWidth(),
             height: this.getRenderHeight(),
@@ -873,6 +873,7 @@ export class WebGPUEngine extends Engine {
 
         if (this._options.antialiasing) {
             const mainTextureDescriptor: GPUTextureDescriptor = {
+                label: "Texture_MainColor_antialiasing",
                 size: this._mainTextureExtends,
                 mipLevelCount: 1,
                 sampleCount: this._mainPassSampleCount,
@@ -881,7 +882,9 @@ export class WebGPUEngine extends Engine {
                 usage: WebGPUConstants.TextureUsage.RenderAttachment,
             };
 
-            this._mainTexture?.destroy();
+            if (this._mainTexture) {
+                this._textureHelper.releaseTexture(this._mainTexture);
+            }
             this._mainTexture = this._device.createTexture(mainTextureDescriptor);
             mainColorAttachments = [
                 {
@@ -907,6 +910,7 @@ export class WebGPUEngine extends Engine {
         this._setDepthTextureFormat(this._mainRenderPassWrapper);
 
         const depthTextureDescriptor: GPUTextureDescriptor = {
+            label: "Texture_MainDepthStencil",
             size: this._mainTextureExtends,
             mipLevelCount: 1,
             sampleCount: this._mainPassSampleCount,
@@ -916,7 +920,7 @@ export class WebGPUEngine extends Engine {
         };
 
         if (this._depthTexture) {
-            this._depthTexture.destroy();
+            this._textureHelper.releaseTexture(this._depthTexture);
         }
         this._depthTexture = this._device.createTexture(depthTextureDescriptor);
         const mainDepthAttachment: GPURenderPassDepthStencilAttachment = {
@@ -934,10 +938,6 @@ export class WebGPUEngine extends Engine {
             colorAttachments: mainColorAttachments,
             depthStencilAttachment: mainDepthAttachment,
         };
-
-        if (this._mainRenderPassWrapper.renderPass !== null) {
-            this._endMainRenderPass();
-        }
     }
 
     private _configureContext(): void {
@@ -1724,6 +1724,7 @@ export class WebGPUEngine extends Engine {
             console.log(defines);
             console.log(vertexSourceCode);
             console.log(fragmentSourceCode);
+            console.log("***********************************************");
         }
 
         webGpuContext.sources = {
@@ -2097,7 +2098,7 @@ export class WebGPUEngine extends Engine {
      * @param texture defines the external texture
      * @returns the babylon internal texture
      */
-    wrapWebGPUTexture(texture: GPUTexture): InternalTexture {
+    public wrapWebGPUTexture(texture: GPUTexture): InternalTexture {
         const hardwareTexture = new WebGPUHardwareTexture(texture);
         const internalTexture = new InternalTexture(this, InternalTextureSource.Unknown, true);
         internalTexture._hardwareTexture = hardwareTexture;
@@ -2109,7 +2110,7 @@ export class WebGPUEngine extends Engine {
      * Wraps an external web gl texture in a Babylon texture.
      * @returns the babylon internal texture
      */
-    wrapWebGLTexture(): InternalTexture {
+    public wrapWebGLTexture(): InternalTexture {
         throw new Error("wrapWebGLTexture is not supported, use wrapWebGPUTexture instead.");
     }
 
@@ -2479,6 +2480,10 @@ export class WebGPUEngine extends Engine {
             gpuTextureWrapper = this._textureHelper.createGPUTextureForInternalTexture(texture);
         }
 
+        if (image instanceof HTMLImageElement) {
+            throw "WebGPU engine: HTMLImageElement not supported in _uploadImageToTexture!";
+        }
+
         const bitmap = image as ImageBitmap; // in WebGPU we will always get an ImageBitmap, not an HTMLImageElement
 
         const width = Math.ceil(texture.width / (1 << lod));
@@ -2839,7 +2844,7 @@ export class WebGPUEngine extends Engine {
 
     private _startMainRenderPass(setClearStates: boolean, clearColor?: Nullable<IColor4Like>, clearDepth?: boolean, clearStencil?: boolean): void {
         if (this._mainRenderPassWrapper.renderPass) {
-            this._endMainRenderPass();
+            this.flushFramebuffer(false);
         }
 
         if (this.useReverseDepthBuffer) {
@@ -2866,14 +2871,14 @@ export class WebGPUEngine extends Engine {
             : WebGPUConstants.LoadOp.Load;
         this._mainRenderPassWrapper.renderPassDescriptor!.occlusionQuerySet = this._occlusionQuery?.hasQueries ? this._occlusionQuery.querySet : undefined;
 
-        this._swapChainTexture = this._context.getCurrentTexture();
-        this._mainRenderPassWrapper.colorAttachmentGPUTextures[0]!.set(this._swapChainTexture);
+        const swapChainTexture = this._context.getCurrentTexture();
+        this._mainRenderPassWrapper.colorAttachmentGPUTextures[0]!.set(swapChainTexture);
 
         // Resolve in case of MSAA
         if (this._options.antialiasing) {
-            this._mainRenderPassWrapper.renderPassDescriptor!.colorAttachments[0]!.resolveTarget = this._swapChainTexture.createView();
+            this._mainRenderPassWrapper.renderPassDescriptor!.colorAttachments[0]!.resolveTarget = swapChainTexture.createView();
         } else {
-            this._mainRenderPassWrapper.renderPassDescriptor!.colorAttachments[0]!.view = this._swapChainTexture.createView();
+            this._mainRenderPassWrapper.renderPassDescriptor!.colorAttachments[0]!.view = swapChainTexture.createView();
         }
 
         if (this.dbgVerboseLogsForFirstFrames) {
@@ -3370,7 +3375,6 @@ export class WebGPUEngine extends Engine {
      */
     public dispose(): void {
         this._mainTexture?.destroy();
-        this._mainTextureLastCopy?.destroy();
         this._depthTexture?.destroy();
         super.dispose();
     }

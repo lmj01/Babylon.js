@@ -84,7 +84,7 @@ export class TextureBlock extends NodeMaterialBlock {
      * Gets a boolean indicating that this block is linked to an ImageSourceBlock
      */
     public get hasImageSource(): boolean {
-        return !!this._imageSource;
+        return this.source.isConnected;
     }
 
     private _convertToGammaSpace = false;
@@ -144,7 +144,7 @@ export class TextureBlock extends NodeMaterialBlock {
 
         this._fragmentOnly = fragmentOnly;
 
-        this.registerInput("uv", NodeMaterialBlockConnectionPointTypes.Vector2, false, NodeMaterialBlockTargets.VertexAndFragment);
+        this.registerInput("uv", NodeMaterialBlockConnectionPointTypes.AutoDetect, false, NodeMaterialBlockTargets.VertexAndFragment);
         this.registerInput(
             "source",
             NodeMaterialBlockConnectionPointTypes.Object,
@@ -162,8 +162,9 @@ export class TextureBlock extends NodeMaterialBlock {
 
         this.registerOutput("level", NodeMaterialBlockConnectionPointTypes.Float, NodeMaterialBlockTargets.Neutral);
 
-        this._inputs[0].acceptedConnectionPointTypes.push(NodeMaterialBlockConnectionPointTypes.Vector3);
-        this._inputs[0].acceptedConnectionPointTypes.push(NodeMaterialBlockConnectionPointTypes.Vector4);
+        this._inputs[0].addExcludedConnectionPointFromAllowedTypes(
+            NodeMaterialBlockConnectionPointTypes.Vector2 | NodeMaterialBlockConnectionPointTypes.Vector3 | NodeMaterialBlockConnectionPointTypes.Vector4
+        );
 
         this._inputs[0]._prioritizeVertex = !fragmentOnly;
     }
@@ -499,7 +500,7 @@ export class TextureBlock extends NodeMaterialBlock {
             this._imageSource = null;
         }
 
-        if (state.target === NodeMaterialBlockTargets.Vertex || this._fragmentOnly || (state.target === NodeMaterialBlockTargets.Fragment && this._tempTextureRead === undefined)) {
+        if (state.target === NodeMaterialBlockTargets.Vertex || this._fragmentOnly || state.target === NodeMaterialBlockTargets.Fragment) {
             this._tempTextureRead = state._getFreeVariableName("tempTextureRead");
             this._linearDefineName = state._getFreeDefineName("ISLINEAR");
             this._gammaDefineName = state._getFreeDefineName("ISGAMMA");

@@ -23,9 +23,9 @@ import { ActionManager } from "../../Actions/actionManager";
 import type { IParticleSystem } from "../../Particles/IParticleSystem";
 import { Skeleton } from "../../Bones/skeleton";
 import { MorphTargetManager } from "../../Morph/morphTargetManager";
-import { CannonJSPlugin } from "../../Physics/Plugins/cannonJSPlugin";
-import { OimoJSPlugin } from "../../Physics/Plugins/oimoJSPlugin";
-import { AmmoJSPlugin } from "../../Physics/Plugins/ammoJSPlugin";
+import { CannonJSPlugin } from "../../Physics/v1/Plugins/cannonJSPlugin";
+import { OimoJSPlugin } from "../../Physics/v1/Plugins/oimoJSPlugin";
+import { AmmoJSPlugin } from "../../Physics/v1/Plugins/ammoJSPlugin";
 import { ReflectionProbe } from "../../Probes/reflectionProbe";
 import { GetClass } from "../../Misc/typeStore";
 import { Tools } from "../../Misc/tools";
@@ -962,11 +962,11 @@ SceneLoader.RegisterPlugin({
             //Physics
             if (parsedData.physicsEnabled) {
                 let physicsPlugin;
-                if (parsedData.physicsEngine === "cannon") {
+                if (parsedData.physicsEngine === "cannon" || parsedData.physicsEngine === CannonJSPlugin.name) {
                     physicsPlugin = new CannonJSPlugin(undefined, undefined, BabylonFileLoaderConfiguration.LoaderInjectedPhysicsEngine);
-                } else if (parsedData.physicsEngine === "oimo") {
+                } else if (parsedData.physicsEngine === "oimo" || parsedData.physicsEngine === OimoJSPlugin.name) {
                     physicsPlugin = new OimoJSPlugin(undefined, BabylonFileLoaderConfiguration.LoaderInjectedPhysicsEngine);
-                } else if (parsedData.physicsEngine === "ammo") {
+                } else if (parsedData.physicsEngine === "ammo" || parsedData.physicsEngine === AmmoJSPlugin.name) {
                     physicsPlugin = new AmmoJSPlugin(undefined, BabylonFileLoaderConfiguration.LoaderInjectedPhysicsEngine, undefined);
                 }
                 log = "\tPhysics engine " + (parsedData.physicsEngine ? parsedData.physicsEngine : "oimo") + " enabled\n";

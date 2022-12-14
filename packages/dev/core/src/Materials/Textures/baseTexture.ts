@@ -211,7 +211,8 @@ export class BaseTexture extends ThinTexture implements IAnimatable {
     @serialize()
     public anisotropicFilteringLevel = BaseTexture.DEFAULT_ANISOTROPIC_FILTERING_LEVEL;
 
-    private _isCube = false;
+    /** @internal */
+    public _isCube = false;
     /**
      * Define if the texture is a cube texture or if false a 2d texture.
      */
@@ -224,7 +225,7 @@ export class BaseTexture extends ThinTexture implements IAnimatable {
         return this._texture.isCube;
     }
 
-    public set isCube(value: boolean) {
+    protected set isCube(value: boolean) {
         if (!this._texture) {
             this._isCube = value;
         } else {
@@ -244,7 +245,7 @@ export class BaseTexture extends ThinTexture implements IAnimatable {
         return this._texture.is3D;
     }
 
-    public set is3D(value: boolean) {
+    protected set is3D(value: boolean) {
         if (!this._texture) {
             return;
         }
@@ -264,7 +265,7 @@ export class BaseTexture extends ThinTexture implements IAnimatable {
         return this._texture.is2DArray;
     }
 
-    public set is2DArray(value: boolean) {
+    protected set is2DArray(value: boolean) {
         if (!this._texture) {
             return;
         }
@@ -840,10 +841,11 @@ export class BaseTexture extends ThinTexture implements IAnimatable {
 
     /**
      * Serialize the texture into a JSON representation that can be parsed later on.
+     * @param allowEmptyName True to force serialization even if name is empty. Default: false
      * @returns the JSON representation of the texture
      */
-    public serialize(): any {
-        if (!this.name) {
+    public serialize(allowEmptyName = false): any {
+        if (!this.name && !allowEmptyName) {
             return null;
         }
 

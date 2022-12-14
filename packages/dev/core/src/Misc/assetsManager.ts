@@ -281,7 +281,11 @@ export class ContainerAssetTask extends AbstractAssetTask {
         /**
          * Defines the filename or File of the scene to load from
          */
-        public sceneFilename: string | File
+        public sceneFilename: string | File,
+        /**
+         * Defines the extension to use to load the scene (if not defined, ".babylon" will be used)
+         */
+        public extension?: string
     ) {
         super(name);
     }
@@ -309,7 +313,8 @@ export class ContainerAssetTask extends AbstractAssetTask {
             null,
             (scene, message, exception) => {
                 onError(message, exception);
-            }
+            },
+            this.extension
         );
     }
 }
@@ -372,7 +377,11 @@ export class MeshAssetTask extends AbstractAssetTask {
         /**
          * Defines the filename or File of the scene to load from
          */
-        public sceneFilename: string | File
+        public sceneFilename: string | File,
+        /**
+         * Defines the extension to use to load the scene (if not defined, ".babylon" will be used)
+         */
+        public extension?: string
     ) {
         super(name);
     }
@@ -400,7 +409,8 @@ export class MeshAssetTask extends AbstractAssetTask {
             null,
             (scene, message, exception) => {
                 onError(message, exception);
-            }
+            },
+            this.extension
         );
     }
 }
@@ -899,7 +909,7 @@ export class EquiRectangularCubeTextureAssetTask extends AbstractAssetTask imple
 
 /**
  * This class can be used to easily import assets into a scene
- * @see https://doc.babylonjs.com/how_to/how_to_use_assetsmanager
+ * @see https://doc.babylonjs.com/features/featuresDeepDive/importers/assetManager
  */
 export class AssetsManager {
     private _scene: Scene;
@@ -951,7 +961,7 @@ export class AssetsManager {
 
     /**
      * Gets or sets a boolean defining if the AssetsManager should use the default loading screen
-     * @see https://doc.babylonjs.com/how_to/creating_a_custom_loading_screen
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/customLoadingScreen
      */
     public useDefaultLoadingScreen = true;
 
@@ -976,10 +986,11 @@ export class AssetsManager {
      * @param meshesNames defines the name of meshes to load
      * @param rootUrl defines the root url to use to locate files
      * @param sceneFilename defines the filename of the scene file or the File itself
+     * @param extension defines the extension to use to load the file
      * @returns a new ContainerAssetTask object
      */
-    public addContainerTask(taskName: string, meshesNames: any, rootUrl: string, sceneFilename: string | File): ContainerAssetTask {
-        const task = new ContainerAssetTask(taskName, meshesNames, rootUrl, sceneFilename);
+    public addContainerTask(taskName: string, meshesNames: any, rootUrl: string, sceneFilename: string | File, extension?: string): ContainerAssetTask {
+        const task = new ContainerAssetTask(taskName, meshesNames, rootUrl, sceneFilename, extension);
         this._tasks.push(task);
 
         return task;
@@ -991,10 +1002,11 @@ export class AssetsManager {
      * @param meshesNames defines the name of meshes to load
      * @param rootUrl defines the root url to use to locate files
      * @param sceneFilename defines the filename of the scene file or the File itself
+     * @param extension defines the extension to use to load the file
      * @returns a new MeshAssetTask object
      */
-    public addMeshTask(taskName: string, meshesNames: any, rootUrl: string, sceneFilename: string | File): MeshAssetTask {
-        const task = new MeshAssetTask(taskName, meshesNames, rootUrl, sceneFilename);
+    public addMeshTask(taskName: string, meshesNames: any, rootUrl: string, sceneFilename: string | File, extension?: string): MeshAssetTask {
+        const task = new MeshAssetTask(taskName, meshesNames, rootUrl, sceneFilename, extension);
         this._tasks.push(task);
 
         return task;

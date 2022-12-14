@@ -9,12 +9,9 @@ declare type Ray = import("../Culling/ray").Ray;
 
 /**
  * Information about the result of picking within a scene
- * @see https://doc.babylonjs.com/divingDeeper/mesh/interactions/picking_collisions
+ * @see https://doc.babylonjs.com/features/featuresDeepDive/mesh/interactions/picking_collisions
  */
 export class PickingInfo {
-    /** @internal */
-    public _pickingUnavailable = false;
-
     /**
      * If the pick collided with an object
      */
@@ -28,7 +25,7 @@ export class PickingInfo {
      */
     public pickedPoint: Nullable<Vector3> = null;
     /**
-     * The mesh corresponding the the pick collision
+     * The mesh corresponding the pick collision
      */
     public pickedMesh: Nullable<AbstractMesh> = null;
     /** (See getTextureCoordinates) The barycentric U coordinate that is used when calculating the texture coordinates of the collision.*/
@@ -39,7 +36,7 @@ export class PickingInfo {
     public faceId = -1;
     /** The index of the face on the subMesh that was picked, or the index of the Line if the picked Mesh is a LinesMesh */
     public subMeshFaceId = -1;
-    /** Id of the the submesh that was picked */
+    /** Id of the submesh that was picked */
     public subMeshId = 0;
     /** If a sprite was picked, this will be the sprite the pick collided with */
     public pickedSprite: Nullable<Sprite> = null;
@@ -66,11 +63,12 @@ export class PickingInfo {
     /**
      * Gets the normal corresponding to the face the pick collided with
      * @param useWorldCoordinates If the resulting normal should be relative to the world (default: false)
-     * @param useVerticesNormals If the vertices normals should be used to calculate the normal instead of the normal map
+     * @param useVerticesNormals If the vertices normals should be used to calculate the normal instead of the normal map (default: true)
      * @returns The normal corresponding to the face the pick collided with
+     * @remarks Note that the returned normal will always point towards the picking ray.
      */
     public getNormal(useWorldCoordinates = false, useVerticesNormals = true): Nullable<Vector3> {
-        if (!this.pickedMesh || !this.pickedMesh.isVerticesDataPresent(VertexBuffer.NormalKind)) {
+        if (!this.pickedMesh || (useVerticesNormals && !this.pickedMesh.isVerticesDataPresent(VertexBuffer.NormalKind))) {
             return null;
         }
 
@@ -107,10 +105,10 @@ export class PickingInfo {
             result = Vector3.Cross(p1p2, p3p2);
         }
 
-        if (useWorldCoordinates) {
-            let wm = this.pickedMesh.getWorldMatrix();
+        const transformNormalToWorld = (pickedMesh: AbstractMesh, n: Vector3) => {
+            let wm = pickedMesh.getWorldMatrix();
 
-            if (this.pickedMesh.nonUniformScaling) {
+            if (pickedMesh.nonUniformScaling) {
                 TmpVectors.Matrix[0].copyFrom(wm);
                 wm = TmpVectors.Matrix[0];
                 wm.setTranslationFromFloats(0, 0, 0);
@@ -120,7 +118,25 @@ export class PickingInfo {
                 wm = TmpVectors.Matrix[1];
             }
 
-            result = Vector3.TransformNormal(result, wm);
+            Vector3.TransformNormalToRef(n, wm, n);
+        };
+
+        if (useWorldCoordinates) {
+            transformNormalToWorld(this.pickedMesh, result);
+        }
+
+        if (this.ray) {
+            const normalForDirectionChecking = TmpVectors.Vector3[0].copyFrom(result);
+
+            if (!useWorldCoordinates) {
+                // the normal has not been transformed to world space as part as the normal processing, so we must do it now
+                transformNormalToWorld(this.pickedMesh, normalForDirectionChecking);
+            }
+
+            // Flip the normal if the picking ray is in the same direction.
+            if (Vector3.Dot(normalForDirectionChecking, this.ray.direction) > 0) {
+                result.negateInPlace();
+            }
         }
 
         result.normalize();
@@ -130,7 +146,7 @@ export class PickingInfo {
 
     /**
      * Gets the texture coordinates of where the pick occurred
-     * @returns the vector containing the coordinates of the texture
+     * @returns The vector containing the coordinates of the texture
      */
     public getTextureCoordinates(): Nullable<Vector2> {
         if (!this.pickedMesh || !this.pickedMesh.isVerticesDataPresent(VertexBuffer.UVKind)) {

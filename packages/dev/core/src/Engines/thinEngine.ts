@@ -97,17 +97,17 @@ export interface EngineOptions extends WebGLContextAttributes {
     limitDeviceRatio?: number;
     /**
      * Defines if webvr should be enabled automatically
-     * @see https://doc.babylonjs.com/how_to/webvr_camera
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/cameras/webVRCamera
      */
     autoEnableWebVR?: boolean;
     /**
      * Defines if webgl2 should be turned off even if supported
-     * @see https://doc.babylonjs.com/features/webgl2
+     * @see https://doc.babylonjs.com/setup/support/webGL2
      */
     disableWebGL2Support?: boolean;
     /**
      * Defines if webaudio should be initialized as well
-     * @see https://doc.babylonjs.com/how_to/playing_sounds_and_music
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/audio/playingSoundsMusic
      */
     audioEngine?: boolean;
     /**
@@ -117,7 +117,7 @@ export interface EngineOptions extends WebGLContextAttributes {
 
     /**
      * Defines if animations should run using a deterministic lock step
-     * @see https://doc.babylonjs.com/babylon101/animations#deterministic-lockstep
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/animation/advanced_animations#deterministic-lockstep
      */
     deterministicLockstep?: boolean;
     /** Defines the maximum steps to use with deterministic lock step mode */
@@ -200,14 +200,14 @@ export class ThinEngine {
      */
     // Not mixed with Version for tooling purpose.
     public static get NpmPackage(): string {
-        return "babylonjs@5.25.0";
+        return "babylonjs@5.37.0";
     }
 
     /**
      * Returns the current version of the framework
      */
     public static get Version(): string {
-        return "5.25.0";
+        return "5.37.0";
     }
 
     /**
@@ -357,7 +357,7 @@ export class ThinEngine {
 
     /**
      * Gets a boolean indicating that the engine supports uniform buffers
-     * @see https://doc.babylonjs.com/features/webgl2#uniform-buffer-objets
+     * @see https://doc.babylonjs.com/setup/support/webGL2#uniform-buffer-objets
      */
     public get supportsUniformBuffers(): boolean {
         return this.webGLVersion > 1 && !this.disableUniformBuffers;
@@ -447,7 +447,7 @@ export class ThinEngine {
 
     /**
      * Gets or sets a boolean indicating if resources should be retained to be able to handle context lost events
-     * @see https://doc.babylonjs.com/how_to/optimizing_your_scene#handling-webgl-context-lost
+     * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/optimize_your_scene#handling-webgl-context-lost
      */
     public get doNotHandleContextLost(): boolean {
         return this._doNotHandleContextLost;
@@ -512,7 +512,7 @@ export class ThinEngine {
     /** @internal */
     public _currentRenderTarget: Nullable<RenderTargetWrapper>;
     private _uintIndicesCurrentlySet = false;
-    protected _currentBoundBuffer = new Array<Nullable<WebGLBuffer>>();
+    protected _currentBoundBuffer = new Array<Nullable<DataBuffer>>();
     /** @internal */
     public _currentFramebuffer: Nullable<WebGLFramebuffer> = null;
     /** @internal */
@@ -1029,16 +1029,26 @@ export class ThinEngine {
 
             // Rebuild context
             await initEngine();
+
+            // Ensure webgl and engine states are matching
+            this.wipeCaches(true);
+
             // Rebuild effects
             this._rebuildEffects();
             this._rebuildComputeEffects?.();
+
+            // Note:
+            //  The call to _rebuildBuffers must be made before the call to _rebuildInternalTextures because in the process of _rebuildBuffers the buffers used by the post process managers will be rebuilt
+            //  and we may need to use the post process manager of the scene during _rebuildInternalTextures (in WebGL1, non-POT textures are rescaled using a post process + post process manager of the scene)
+
+            // Rebuild buffers
+            this._rebuildBuffers();
             // Rebuild textures
             this._rebuildInternalTextures();
             // Rebuild textures
             this._rebuildRenderTargetWrappers();
-            // Rebuild buffers
-            this._rebuildBuffers();
-            // Cache
+
+            // Reset engine states after all the buffer/textures/... have been rebuilt
             this.wipeCaches(true);
 
             this._depthCullingState.depthTest = depthTest;
@@ -2306,7 +2316,7 @@ export class ThinEngine {
 
     /**
      * Records a vertex array object
-     * @see https://doc.babylonjs.com/features/webgl2#vertex-array-objects
+     * @see https://doc.babylonjs.com/setup/support/webGL2#vertex-array-objects
      * @param vertexBuffers defines the list of vertex buffers to store
      * @param indexBuffer defines the index buffer to store
      * @param effect defines the effect to store
@@ -2342,7 +2352,7 @@ export class ThinEngine {
 
     /**
      * Bind a specific vertex array object
-     * @see https://doc.babylonjs.com/features/webgl2#vertex-array-objects
+     * @see https://doc.babylonjs.com/setup/support/webGL2#vertex-array-objects
      * @param vertexArrayObject defines the vertex array object to bind
      * @param indexBuffer defines the index buffer to bind
      */
@@ -2704,11 +2714,10 @@ export class ThinEngine {
     public _releaseEffect(effect: Effect): void {
         if (this._compiledEffects[effect._key]) {
             delete this._compiledEffects[effect._key];
-
-            const pipelineContext = effect.getPipelineContext();
-            if (pipelineContext) {
-                this._deletePipelineContext(pipelineContext);
-            }
+        }
+        const pipelineContext = effect.getPipelineContext();
+        if (pipelineContext) {
+            this._deletePipelineContext(pipelineContext);
         }
     }
 
@@ -3736,56 +3745,56 @@ export class ThinEngine {
         delayGPUTextureCreation = true,
         source = InternalTextureSource.Unknown
     ): InternalTexture {
-        const fullOptions: InternalTextureCreationOptions = {};
-
+        let generateMipMaps = false;
+        let type = Constants.TEXTURETYPE_UNSIGNED_INT;
+        let samplingMode = Constants.TEXTURE_TRILINEAR_SAMPLINGMODE;
+        let format = Constants.TEXTUREFORMAT_RGBA;
+        let useSRGBBuffer = false;
+        let samples = 1;
         if (options !== undefined && typeof options === "object") {
-            fullOptions.generateMipMaps = options.generateMipMaps;
-            fullOptions.type = options.type === undefined ? Constants.TEXTURETYPE_UNSIGNED_INT : options.type;
-            fullOptions.samplingMode = options.samplingMode === undefined ? Constants.TEXTURE_TRILINEAR_SAMPLINGMODE : options.samplingMode;
-            fullOptions.format = options.format === undefined ? Constants.TEXTUREFORMAT_RGBA : options.format;
-            fullOptions.useSRGBBuffer = options.useSRGBBuffer === undefined ? false : options.useSRGBBuffer;
+            generateMipMaps = !!options.generateMipMaps;
+            type = options.type === undefined ? Constants.TEXTURETYPE_UNSIGNED_INT : options.type;
+            samplingMode = options.samplingMode === undefined ? Constants.TEXTURE_TRILINEAR_SAMPLINGMODE : options.samplingMode;
+            format = options.format === undefined ? Constants.TEXTUREFORMAT_RGBA : options.format;
+            useSRGBBuffer = options.useSRGBBuffer === undefined ? false : options.useSRGBBuffer;
+            samples = options.samples ?? 1;
         } else {
-            fullOptions.generateMipMaps = <boolean>options;
-            fullOptions.type = Constants.TEXTURETYPE_UNSIGNED_INT;
-            fullOptions.samplingMode = Constants.TEXTURE_TRILINEAR_SAMPLINGMODE;
-            fullOptions.format = Constants.TEXTUREFORMAT_RGBA;
-            fullOptions.useSRGBBuffer = false;
+            generateMipMaps = !!options;
         }
 
-        fullOptions.useSRGBBuffer = fullOptions.useSRGBBuffer && this._caps.supportSRGBBuffers && (this.webGLVersion > 1 || this.isWebGPU);
+        useSRGBBuffer &&= this._caps.supportSRGBBuffers && (this.webGLVersion > 1 || this.isWebGPU);
 
-        if (fullOptions.type === Constants.TEXTURETYPE_FLOAT && !this._caps.textureFloatLinearFiltering) {
+        if (type === Constants.TEXTURETYPE_FLOAT && !this._caps.textureFloatLinearFiltering) {
             // if floating point linear (gl.FLOAT) then force to NEAREST_SAMPLINGMODE
-            fullOptions.samplingMode = Constants.TEXTURE_NEAREST_SAMPLINGMODE;
-        } else if (fullOptions.type === Constants.TEXTURETYPE_HALF_FLOAT && !this._caps.textureHalfFloatLinearFiltering) {
+            samplingMode = Constants.TEXTURE_NEAREST_SAMPLINGMODE;
+        } else if (type === Constants.TEXTURETYPE_HALF_FLOAT && !this._caps.textureHalfFloatLinearFiltering) {
             // if floating point linear (HALF_FLOAT) then force to NEAREST_SAMPLINGMODE
-            fullOptions.samplingMode = Constants.TEXTURE_NEAREST_SAMPLINGMODE;
+            samplingMode = Constants.TEXTURE_NEAREST_SAMPLINGMODE;
         }
-        if (fullOptions.type === Constants.TEXTURETYPE_FLOAT && !this._caps.textureFloat) {
-            fullOptions.type = Constants.TEXTURETYPE_UNSIGNED_INT;
+        if (type === Constants.TEXTURETYPE_FLOAT && !this._caps.textureFloat) {
+            type = Constants.TEXTURETYPE_UNSIGNED_INT;
             Logger.Warn("Float textures are not supported. Type forced to TEXTURETYPE_UNSIGNED_BYTE");
         }
 
         const gl = this._gl;
         const texture = new InternalTexture(this, source);
-        texture._useSRGBBuffer = !!fullOptions.useSRGBBuffer;
         const width = (<{ width: number; height: number; layers?: number }>size).width || <number>size;
         const height = (<{ width: number; height: number; layers?: number }>size).height || <number>size;
         const layers = (<{ width: number; height: number; layers?: number }>size).layers || 0;
-        const filters = this._getSamplingParameters(fullOptions.samplingMode, fullOptions.generateMipMaps ? true : false);
+        const filters = this._getSamplingParameters(samplingMode, generateMipMaps);
         const target = layers !== 0 ? gl.TEXTURE_2D_ARRAY : gl.TEXTURE_2D;
-        const sizedFormat = this._getRGBABufferInternalSizedFormat(fullOptions.type, fullOptions.format, fullOptions.useSRGBBuffer);
-        const internalFormat = this._getInternalFormat(fullOptions.format);
-        const type = this._getWebGLTextureType(fullOptions.type);
+        const sizedFormat = this._getRGBABufferInternalSizedFormat(type, format, useSRGBBuffer);
+        const internalFormat = this._getInternalFormat(format);
+        const textureType = this._getWebGLTextureType(type);
 
         // Bind
         this._bindTextureDirectly(target, texture);
 
         if (layers !== 0) {
             texture.is2DArray = true;
-            gl.texImage3D(target, 0, sizedFormat, width, height, layers, 0, internalFormat, type, null);
+            gl.texImage3D(target, 0, sizedFormat, width, height, layers, 0, internalFormat, textureType, null);
         } else {
-            gl.texImage2D(target, 0, sizedFormat, width, height, 0, internalFormat, type, null);
+            gl.texImage2D(target, 0, sizedFormat, width, height, 0, internalFormat, textureType, null);
         }
 
         gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, filters.mag);
@@ -3794,23 +3803,24 @@ export class ThinEngine {
         gl.texParameteri(target, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
         // MipMaps
-        if (fullOptions.generateMipMaps) {
+        if (generateMipMaps) {
             this._gl.generateMipmap(target);
         }
 
         this._bindTextureDirectly(target, null);
 
+        texture._useSRGBBuffer = useSRGBBuffer;
         texture.baseWidth = width;
         texture.baseHeight = height;
         texture.width = width;
         texture.height = height;
         texture.depth = layers;
         texture.isReady = true;
-        texture.samples = 1;
-        texture.generateMipMaps = fullOptions.generateMipMaps ? true : false;
-        texture.samplingMode = fullOptions.samplingMode;
-        texture.type = fullOptions.type;
-        texture.format = fullOptions.format;
+        texture.samples = samples;
+        texture.generateMipMaps = generateMipMaps;
+        texture.samplingMode = samplingMode;
+        texture.type = type;
+        texture.format = format;
 
         this._internalTexturesCache.push(texture);
 
@@ -4617,12 +4627,14 @@ export class ThinEngine {
 
         this._unpackFlipY(texture.invertY);
 
+        let targetForBinding = gl.TEXTURE_2D;
         let target = gl.TEXTURE_2D;
         if (texture.isCube) {
             target = gl.TEXTURE_CUBE_MAP_POSITIVE_X + faceIndex;
+            targetForBinding = gl.TEXTURE_CUBE_MAP;
         }
 
-        this._bindTextureDirectly(target, texture, true);
+        this._bindTextureDirectly(targetForBinding, texture, true);
 
         gl.texSubImage2D(target, lod, xOffset, yOffset, width, height, format, textureType, imageData);
 
@@ -4630,7 +4642,7 @@ export class ThinEngine {
             this._gl.generateMipmap(target);
         }
 
-        this._bindTextureDirectly(target, null);
+        this._bindTextureDirectly(targetForBinding, null);
     }
 
     /**
@@ -5862,14 +5874,6 @@ export class ThinEngine {
             return requester.requestPostAnimationFrame(func);
         } else if (requester.requestAnimationFrame) {
             return requester.requestAnimationFrame(func);
-        } else if (requester.msRequestAnimationFrame) {
-            return requester.msRequestAnimationFrame(func);
-        } else if (requester.webkitRequestAnimationFrame) {
-            return requester.webkitRequestAnimationFrame(func);
-        } else if (requester.mozRequestAnimationFrame) {
-            return requester.mozRequestAnimationFrame(func);
-        } else if (requester.oRequestAnimationFrame) {
-            return requester.oRequestAnimationFrame(func);
         } else {
             return window.setTimeout(func, 16);
         }

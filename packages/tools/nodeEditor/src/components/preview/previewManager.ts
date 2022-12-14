@@ -12,6 +12,7 @@ import { Animation } from "core/Animations/animation";
 import { SceneLoader } from "core/Loading/sceneLoader";
 import { TransformNode } from "core/Meshes/transformNode";
 import type { AbstractMesh } from "core/Meshes/abstractMesh";
+import type { Mesh } from "core/Meshes/mesh";
 import type { FramingBehavior } from "core/Behaviors/Cameras/framingBehavior";
 import { DirectionalLight } from "core/Lights/directionalLight";
 import { LogEntry } from "../log/logComponent";
@@ -33,8 +34,11 @@ import { Layer } from "core/Layers/layer";
 import { DataStorage } from "core/Misc/dataStorage";
 import type { NodeMaterialBlock } from "core/Materials/Node/nodeMaterialBlock";
 import { CreateTorus } from "core/Meshes/Builders/torusBuilder";
+import type { TextureBlock } from "core/Materials/Node/Blocks/Dual/textureBlock";
 
 import "core/Rendering/depthRendererSceneComponent";
+
+const dontSerializeTextureContent = true;
 
 export class PreviewManager {
     private _nodeMaterial: NodeMaterial;
@@ -60,13 +64,53 @@ export class PreviewManager {
     private _particleSystem: Nullable<IParticleSystem>;
     private _layer: Nullable<Layer>;
 
+    private _serializeMaterial(): any {
+        const nodeMaterial = this._nodeMaterial;
+
+        let fullSerialization = false;
+
+        if (dontSerializeTextureContent) {
+            const textureBlocks = nodeMaterial.getAllTextureBlocks();
+            for (const block of textureBlocks) {
+                const texture = block.texture;
+                if (!texture || (block as TextureBlock).hasImageSource) {
+                    continue;
+                }
+                let found = false;
+                for (const localTexture of this._engine.getLoadedTexturesCache()) {
+                    if (localTexture.uniqueId === texture._texture?.uniqueId) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    fullSerialization = true;
+                    break;
+                }
+            }
+        }
+
+        const bufferSerializationState = Texture.SerializeBuffers;
+
+        if (dontSerializeTextureContent) {
+            Texture.SerializeBuffers = fullSerialization;
+            Texture._SerializeInternalTextureUniqueId = true;
+        }
+
+        const serializationObject = nodeMaterial.serialize();
+
+        Texture.SerializeBuffers = bufferSerializationState;
+        Texture._SerializeInternalTextureUniqueId = false;
+
+        return serializationObject;
+    }
+
     public constructor(targetCanvas: HTMLCanvasElement, globalState: GlobalState) {
         this._nodeMaterial = globalState.nodeMaterial;
         this._globalState = globalState;
 
-        this._onBuildObserver = this._nodeMaterial.onBuildObservable.add((nodeMaterial) => {
-            const serializationObject = nodeMaterial.serialize();
-            this._updatePreview(serializationObject);
+        this._onBuildObserver = this._nodeMaterial.onBuildObservable.add(() => {
+            this._updatePreview();
         });
 
         this._onPreviewCommandActivatedObserver = globalState.onPreviewCommandActivated.add((forceRefresh: boolean) => {
@@ -82,8 +126,7 @@ export class PreviewManager {
         });
 
         this._onUpdateRequiredObserver = globalState.stateManager.onUpdateRequiredObservable.add(() => {
-            const serializationObject = this._nodeMaterial.serialize();
-            this._updatePreview(serializationObject);
+            this._updatePreview();
         });
 
         this._onPreviewBackgroundChangedObserver = globalState.onPreviewBackgroundChanged.add(() => {
@@ -245,8 +288,7 @@ export class PreviewManager {
         }
 
         // Material
-        const serializationObject = this._nodeMaterial.serialize();
-        this._updatePreview(serializationObject);
+        this._updatePreview();
     }
 
     private _refreshPreviewMesh() {
@@ -283,16 +325,23 @@ export class PreviewManager {
 
             this._globalState.onIsLoadingChanged.notifyObservers(true);
 
+            const bakeTransformation = (mesh: Mesh) => {
+                mesh.bakeCurrentTransformIntoVertices();
+                mesh.refreshBoundingInfo();
+            };
+
             if (this._globalState.mode === NodeMaterialModes.Material) {
                 switch (this._globalState.previewType) {
                     case PreviewType.Box:
                         SceneLoader.AppendAsync("https://assets.babylonjs.com/meshes/", "roundedCube.glb", this._scene).then(() => {
+                            bakeTransformation(this._scene.meshes[1] as Mesh);
                             this._meshes.push(...this._scene.meshes);
                             this._prepareScene();
                         });
                         return;
                     case PreviewType.Sphere:
                         SceneLoader.AppendAsync("https://assets.babylonjs.com/meshes/", "previewSphere.glb", this._scene).then(() => {
+                            bakeTransformation(this._scene.meshes[1] as Mesh);
                             this._meshes.push(...this._scene.meshes);
                             this._prepareScene();
                         });
@@ -318,6 +367,7 @@ export class PreviewManager {
                         return;
                     case PreviewType.Plane: {
                         SceneLoader.AppendAsync("https://assets.babylonjs.com/meshes/", "highPolyPlane.glb", this._scene).then(() => {
+                            bakeTransformation(this._scene.meshes[1] as Mesh);
                             this._meshes.push(...this._scene.meshes);
                             this._prepareScene();
                         });
@@ -426,8 +476,7 @@ export class PreviewManager {
             if (prepareScene) {
                 this._prepareScene();
             } else {
-                const serializationObject = this._nodeMaterial.serialize();
-                this._updatePreview(serializationObject);
+                this._updatePreview();
             }
         });
     }
@@ -436,8 +485,10 @@ export class PreviewManager {
         return material.forceCompilationAsync(mesh);
     }
 
-    private _updatePreview(serializationObject: any) {
+    private _updatePreview() {
         try {
+            const serializationObject = this._serializeMaterial();
+
             const store = NodeMaterial.IgnoreTexturesAtLoadTime;
             NodeMaterial.IgnoreTexturesAtLoadTime = false;
             const tempMaterial = NodeMaterial.Parse(serializationObject, this._scene);
@@ -471,7 +522,7 @@ export class PreviewManager {
                     }
 
                     if (this._material) {
-                        this._material.dispose(false, true);
+                        this._material.dispose();
                     }
                     this._material = tempMaterial;
                     break;
@@ -482,7 +533,7 @@ export class PreviewManager {
                     this._proceduralTexture = tempMaterial.createProceduralTexture(512, this._scene);
 
                     if (this._material) {
-                        this._material.dispose(false, true);
+                        this._material.dispose();
                     }
 
                     if (this._layer) {
@@ -508,7 +559,7 @@ export class PreviewManager {
                     this._particleSystem!.blendMode = this._globalState.particleSystemBlendMode;
 
                     if (this._material) {
-                        this._material.dispose(false, true);
+                        this._material.dispose();
                     }
                     this._material = tempMaterial;
                     break;
@@ -525,7 +576,7 @@ export class PreviewManager {
                                 }
 
                                 if (this._material) {
-                                    this._material.dispose(false, true);
+                                    this._material.dispose();
                                 }
 
                                 this._material = tempMaterial;
