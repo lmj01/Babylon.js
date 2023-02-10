@@ -67,7 +67,7 @@ ThinEngine.prototype.createRenderTargetTexture = function (this: ThinEngine, siz
     let colorAttachment: InternalTexture | undefined = undefined;
     let samples = 1;
     if (options !== undefined && typeof options === "object") {
-        generateDepthBuffer = !!options.generateDepthBuffer;
+        generateDepthBuffer = options.generateDepthBuffer ?? true;
         generateStencilBuffer = !!options.generateStencilBuffer;
         noColorAttachment = !!options.noColorAttachment;
         colorAttachment = options.colorAttachment;
@@ -251,7 +251,7 @@ ThinEngine.prototype.updateRenderTargetTextureSampleCount = function (rtWrapper:
         hardwareTexture._MSAARenderBuffer = null;
     }
 
-    if (samples > 1 && gl.renderbufferStorageMultisample) {
+    if (samples > 1 && typeof gl.renderbufferStorageMultisample === "function") {
         const framebuffer = gl.createFramebuffer();
 
         if (!framebuffer) {

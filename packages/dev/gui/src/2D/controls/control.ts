@@ -19,12 +19,13 @@ import type { Style } from "../style";
 import { Matrix2D, Vector2WithInfo } from "../math2D";
 import { GetClass, RegisterClass } from "core/Misc/typeStore";
 import { SerializationHelper, serialize } from "core/Misc/decorators";
-import type { ICanvasRenderingContext } from "core/Engines/ICanvas";
+import type { ICanvasGradient, ICanvasRenderingContext } from "core/Engines/ICanvas";
 import { EngineStore } from "core/Engines/engineStore";
 import type { IAccessibilityTag } from "core/IAccessibilityTag";
 import type { IPointerEvent } from "core/Events/deviceInputEvents";
 import type { IAnimatable } from "core/Animations/animatable.interface";
 import type { Animation } from "core/Animations/animation";
+import type { BaseGradient } from "./gradient/BaseGradient";
 
 /**
  * Root class used for all 2D controls
@@ -74,7 +75,7 @@ export class Control implements IAnimatable {
     /** @internal */
     public _prevCurrentMeasureTransformedIntoGlobalSpace = Measure.Empty();
     /** @internal */
-    protected _cachedParentMeasure = Measure.Empty();
+    public _cachedParentMeasure = Measure.Empty();
     private _descendantsOnlyPadding = false;
     private _paddingLeft = new ValueAndUnit(0);
     private _paddingRight = new ValueAndUnit(0);
@@ -116,6 +117,7 @@ export class Control implements IAnimatable {
     protected _disabledColor = "#9a9a9a";
     protected _disabledColorItem = "#6a6a6a";
     protected _isReadOnly = false;
+    private _gradient: Nullable<BaseGradient> = null;
     /** @internal */
     protected _rebuildLayout = false;
 
@@ -778,6 +780,21 @@ export class Control implements IAnimatable {
         }
 
         this._color = value;
+        this._markAsDirty();
+    }
+
+    /** Gets or sets gradient. Setting a gradient will override the color */
+    @serialize()
+    public get gradient(): Nullable<BaseGradient> {
+        return this._gradient;
+    }
+
+    public set gradient(value: Nullable<BaseGradient>) {
+        if (this._gradient === value) {
+            return;
+        }
+
+        this._gradient = value;
         this._markAsDirty();
     }
 
@@ -1480,6 +1497,10 @@ export class Control implements IAnimatable {
             }
         }
 
+        if (oldLeft === newLeft && oldTop === newTop) {
+            return;
+        }
+
         this.left = newLeft + "px";
         this.top = newTop + "px";
 
@@ -1552,7 +1573,7 @@ export class Control implements IAnimatable {
 
     /** @internal */
     // eslint-disable-next-line @typescript-eslint/naming-convention
-    protected invalidateRect() {
+    public invalidateRect() {
         this._transform();
         if (this.host && this.host.useInvalidateRectOptimization) {
             // Rotate by transform to get the measure transformed to global space
@@ -1679,6 +1700,10 @@ export class Control implements IAnimatable {
         context.strokeRect(this._currentMeasure.left, this._currentMeasure.top, this._currentMeasure.width, this._currentMeasure.height);
     }
 
+    protected _getColor(context: ICanvasRenderingContext): string | ICanvasGradient {
+        return this.gradient ? this.gradient.getCanvasGradient(context) : this.color;
+    }
+
     /**
      * @internal
      */
@@ -1700,8 +1725,8 @@ export class Control implements IAnimatable {
             context.font = this._font;
         }
 
-        if (this._color) {
-            context.fillStyle = this._color;
+        if (this._color || this.gradient) {
+            context.fillStyle = this._getColor(context);
         }
 
         if (Control.AllowAlphaInheritance) {
@@ -2324,6 +2349,38 @@ export class Control implements IAnimatable {
     }
 
     /**
+     * Clones a control and its descendants
+     * @param host the texture where the control will be instantiated. Can be empty, in which case the control will be created on the same texture
+     * @returns the cloned control
+     */
+    public clone(host?: AdvancedDynamicTexture): Control {
+        const serialization: any = {};
+        this.serialize(serialization);
+
+        const controlType = Tools.Instantiate("BABYLON.GUI." + serialization.className);
+        const cloned = new controlType();
+        cloned.parse(serialization, host);
+
+        return cloned;
+    }
+
+    /**
+     * Parses a serialized object into this control
+     * @param serializedObject the object with the serialized properties
+     * @param host the texture where the control will be instantiated. Can be empty, in which case the control will be created on the same texture
+     * @returns this control
+     */
+    public parse(serializedObject: any, host?: AdvancedDynamicTexture): Control {
+        SerializationHelper.Parse(() => this, serializedObject, null);
+
+        this.name = serializedObject.name;
+
+        this._parseFromContent(serializedObject, host ?? this._host);
+
+        return this;
+    }
+
+    /**
      * Serializes the current control
      * @param serializationObject defined the JSON serialized object
      */
@@ -2337,6 +2394,11 @@ export class Control implements IAnimatable {
             serializationObject.fontSize = this.fontSize;
             serializationObject.fontWeight = this.fontWeight;
             serializationObject.fontStyle = this.fontStyle;
+        }
+
+        if (this._gradient) {
+            serializationObject.gradient = {};
+            this._gradient.serialize(serializationObject.gradient);
         }
 
         // Animations
@@ -2361,6 +2423,13 @@ export class Control implements IAnimatable {
 
         if (serializedObject.fontStyle) {
             this.fontStyle = serializedObject.fontStyle;
+        }
+
+        // Gradient
+        if (serializedObject.gradient) {
+            const className = Tools.Instantiate("BABYLON.GUI." + serializedObject.gradient.className);
+            this._gradient = new className();
+            this._gradient?.parse(serializedObject.gradient);
         }
 
         // Animations
@@ -2515,6 +2584,15 @@ export class Control implements IAnimatable {
 
         context.scale(1 / width, 1 / height);
         context.translate(-x, -y);
+    }
+
+    /**
+     * Returns true if the control is ready to be used
+     * @returns
+     */
+    public isReady(): boolean {
+        // Most controls are ready by default, so the default implementation is to return true
+        return true;
     }
 }
 RegisterClass("BABYLON.GUI.Control", Control);

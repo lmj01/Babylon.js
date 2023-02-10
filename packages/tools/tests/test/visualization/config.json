@@ -14,7 +14,9 @@
         {
             "title": "Iridescence NME",
             "playgroundId": "#2FDQT5#1507",
-            "referenceImage": "iridescence_nme.png"
+            "referenceImage": "iridescence_nme.png",
+            "excludedEngines": ["webgl1"],
+            "excludeFromAutomaticTesting": true
         },
         {
             "title": "Iridescence GLTF",
@@ -160,6 +162,11 @@
             "title": "Clear Coat",
             "playgroundId": "#YACNQS#2",
             "referenceImage": "clearCoat.png"
+        },
+        {
+            "title": "Dynamic Texture context clip",
+            "playgroundId": "#FU0ES5#37",
+            "referenceImage": "dynamicTextureClip.png"
         },
         {
             "title": "GUI Transform StackPanel",
@@ -1514,6 +1521,47 @@
             "playgroundId": "#20OAV9#9228",
             "referenceImage": "exportGltfKHRTextureTransform.png",
             "renderCount": 5
+        },
+        {
+            "title": "GUI Input Text Area Inside ScrollViewer",
+            "playgroundId": "#NVAEWD#69"
+        },
+        {
+            "title": "GUI Images in Grid",
+            "playgroundId": "#8Y0XJL#1"
+        },
+        {
+            "title": "GUI Force Resize Width",
+            "playgroundId": "#XCPP9Y#17259"
+        },
+        {
+            "title": "GUI Gradient Linear",
+            "playgroundId": "#XCPP9Y#17227"
+        },
+        {
+            "title": "GUI Gradient Radial",
+            "playgroundId": "#4Z7EK3"
+        },
+        {
+            "title": "GUI Gradient Linear with transparency",
+            "playgroundId": "#PFK1Z5"
+        },
+        {
+            "title": "Load babylon files with same geometry uniqueId",
+            "playgroundId": "#3UCFHS"
+        },
+        {
+            "title": "Asset Container Instantiate to Scene",
+            "playgroundId": "#5NFRVE#142"
+        },
+        {
+            "title": "Asset Container Instantiate to Scene 2",
+            "playgroundId": "#5NFRVE#161"
+        },
+        {
+            "title": "Loading glTF model with KTX2 textures",
+            "playgroundId": "#YD2TXP#35",
+            "excludeFromAutomaticTesting": true
         }
     ]
 }
