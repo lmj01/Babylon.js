@@ -2,7 +2,6 @@
 import type { NodeMaterialBlock } from "./nodeMaterialBlock";
 import { PushMaterial } from "../pushMaterial";
 import type { Scene } from "../../scene";
-import { ScenePerformancePriority } from "../../scene";
 import { AbstractMesh } from "../../Meshes/abstractMesh";
 import { Matrix, Vector2 } from "../../Maths/math.vector";
 import { Color3, Color4 } from "../../Maths/math.color";
@@ -81,6 +80,7 @@ export interface INodeMaterialEditorOptions {
 export class NodeMaterialDefines extends MaterialDefines implements IImageProcessingConfigurationDefines {
     public NORMAL = false;
     public TANGENT = false;
+    public VERTEXCOLOR_NME = false;
     public UV1 = false;
     public UV2 = false;
     public UV3 = false;
@@ -808,10 +808,13 @@ export class NodeMaterial extends PushMaterial {
     private _prepareDefinesForAttributes(mesh: AbstractMesh, defines: NodeMaterialDefines) {
         const oldNormal = defines["NORMAL"];
         const oldTangent = defines["TANGENT"];
+        const oldColor = defines["VERTEXCOLOR_NME"];
 
         defines["NORMAL"] = mesh.isVerticesDataPresent(VertexBuffer.NormalKind);
-
         defines["TANGENT"] = mesh.isVerticesDataPresent(VertexBuffer.TangentKind);
+
+        const hasVertexColors = mesh.useVertexColors && mesh.isVerticesDataPresent(VertexBuffer.ColorKind);
+        defines["VERTEXCOLOR_NME"] = hasVertexColors;
 
         let uvChanged = false;
         for (let i = 1; i <= Constants.MAX_SUPPORTED_UV_SETS; ++i) {
@@ -820,7 +823,7 @@ export class NodeMaterial extends PushMaterial {
             uvChanged = uvChanged || defines["UV" + i] !== oldUV;
         }
 
-        if (oldNormal !== defines["NORMAL"] || oldTangent !== defines["TANGENT"] || uvChanged) {
+        if (oldNormal !== defines["NORMAL"] || oldTangent !== defines["TANGENT"] || oldColor !== defines["VERTEXCOLOR_NME"] || uvChanged) {
             defines.markAsAttributesDirty();
         }
     }
@@ -1391,9 +1394,7 @@ export class NodeMaterial extends PushMaterial {
         subMesh.effect._wasPreviouslyReady = true;
         subMesh.effect._wasPreviouslyUsingInstances = useInstances;
 
-        if (scene.performancePriority !== ScenePerformancePriority.BackwardCompatible) {
-            this.checkReadyOnlyOnce = true;
-        }
+        this._checkScenePerformancePriority();
 
         return true;
     }

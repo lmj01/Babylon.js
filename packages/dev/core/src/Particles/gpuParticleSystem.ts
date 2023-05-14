@@ -35,7 +35,7 @@ declare type AbstractMesh = import("../Meshes/abstractMesh").AbstractMesh;
 import "../Shaders/gpuRenderParticles.fragment";
 import "../Shaders/gpuRenderParticles.vertex";
 import { GetClass } from "../Misc/typeStore";
-import { addClipPlaneUniforms, bindClipPlane, prepareDefinesForClipPlanes } from "../Materials/clipPlaneMaterialHelper";
+import { addClipPlaneUniforms, bindClipPlane, prepareStringDefinesForClipPlanes } from "../Materials/clipPlaneMaterialHelper";
 
 /**
  * This represents a GPU particle system in Babylon
@@ -1156,6 +1156,13 @@ export class GPUParticleSystem extends BaseParticleSystem implements IDisposable
 
     /** @internal */
     public _recreateUpdateEffect() {
+        this._createColorGradientTexture();
+        this._createSizeGradientTexture();
+        this._createAngularSpeedGradientTexture();
+        this._createVelocityGradientTexture();
+        this._createLimitVelocityGradientTexture();
+        this._createDragGradientTexture();
+
         let defines = this.particleEmitterType ? this.particleEmitterType.getEffectDefines() : "";
 
         if (this._isBillboardBased) {
@@ -1300,7 +1307,7 @@ export class GPUParticleSystem extends BaseParticleSystem implements IDisposable
      */
     public fillDefines(defines: Array<string>, blendMode: number = 0) {
         if (this._scene) {
-            prepareDefinesForClipPlanes(this, this._scene, defines);
+            prepareStringDefinesForClipPlanes(this, this._scene, defines);
         }
 
         if (blendMode === ParticleSystem.BLENDMODE_MULTIPLY) {
@@ -1410,6 +1417,7 @@ export class GPUParticleSystem extends BaseParticleSystem implements IDisposable
         }
 
         (<any>this)[textureName] = RawTexture.CreateRTexture(data, this._rawTextureWidth, 1, this._scene || this._engine, false, false, Constants.TEXTURE_NEAREST_SAMPLINGMODE);
+        (<any>this)[textureName].name = textureName.substring(1);
     }
 
     private _createSizeGradientTexture() {
@@ -1453,6 +1461,7 @@ export class GPUParticleSystem extends BaseParticleSystem implements IDisposable
         }
 
         this._colorGradientsTexture = RawTexture.CreateRGBATexture(data, this._rawTextureWidth, 1, this._scene, false, false, Constants.TEXTURE_NEAREST_SAMPLINGMODE);
+        this._colorGradientsTexture.name = "colorGradients";
     }
 
     private _render(blendMode: number, emitterWM: Matrix): number {
@@ -1540,7 +1549,7 @@ export class GPUParticleSystem extends BaseParticleSystem implements IDisposable
 
     /** @internal */
     public _update(emitterWM?: Matrix): void {
-        if (!this.emitter) {
+        if (!this.emitter || !this._targetBuffer) {
             return;
         }
 
@@ -1548,13 +1557,15 @@ export class GPUParticleSystem extends BaseParticleSystem implements IDisposable
             return;
         }
 
-        if ((<AbstractMesh>this.emitter).position) {
-            const emitterMesh = <AbstractMesh>this.emitter;
-            emitterWM = emitterMesh.getWorldMatrix();
-        } else {
-            const emitterPosition = <Vector3>this.emitter;
-            emitterWM = TmpVectors.Matrix[0];
-            Matrix.TranslationToRef(emitterPosition.x, emitterPosition.y, emitterPosition.z, emitterWM);
+        if (!emitterWM) {
+            if ((<AbstractMesh>this.emitter).position) {
+                const emitterMesh = <AbstractMesh>this.emitter;
+                emitterWM = emitterMesh.getWorldMatrix();
+            } else {
+                const emitterPosition = <Vector3>this.emitter;
+                emitterWM = TmpVectors.Matrix[0];
+                Matrix.TranslationToRef(emitterPosition.x, emitterPosition.y, emitterPosition.z, emitterWM);
+            }
         }
 
         this._platform.preUpdateParticleBuffer();
@@ -1614,13 +1625,6 @@ export class GPUParticleSystem extends BaseParticleSystem implements IDisposable
             return 0;
         }
 
-        this._createColorGradientTexture();
-        this._createSizeGradientTexture();
-        this._createAngularSpeedGradientTexture();
-        this._createVelocityGradientTexture();
-        this._createLimitVelocityGradientTexture();
-        this._createDragGradientTexture();
-
         if (!this.isReady()) {
             return 0;
         }
@@ -1636,13 +1640,13 @@ export class GPUParticleSystem extends BaseParticleSystem implements IDisposable
             }
 
             if (
-                this._currentRenderId === this._scene.getFrameId() &&
+                this._currentRenderId === this._scene.getRenderId() &&
                 (!this._scene.activeCamera || (this._scene.activeCamera && this._currentRenderingCameraUniqueId === this._scene.activeCamera.uniqueId))
             ) {
                 return 0;
             }
 
-            this._currentRenderId = this._scene.getFrameId();
+            this._currentRenderId = this._scene.getRenderId();
             if (this._scene.activeCamera) {
                 this._currentRenderingCameraUniqueId = this._scene.activeCamera.uniqueId;
             }

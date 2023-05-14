@@ -596,43 +596,9 @@ export class Engine extends ThinEngine {
         if ((<any>canvasOrContext).getContext) {
             const canvas = <HTMLCanvasElement>canvasOrContext;
 
-            this._sharedInit(canvas, !!options.doNotHandleTouchAction, options.audioEngine!);
-
-            if (IsDocumentAvailable()) {
-                // Fullscreen
-                this._onFullscreenChange = () => {
-                    this.isFullscreen = !!document.fullscreenElement;
-
-                    // Pointer lock
-                    if (this.isFullscreen && this._pointerLockRequested && canvas) {
-                        Engine._RequestPointerlock(canvas);
-                    }
-                };
-
-                document.addEventListener("fullscreenchange", this._onFullscreenChange, false);
-                document.addEventListener("webkitfullscreenchange", this._onFullscreenChange, false);
-
-                // Pointer lock
-                this._onPointerLockChange = () => {
-                    this.isPointerLock = document.pointerLockElement === canvas;
-                };
-
-                document.addEventListener("pointerlockchange", this._onPointerLockChange, false);
-                document.addEventListener("webkitpointerlockchange", this._onPointerLockChange, false);
-
-                // Create Audio Engine if needed.
-                if (!Engine.audioEngine && options.audioEngine && Engine.AudioEngineFactory) {
-                    Engine.audioEngine = Engine.AudioEngineFactory(this.getRenderingCanvas(), this.getAudioContext(), this.getAudioDestination());
-                }
-            }
+            this._sharedInit(canvas);
 
             this._connectVREvents();
-
-            this.enableOfflineSupport = Engine.OfflineProviderFactory !== undefined;
-
-            this._deterministicLockstep = !!options.deterministicLockstep;
-            this._lockstepMaxSteps = options.lockstepMaxSteps || 0;
-            this._timeStep = options.timeStep || 1 / 60;
         }
 
         // Load WebVR Devices
@@ -651,11 +617,9 @@ export class Engine extends ThinEngine {
     /**
      * Shared initialization across engines types.
      * @param canvas The canvas associated with this instance of the engine.
-     * @param doNotHandleTouchAction Defines that engine should ignore modifying touch action attribute and style
-     * @param audioEngine Defines if an audio engine should be created by default
      */
-    protected _sharedInit(canvas: HTMLCanvasElement, doNotHandleTouchAction: boolean, audioEngine: boolean) {
-        super._sharedInit(canvas, doNotHandleTouchAction, audioEngine);
+    protected _sharedInit(canvas: HTMLCanvasElement) {
+        super._sharedInit(canvas);
 
         this._onCanvasFocus = () => {
             this.onCanvasFocusObservable.notifyObservers(this);
@@ -705,14 +669,47 @@ export class Engine extends ThinEngine {
 
         canvas.addEventListener("pointerout", this._onCanvasPointerOut);
 
-        if (!doNotHandleTouchAction) {
+        if (!this._creationOptions.doNotHandleTouchAction) {
             this._disableTouchAction();
         }
 
         // Create Audio Engine if needed.
-        if (!Engine.audioEngine && audioEngine && Engine.AudioEngineFactory) {
+        if (!Engine.audioEngine && this._creationOptions.audioEngine && Engine.AudioEngineFactory) {
             Engine.audioEngine = Engine.AudioEngineFactory(this.getRenderingCanvas(), this.getAudioContext(), this.getAudioDestination());
         }
+        if (IsDocumentAvailable()) {
+            // Fullscreen
+            this._onFullscreenChange = () => {
+                this.isFullscreen = !!document.fullscreenElement;
+
+                // Pointer lock
+                if (this.isFullscreen && this._pointerLockRequested && canvas) {
+                    Engine._RequestPointerlock(canvas);
+                }
+            };
+
+            document.addEventListener("fullscreenchange", this._onFullscreenChange, false);
+            document.addEventListener("webkitfullscreenchange", this._onFullscreenChange, false);
+
+            // Pointer lock
+            this._onPointerLockChange = () => {
+                this.isPointerLock = document.pointerLockElement === canvas;
+            };
+
+            document.addEventListener("pointerlockchange", this._onPointerLockChange, false);
+            document.addEventListener("webkitpointerlockchange", this._onPointerLockChange, false);
+        }
+
+        this.enableOfflineSupport = Engine.OfflineProviderFactory !== undefined;
+
+        this._deterministicLockstep = !!this._creationOptions.deterministicLockstep;
+        this._lockstepMaxSteps = this._creationOptions.lockstepMaxSteps || 0;
+        this._timeStep = this._creationOptions.timeStep || 1 / 60;
+    }
+
+    /** @internal */
+    public _verifyPointerLock(): void {
+        this._onPointerLockChange?.();
     }
 
     /**
@@ -1287,7 +1284,7 @@ export class Engine extends ThinEngine {
     public _renderLoop(): void {
         if (!this._contextWasLost) {
             let shouldRender = true;
-            if (!this.renderEvenInBackground && this._windowIsBackground) {
+            if (this.isDisposed || (!this.renderEvenInBackground && this._windowIsBackground)) {
                 shouldRender = false;
             }
 
@@ -1694,13 +1691,17 @@ export class Engine extends ThinEngine {
     /**
      * Wraps an external web gl texture in a Babylon texture.
      * @param texture defines the external texture
+     * @param hasMipMaps defines whether the external texture has mip maps (default: false)
+     * @param samplingMode defines the sampling mode for the external texture (default: Constants.TEXTURE_TRILINEAR_SAMPLINGMODE)
      * @returns the babylon internal texture
      */
-    public wrapWebGLTexture(texture: WebGLTexture): InternalTexture {
+    public wrapWebGLTexture(texture: WebGLTexture, hasMipMaps: boolean = false, samplingMode: number = Constants.TEXTURE_TRILINEAR_SAMPLINGMODE): InternalTexture {
         const hardwareTexture = new WebGLHardwareTexture(texture, this._gl);
         const internalTexture = new InternalTexture(this, InternalTextureSource.Unknown, true);
         internalTexture._hardwareTexture = hardwareTexture;
         internalTexture.isReady = true;
+        internalTexture.useMipMaps = hasMipMaps;
+        this.updateTextureSamplingMode(samplingMode, internalTexture);
         return internalTexture;
     }
 
@@ -1882,7 +1883,7 @@ export class Engine extends ThinEngine {
         }
 
         // Release audio engine
-        if (Engine.Instances.length === 1 && Engine.audioEngine) {
+        if (EngineStore.Instances.length === 1 && Engine.audioEngine) {
             Engine.audioEngine.dispose();
             Engine.audioEngine = null;
         }
@@ -1918,10 +1919,16 @@ export class Engine extends ThinEngine {
         super.dispose();
 
         // Remove from Instances
-        const index = Engine.Instances.indexOf(this);
+        const index = EngineStore.Instances.indexOf(this);
 
         if (index >= 0) {
-            Engine.Instances.splice(index, 1);
+            EngineStore.Instances.splice(index, 1);
+        }
+
+        // no more engines left in the engine store? Notify!
+        if (!Engine.Instances.length) {
+            EngineStore.OnEnginesDisposedObservable.notifyObservers(this);
+            EngineStore.OnEnginesDisposedObservable.clear();
         }
 
         // Observables

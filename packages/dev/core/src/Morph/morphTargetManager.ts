@@ -98,7 +98,7 @@ export class MorphTargetManager implements IDisposable {
         this._scene = scene;
 
         if (this._scene) {
-            this._scene.morphTargetManagers.push(this);
+            this._scene.addMorphTargetManager(this);
 
             this._uniqueId = this._scene.getUniqueId();
 
@@ -181,7 +181,12 @@ export class MorphTargetManager implements IDisposable {
      * Gets a boolean indicating that the targets are stored into a texture (instead of as attributes)
      */
     public get isUsingTextureForTargets() {
-        return MorphTargetManager.EnableTextureStorage && this.useTextureToStoreTargets && this._canUseTextureForTargets;
+        return (
+            MorphTargetManager.EnableTextureStorage &&
+            this.useTextureToStoreTargets &&
+            this._canUseTextureForTargets &&
+            !this._scene?.getEngine().getCaps().disableMorphTargetTexture
+        );
     }
 
     /**
@@ -233,6 +238,10 @@ export class MorphTargetManager implements IDisposable {
             target.onInfluenceChanged.remove(this._targetInfluenceChangedObservers.splice(index, 1)[0]);
             target._onDataLayoutChanged.remove(this._targetDataLayoutChangedObservers.splice(index, 1)[0]);
             this._syncActiveTargets(true);
+        }
+
+        if (this._scene) {
+            this._scene.stopAnimation(target);
         }
     }
 
@@ -480,6 +489,10 @@ export class MorphTargetManager implements IDisposable {
                     this._parentContainer.morphTargetManagers.splice(index, 1);
                 }
                 this._parentContainer = null;
+            }
+
+            for (const morph of this._targets) {
+                this._scene.stopAnimation(morph);
             }
         }
     }

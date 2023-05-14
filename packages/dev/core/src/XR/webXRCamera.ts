@@ -154,10 +154,28 @@ export class WebXRCamera extends FreeCamera {
         return "WebXRCamera";
     }
 
+    /**
+     * Set the target for the camera to look at.
+     * Note that this only rotates around the Y axis, as opposed to the default behavior of other cameras
+     * @param target the target to set the camera to look at
+     */
+    public setTarget(target: Vector3): void {
+        // only rotate around the y axis!
+        const tmpVector = TmpVectors.Vector3[1];
+        target.subtractToRef(this.position, tmpVector);
+        tmpVector.y = 0;
+        tmpVector.normalize();
+        const yRotation = Math.atan2(tmpVector.x, tmpVector.z);
+        this.rotationQuaternion.toEulerAnglesToRef(tmpVector);
+        Quaternion.FromEulerAnglesToRef(tmpVector.x, yRotation, tmpVector.z, this.rotationQuaternion);
+    }
+
     public dispose() {
         super.dispose();
         this._lastXRViewerPose = undefined;
     }
+
+    private _rotate180 = new Quaternion(0, 1, 0, 0);
 
     private _updateFromXRSession() {
         const pose = this._xrSessionManager.currentFrame && this._xrSessionManager.currentFrame.getViewerPose(this._xrSessionManager.referenceSpace);
@@ -244,6 +262,8 @@ export class WebXRCamera extends FreeCamera {
                 currentRig.position.z *= -1;
                 currentRig.rotationQuaternion.z *= -1;
                 currentRig.rotationQuaternion.w *= -1;
+            } else {
+                currentRig.rotationQuaternion.multiplyInPlace(this._rotate180);
             }
             Matrix.FromFloat32ArrayToRefScaled(view.projectionMatrix, 0, 1, currentRig._projectionMatrix);
 

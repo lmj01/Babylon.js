@@ -249,6 +249,12 @@ export async function CreateEnvTextureAsync(texture: BaseTexture, options: Creat
         }
     }
 
+    // sphericalPolynomial is lazy loaded so simply accessing it should trigger the computation.
+    texture.sphericalPolynomial;
+
+    // Lets keep track of the polynomial promise so we can wait for it to be ready before generating the pixels.
+    const sphericalPolynomialPromise = texture.getInternalTexture()?._sphericalPolynomialPromise;
+
     const cubeWidth = internalTexture.width;
     const hostingScene = new Scene(engine);
     const specularTextures: { [key: number]: ArrayBuffer } = {};
@@ -272,6 +278,12 @@ export async function CreateEnvTextureAsync(texture: BaseTexture, options: Creat
                     faceDataFloat[i] = Math.pow(faceDataFloat[i], 2.2);
                 }
                 faceData = faceDataFloat;
+            } else if (faceData && texture.gammaSpace) {
+                const floatData = faceData as Float32Array;
+                for (let i = 0; i < floatData.length; i++) {
+                    // Gamma to linear
+                    floatData[i] = Math.pow(floatData[i], 2.2);
+                }
             }
 
             const tempTexture = engine.createRawTexture(
@@ -300,6 +312,11 @@ export async function CreateEnvTextureAsync(texture: BaseTexture, options: Creat
 
     // We can delete the hosting scene keeping track of all the creation objects
     hostingScene.dispose();
+
+    // Ensure completion of the polynomial creation promise.
+    if (sphericalPolynomialPromise) {
+        await sphericalPolynomialPromise;
+    }
 
     // Creates the json header for the env texture
     const info: EnvironmentTextureInfo = {

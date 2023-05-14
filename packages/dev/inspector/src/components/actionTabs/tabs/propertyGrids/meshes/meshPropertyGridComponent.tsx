@@ -22,6 +22,7 @@ import type { GlobalState } from "../../../../globalState";
 import { CustomPropertyGridComponent } from "../customPropertyGridComponent";
 import { StandardMaterial } from "core/Materials/standardMaterial";
 import { Color3LineComponent } from "shared-ui-components/lines/color3LineComponent";
+import { Color4LineComponent } from "shared-ui-components/lines/color4LineComponent";
 import type { MorphTarget } from "core/Morph/morphTarget";
 import { OptionsLineComponent } from "shared-ui-components/lines/optionsLineComponent";
 import { AbstractMesh } from "core/Meshes/abstractMesh";
@@ -38,7 +39,6 @@ import type { IInspectableOptions } from "core/Misc/iInspectable";
 import { NormalMaterial } from "materials/normal/normalMaterial";
 
 import "core/Physics/physicsEngineComponent";
-import "core/Physics/v1/physicsEngineComponent";
 import "core/Physics/v1/physicsEngineComponent";
 
 import { ParentPropertyGridComponent } from "../parentPropertyGridComponent";
@@ -401,7 +401,7 @@ export class MeshPropertyGridComponent extends React.Component<
             : [];
 
         return (
-            <div className="pane">
+            <>
                 <CustomPropertyGridComponent
                     globalState={this.props.globalState}
                     target={mesh}
@@ -706,7 +706,7 @@ export class MeshPropertyGridComponent extends React.Component<
                         propertyName="edgesWidth"
                         onPropertyChangedObservable={this.props.onPropertyChangedObservable}
                     />
-                    <Color3LineComponent
+                    <Color4LineComponent
                         lockObject={this.props.lockObject}
                         label="Edge color"
                         target={mesh}
@@ -791,7 +791,7 @@ export class MeshPropertyGridComponent extends React.Component<
                         <CheckBoxLineComponent label="Display SkeletonMap" isSelected={() => displaySkeletonMap} onSelect={() => this.displaySkeletonMap()} />
                     )}
                 </LineContainerComponent>
-            </div>
+            </>
         );
     }
 }

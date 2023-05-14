@@ -17,7 +17,6 @@ import zoomIcon from "../imgs/zoomIcon.svg";
 import guidesIcon from "../imgs/guidesIcon.svg";
 import logoIcon from "../imgs/babylonLogo.svg";
 import canvasFitIcon from "../imgs/canvasFitIcon.svg";
-import betaFlag from "../imgs/betaFlag.svg";
 import copyIcon from "../imgs/buttonbar_copyIcon.svg";
 import pasteIcon from "../imgs/buttonbar_pasteIcon.svg";
 import deleteIcon from "../imgs/buttonBar_deleteIcon.svg";
@@ -140,6 +139,17 @@ export class CommandBarComponent extends React.Component<ICommandBarComponentPro
                                     onClick: () => {
                                         this.props.globalState.onSnippetLoadObservable.notifyObservers();
                                     },
+                                },
+                                {
+                                    label: "Save selected control",
+                                    onClick: () => {
+                                        this.props.globalState.onSaveSelectedControl.notifyObservers();
+                                    },
+                                },
+                                {
+                                    label: "Load control",
+                                    fileButton: true,
+                                    loadControlButton: true,
                                 },
                                 {
                                     label: "Help",
@@ -338,9 +348,7 @@ export class CommandBarComponent extends React.Component<ICommandBarComponentPro
                         )}
                     </div>
                 </div>
-                <div className="commands-right">
-                    <img src={betaFlag} className="beta-flag" draggable={false} />
-                </div>
+                <div className="commands-right"></div>
             </div>
         );
     }

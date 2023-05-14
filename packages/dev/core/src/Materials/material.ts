@@ -24,6 +24,7 @@ import { MaterialHelper } from "./materialHelper";
 import type { IMaterialContext } from "../Engines/IMaterialContext";
 import { DrawWrapper } from "./drawWrapper";
 import { MaterialStencilState } from "./materialStencilState";
+import { ScenePerformancePriority } from "../scene";
 import type { Scene } from "../scene";
 import type { AbstractScene } from "../abstractScene";
 import type {
@@ -202,6 +203,12 @@ export class Material implements IAnimatable, IClipPlanesHolder {
      */
     public static OnEventObservable = new Observable<Material>();
 
+    static {
+        EngineStore.OnEnginesDisposedObservable.addOnce(() => {
+            Material.OnEventObservable.clear();
+        });
+    }
+
     /**
      * Custom callback helping to override the default shader used in the material.
      */
@@ -314,7 +321,7 @@ export class Material implements IAnimatable, IClipPlanesHolder {
 
         // Only call dirty when there is a state change (no alpha / alpha)
         if (oldValue === 1 || value === 1) {
-            this.markAsDirty(Material.MiscDirtyFlag);
+            this.markAsDirty(Material.MiscDirtyFlag + Material.PrePassDirtyFlag);
         }
     }
 
@@ -1697,6 +1704,20 @@ export class Material implements IAnimatable, IClipPlanesHolder {
      */
     protected _markAllSubMeshesAsTexturesAndMiscDirty() {
         this._markAllSubMeshesAsDirty(Material._TextureAndMiscDirtyCallBack);
+    }
+
+    protected _checkScenePerformancePriority() {
+        if (this._scene.performancePriority !== ScenePerformancePriority.BackwardCompatible) {
+            this.checkReadyOnlyOnce = true;
+            // re-set the flag when the perf priority changes
+            const observer = this._scene.onScenePerformancePriorityChangedObservable.addOnce(() => {
+                this.checkReadyOnlyOnce = false;
+            });
+            // if this material is disposed before the scene is disposed, cleanup the observer
+            this.onDisposeObservable.add(() => {
+                this._scene.onScenePerformancePriorityChangedObservable.remove(observer);
+            });
+        }
     }
 
     /**

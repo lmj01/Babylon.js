@@ -431,9 +431,10 @@ export class Vector2 {
     public rotateToRef<T extends Vector2>(angle: number, result: T): T {
         const cos = Math.cos(angle);
         const sin = Math.sin(angle);
-        result.x = cos * this.x - sin * this.y;
-        result.y = sin * this.x + cos * this.y;
-
+        const x = cos * this.x - sin * this.y;
+        const y = sin * this.x + cos * this.y;
+        result.x = x;
+        result.y = y;
         return result;
     }
 
@@ -492,6 +493,16 @@ export class Vector2 {
      */
     public static One(): Vector2 {
         return new Vector2(1, 1);
+    }
+
+    /**
+     * Returns a new Vector2 with random values between min and max
+     * @param min the minimum random value
+     * @param max the maximum random value
+     * @returns a Vector2 with random values between min and max
+     */
+    public static Random(min: number = 0, max: number = 1): Vector2 {
+        return new Vector2(Scalar.RandomRange(min, max), Scalar.RandomRange(min, max));
     }
 
     /**
@@ -877,6 +888,8 @@ export class Vector3 {
     private static _DownReadOnly = Vector3.Down() as DeepImmutable<Vector3>;
     private static _LeftHandedForwardReadOnly = Vector3.Forward(false) as DeepImmutable<Vector3>;
     private static _RightHandedForwardReadOnly = Vector3.Forward(true) as DeepImmutable<Vector3>;
+    private static _LeftHandedBackwardReadOnly = Vector3.Backward(false) as DeepImmutable<Vector3>;
+    private static _RightHandedBackwardReadOnly = Vector3.Backward(true) as DeepImmutable<Vector3>;
     private static _RightReadOnly = Vector3.Right() as DeepImmutable<Vector3>;
     private static _LeftReadOnly = Vector3.Left() as DeepImmutable<Vector3>;
     private static _ZeroReadOnly = Vector3.Zero() as DeepImmutable<Vector3>;
@@ -2051,6 +2064,20 @@ export class Vector3 {
     }
 
     /**
+     * Gets a backward Vector3 that must not be updated
+     */
+    public static get LeftHandedBackwardReadOnly(): DeepImmutable<Vector3> {
+        return Vector3._LeftHandedBackwardReadOnly;
+    }
+
+    /**
+     * Gets a backward Vector3 that must not be updated
+     */
+    public static get RightHandedBackwardReadOnly(): DeepImmutable<Vector3> {
+        return Vector3._RightHandedBackwardReadOnly;
+    }
+
+    /**
      * Gets a zero Vector3 that must not be updated
      */
     public static get ZeroReadOnly(): DeepImmutable<Vector3> {
@@ -2098,6 +2125,16 @@ export class Vector3 {
      */
     public static Left(): Vector3 {
         return new Vector3(-1.0, 0.0, 0.0);
+    }
+
+    /**
+     * Returns a new Vector3 with random values between min and max
+     * @param min the minimum random value
+     * @param max the maximum random value
+     * @returns a Vector3 with random values between min and max
+     */
+    public static Random(min: number = 0, max: number = 1): Vector3 {
+        return new Vector3(Scalar.RandomRange(min, max), Scalar.RandomRange(min, max), Scalar.RandomRange(min, max));
     }
 
     /**
@@ -3566,6 +3603,17 @@ export class Vector4 {
     public static One(): Vector4 {
         return new Vector4(1.0, 1.0, 1.0, 1.0);
     }
+
+    /**
+     * Returns a new Vector4 with random values between min and max
+     * @param min the minimum random value
+     * @param max the maximum random value
+     * @returns a Vector4 with random values between min and max
+     */
+    public static Random(min: number = 0, max: number = 1): Vector4 {
+        return new Vector4(Scalar.RandomRange(min, max), Scalar.RandomRange(min, max), Scalar.RandomRange(min, max), Scalar.RandomRange(min, max));
+    }
+
     /**
      * Gets a zero Vector4 that must not be updated
      */

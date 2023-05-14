@@ -16,6 +16,8 @@ interface IRenderingComponentProps {
 
 declare const Ammo: any;
 declare const Recast: any;
+declare const HavokPhysics: any;
+declare const HK: any;
 
 export class RenderingComponent extends React.Component<IRenderingComponentProps> {
     private _engine: Nullable<Engine>;
@@ -66,13 +68,6 @@ export class RenderingComponent extends React.Component<IRenderingComponentProps
         this.props.globalState.onFullcreenRequiredObservable.add(() => {
             this._engine?.switchFullscreen(false);
         });
-
-        if (this.props.globalState.runtimeMode !== RuntimeMode.Editor) {
-            this.props.globalState.onCodeLoaded.add((code) => {
-                this.props.globalState.currentCode = code;
-                this.props.globalState.onRunRequiredObservable.notifyObservers();
-            });
-        }
 
         window.addEventListener("resize", () => {
             if (!this._engine) {
@@ -150,18 +145,8 @@ export class RenderingComponent extends React.Component<IRenderingComponentProps
             if (useWebGPU) {
                 globalObject.createDefaultEngine = async function () {
                     const engine = new WebGPUEngine(canvas, {
-                        deviceDescriptor: {
-                            requiredFeatures: [
-                                "depth-clip-control",
-                                "depth24unorm-stencil8",
-                                "depth32float-stencil8",
-                                "texture-compression-bc",
-                                "texture-compression-etc2",
-                                "texture-compression-astc",
-                                "timestamp-query",
-                                "indirect-first-instance",
-                            ],
-                        },
+                        enableAllFeatures: true,
+                        setMaximumLimits: true,
                     });
                     await engine.initAsync();
                     return engine;
@@ -203,6 +188,11 @@ export class RenderingComponent extends React.Component<IRenderingComponentProps
             let recastInit = "";
             if (code.indexOf("RecastJSPlugin") > -1 && typeof Recast === "function") {
                 recastInit = "await Recast();";
+            }
+
+            let havokInit = "";
+            if (code.includes("HavokPlugin") && typeof HavokPhysics === "function" && typeof HK === "undefined") {
+                havokInit = "globalThis.HK = await HavokPhysics();";
             }
 
             // Check for Unity Toolkit
@@ -248,6 +238,7 @@ export class RenderingComponent extends React.Component<IRenderingComponentProps
                 code += `
                 window.initFunction = async function() {
                     ${ammoInit}
+                    ${havokInit}
                     ${recastInit}
                     var asyncEngineCreation = async function() {
                         try {

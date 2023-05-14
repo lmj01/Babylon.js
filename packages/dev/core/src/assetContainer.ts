@@ -31,7 +31,7 @@ export class InstantiatedEntries {
     /**
      * List of new root nodes (eg. nodes with no parent)
      */
-    public rootNodes: TransformNode[] = [];
+    public rootNodes: Node[] = [];
 
     /**
      * List of new skeletons
@@ -123,8 +123,8 @@ export class AssetContainer extends AbstractScene {
      * Given a list of nodes, return a topological sorting of them.
      * @param nodes
      */
-    private _topologicalSort(nodes: TransformNode[]): TransformNode[] {
-        const nodesUidMap = new Map<number, TransformNode>();
+    private _topologicalSort(nodes: Node[]): Node[] {
+        const nodesUidMap = new Map<number, Node>();
 
         for (const node of nodes) {
             nodesUidMap.set(node.uniqueId, node);
@@ -173,10 +173,10 @@ export class AssetContainer extends AbstractScene {
         }
 
         // Third pass: Topological sort
-        const sortedNodes: TransformNode[] = [];
+        const sortedNodes: Node[] = [];
 
         // First: Find all nodes that have no dependencies
-        const leaves: TransformNode[] = [];
+        const leaves: Node[] = [];
         for (const node of nodes) {
             const nodeId = node.uniqueId;
             if (dependencyGraph.dependsOn.get(nodeId)!.size === 0) {
@@ -215,8 +215,8 @@ export class AssetContainer extends AbstractScene {
         return sortedNodes;
     }
 
-    private _addNodeAndDescendantsToList(list: Node[], addedIds: Set<number>, rootNode: Node, predicate?: (entity: any) => boolean) {
-        if ((predicate && !predicate(rootNode)) || addedIds.has(rootNode.uniqueId)) {
+    private _addNodeAndDescendantsToList(list: Node[], addedIds: Set<number>, rootNode?: Node, predicate?: (entity: any) => boolean) {
+        if (!rootNode || (predicate && !predicate(rootNode)) || addedIds.has(rootNode.uniqueId)) {
             return;
         }
 
@@ -292,7 +292,7 @@ export class AssetContainer extends AbstractScene {
     public instantiateModelsToScene(
         nameFunction?: (sourceName: string) => string,
         cloneMaterials = false,
-        options?: { doNotInstantiate?: boolean | ((node: TransformNode) => boolean); predicate?: (entity: any) => boolean }
+        options?: { doNotInstantiate?: boolean | ((node: Node) => boolean); predicate?: (entity: any) => boolean }
     ): InstantiatedEntries {
         if (!this._isValidHierarchy()) {
             Tools.Warn("SceneSerializer.InstantiateModelsToScene: The Asset Container hierarchy is not valid.");
@@ -308,12 +308,7 @@ export class AssetContainer extends AbstractScene {
             ...options,
         };
 
-        if (!localOptions.doNotInstantiate) {
-            // Always clone skinned meshes.
-            localOptions.doNotInstantiate = (node) => !!(node as AbstractMesh).skeleton;
-        }
-
-        const onClone = (source: TransformNode, clone: TransformNode) => {
+        const onClone = (source: Node, clone: Node) => {
             conversionMap[source.uniqueId] = clone.uniqueId;
             storeMap[clone.uniqueId] = clone;
 
@@ -339,7 +334,7 @@ export class AssetContainer extends AbstractScene {
             }
         };
 
-        const nodesToSort: TransformNode[] = [];
+        const nodesToSort: Node[] = [];
         const idsOnSortList = new Set<number>();
 
         for (const transformNode of this.transformNodes) {
@@ -358,7 +353,7 @@ export class AssetContainer extends AbstractScene {
         // when a given node is instantiated.
         const sortedNodes = this._topologicalSort(nodesToSort);
 
-        const onNewCreated = (source: TransformNode, clone: TransformNode) => {
+        const onNewCreated = (source: Node, clone: Node) => {
             onClone(source, clone);
 
             if (source.parent) {
@@ -372,9 +367,18 @@ export class AssetContainer extends AbstractScene {
                 }
             }
 
-            clone.position.copyFrom(source.position);
-            clone.rotation.copyFrom(source.rotation);
-            clone.scaling.copyFrom(source.scaling);
+            if ((clone as any).position && (source as any).position) {
+                (clone as any).position.copyFrom((source as any).position);
+            }
+            if ((clone as any).rotationQuaternion && (source as any).rotationQuaternion) {
+                (clone as any).rotationQuaternion.copyFrom((source as any).rotationQuaternion);
+            }
+            if ((clone as any).rotation && (source as any).rotation) {
+                (clone as any).rotation.copyFrom((source as any).rotation);
+            }
+            if ((clone as any).scaling && (source as any).scaling) {
+                (clone as any).scaling.copyFrom((source as any).scaling);
+            }
 
             if ((clone as any).material) {
                 const mesh = clone as AbstractMesh;
@@ -438,7 +442,17 @@ export class AssetContainer extends AbstractScene {
                 onNewCreated(instancedNode, replicatedInstancedNode);
             } else {
                 // Mesh or TransformNode
-                const canInstance = !localOptions?.doNotInstantiate && (node as Mesh).getTotalVertices() > 0;
+                let canInstance = true;
+                if (node.getClassName() === "TransformNode" || node.getClassName() === "Node" || (node as Mesh).skeleton || (node as Mesh).getTotalVertices() === 0) {
+                    // Transform nodes, skinned meshes, and meshes with no vertices can never be instanced!
+                    canInstance = false;
+                } else if (localOptions.doNotInstantiate) {
+                    if (typeof localOptions.doNotInstantiate === "function") {
+                        canInstance = !localOptions.doNotInstantiate(node);
+                    } else {
+                        canInstance = !localOptions.doNotInstantiate;
+                    }
+                }
                 const replicatedNode = canInstance ? (node as Mesh).createInstance(`instance of ${node.name}`) : node.clone(`Clone of ${node.name}`, null, true);
                 if (!replicatedNode) {
                     throw new Error(`Could not clone or instantiate node on Asset Container ${node.name}`);
@@ -457,7 +471,7 @@ export class AssetContainer extends AbstractScene {
             for (const m of this.meshes) {
                 if (m.skeleton === s && !m.isAnInstance) {
                     const copy = storeMap[conversionMap[m.uniqueId]] as Mesh;
-                    if (copy.isAnInstance) {
+                    if (!copy || copy.isAnInstance) {
                         continue;
                     }
                     copy.skeleton = clone;
@@ -790,6 +804,11 @@ export class AssetContainer extends AbstractScene {
             o.dispose();
         });
         this.reflectionProbes.length = 0;
+
+        this.morphTargetManagers.slice(0).forEach((o) => {
+            o.dispose();
+        });
+        this.morphTargetManagers.length = 0;
 
         if (this.environmentTexture) {
             this.environmentTexture.dispose();

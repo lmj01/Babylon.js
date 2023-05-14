@@ -70,7 +70,6 @@ Object.defineProperty(TransformNode.prototype, "physicsBody", {
  * Gets the current physics body
  * @returns a physics body or null
  */
-/** @internal */
 TransformNode.prototype.getPhysicsBody = function (): Nullable<PhysicsBody> {
     return this.physicsBody;
 };
@@ -82,7 +81,6 @@ TransformNode.prototype.getPhysicsBody = function (): Nullable<PhysicsBody> {
  * @returns the current mesh
  * @see https://doc.babylonjs.com/features/featuresDeepDive/physics/usingPhysicsEngine
  */
-/** @internal */
 TransformNode.prototype.applyImpulse = function (force: Vector3, contactPoint: Vector3): TransformNode {
     if (!this.physicsBody) {
         throw new Error("No Physics Body for TransformNode");

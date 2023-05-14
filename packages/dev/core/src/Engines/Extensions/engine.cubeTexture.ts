@@ -346,6 +346,9 @@ ThinEngine.prototype.createCubeTextureBase = function (
     texture._lodGenerationScale = lodScale;
     texture._lodGenerationOffset = lodOffset;
     texture._useSRGBBuffer = !!useSRGBBuffer && this._caps.supportSRGBBuffers && (this.webGLVersion > 1 || this.isWebGPU || !!noMipmap);
+    if (texture !== fallback) {
+        texture.label = rootUrl.substring(0, 60); // default label, can be overriden by the caller
+    }
 
     if (!this._doNotHandleContextLost) {
         texture._extension = forcedExtension;
@@ -488,7 +491,7 @@ ThinEngine.prototype.createCubeTexture = function (
             this._bindTextureDirectly(gl.TEXTURE_CUBE_MAP, texture, true);
             this._unpackFlipY(false);
 
-            const internalFormat = format ? this._getInternalFormat(format, texture._useSRGBBuffer) : texture._useSRGBBuffer ? gl.SRGB8_ALPHA8 : gl.RGBA;
+            const internalFormat = format ? this._getInternalFormat(format, texture._useSRGBBuffer) : texture._useSRGBBuffer ? this._glSRGBExtensionValues.SRGB8_ALPHA8 : gl.RGBA;
             let texelFormat = format ? this._getInternalFormat(format) : gl.RGBA;
 
             if (texture._useSRGBBuffer && this.webGLVersion === 1) {

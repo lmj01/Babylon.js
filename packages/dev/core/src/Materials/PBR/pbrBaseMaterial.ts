@@ -5,7 +5,7 @@ import { Logger } from "../../Misc/logger";
 import { SmartArray } from "../../Misc/smartArray";
 import { GetEnvironmentBRDFTexture } from "../../Misc/brdfTextureTools";
 import type { Nullable } from "../../types";
-import { Scene, ScenePerformancePriority } from "../../scene";
+import { Scene } from "../../scene";
 import type { Matrix } from "../../Maths/math.vector";
 import { Vector4 } from "../../Maths/math.vector";
 import { VertexBuffer } from "../../Buffers/buffer";
@@ -839,7 +839,7 @@ export abstract class PBRBaseMaterial extends PushMaterial {
      * It helps with side by side comparison against the final render
      * This defaults to -1
      */
-    private _debugLimit = -1;
+    public debugLimit = -1;
 
     /**
      * @internal
@@ -847,7 +847,7 @@ export abstract class PBRBaseMaterial extends PushMaterial {
      * As the default viewing range might not be enough (if the ambient is really small for instance)
      * You can use the factor to better multiply the final value.
      */
-    private _debugFactor = 1;
+    public debugFactor = 1;
 
     /**
      * Defines the clear coat layer parameters for the material.
@@ -1085,8 +1085,15 @@ export abstract class PBRBaseMaterial extends PushMaterial {
                     if (!reflectionTexture.isReadyOrNotBlocking()) {
                         return false;
                     }
-                    if (reflectionTexture.irradianceTexture && !reflectionTexture.irradianceTexture.isReadyOrNotBlocking()) {
-                        return false;
+                    if (reflectionTexture.irradianceTexture) {
+                        if (!reflectionTexture.irradianceTexture.isReadyOrNotBlocking()) {
+                            return false;
+                        }
+                    } else {
+                        // Not ready until spherical are ready too.
+                        if (!reflectionTexture.sphericalPolynomial && reflectionTexture.getInternalTexture()?._sphericalPolynomialPromise) {
+                            return false;
+                        }
                     }
                 }
 
@@ -1150,6 +1157,7 @@ export abstract class PBRBaseMaterial extends PushMaterial {
 
         this._eventInfo.isReadyForSubMesh = true;
         this._eventInfo.defines = defines;
+        this._eventInfo.subMesh = subMesh;
         this._callbackPluginEventIsReadyForSubMesh(this._eventInfo);
 
         if (!this._eventInfo.isReadyForSubMesh) {
@@ -1206,9 +1214,7 @@ export abstract class PBRBaseMaterial extends PushMaterial {
         subMesh.effect._wasPreviouslyReady = forceWasNotReadyPreviously ? false : true;
         subMesh.effect._wasPreviouslyUsingInstances = !!useInstances;
 
-        if (scene.performancePriority !== ScenePerformancePriority.BackwardCompatible) {
-            this.checkReadyOnlyOnce = true;
-        }
+        this._checkScenePerformancePriority();
 
         return true;
     }
@@ -1539,6 +1545,9 @@ export abstract class PBRBaseMaterial extends PushMaterial {
         defines.METALLICWORKFLOW = this.isMetallicWorkflow();
         if (defines._areTexturesDirty) {
             defines._needUVs = false;
+            for (let i = 1; i <= Constants.MAX_SUPPORTED_UV_SETS; ++i) {
+                defines["MAINUV" + i] = false;
+            }
             if (scene.texturesEnabled) {
                 defines.ALBEDODIRECTUV = 0;
                 defines.AMBIENTDIRECTUV = 0;
@@ -1595,10 +1604,7 @@ export abstract class PBRBaseMaterial extends PushMaterial {
                         defines.REALTIME_FILTERING = false;
                     }
 
-                    if (reflectionTexture.coordinatesMode === Texture.INVCUBIC_MODE) {
-                        defines.INVERTCUBICMAP = true;
-                    }
-
+                    defines.INVERTCUBICMAP = reflectionTexture.coordinatesMode === Texture.INVCUBIC_MODE;
                     defines.REFLECTIONMAP_3D = reflectionTexture.isCube;
                     defines.REFLECTIONMAP_OPPOSITEZ = defines.REFLECTIONMAP_3D && this.getScene().useRightHandedSystem ? !reflectionTexture.invertZ : reflectionTexture.invertZ;
 
@@ -2204,7 +2210,7 @@ export abstract class PBRBaseMaterial extends PushMaterial {
 
                 ubo.updateColor3("vAmbientColor", this._globalAmbientColor);
 
-                ubo.updateFloat2("vDebugMode", this._debugLimit, this._debugFactor);
+                ubo.updateFloat2("vDebugMode", this.debugLimit, this.debugFactor);
             }
 
             // Textures

@@ -112,6 +112,10 @@ class _InternalAbstractMeshDataInfo {
     // Collisions
     public _meshCollisionData = new _MeshCollisionData();
     public _enableDistantPicking = false;
+    /** @internal
+     * Bounding info that is unnafected by the addition of thin instances
+     */
+    public _rawBoundingInfo: Nullable<BoundingInfo> = null;
 }
 
 /**
@@ -331,6 +335,14 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
         return true;
     }
 
+    /** @internal */
+    public get rawBoundingInfo(): Nullable<BoundingInfo> {
+        return this._internalAbstractMeshDataInfo._rawBoundingInfo;
+    }
+    public set rawBoundingInfo(boundingInfo: Nullable<BoundingInfo>) {
+        this._internalAbstractMeshDataInfo._rawBoundingInfo = boundingInfo;
+    }
+
     // Events
 
     /**
@@ -397,7 +409,10 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
         this._internalAbstractMeshDataInfo._visibility = value;
 
         if ((oldValue === 1 && value !== 1) || (oldValue !== 1 && value === 1)) {
-            this._markSubMeshesAsMiscDirty();
+            this._markSubMeshesAsDirty((defines) => {
+                defines.markAsMiscDirty();
+                defines.markAsPrePassDirty();
+            });
         }
     }
 
@@ -1216,6 +1231,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
     /**
      * Returns the mesh BoundingInfo object or creates a new one and returns if it was undefined.
      * Note that it returns a shallow bounding of the mesh (i.e. it does not include children).
+     * However, if the mesh contains thin instances, it will be expanded to include them. If you want the "raw" bounding data instead, then use `getRawBoundingInfo()`.
      * To get the full bounding of all children, call `getHierarchyBoundingVectors` instead.
      * @returns a BoundingInfo
      */
@@ -1231,6 +1247,14 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
         }
         // cannot be null.
         return this._boundingInfo!;
+    }
+
+    /**
+     * Returns the bounding info unnafected by instance data.
+     * @returns the bounding info of the mesh unaffected by instance data.
+     */
+    public getRawBoundingInfo() {
+        return this.rawBoundingInfo ?? this.getBoundingInfo();
     }
 
     /**
@@ -1847,7 +1871,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
 
     /**
      * Checks if the passed Ray intersects with the mesh
-     * @param ray defines the ray to use
+     * @param ray defines the ray to use. It should be in the mesh's LOCAL coordinate space.
      * @param fastCheck defines if fast mode (but less precise) must be used (false by default)
      * @param trianglePredicate defines an optional predicate used to select faces when a mesh intersection is detected
      * @param onlyBoundingInfo defines a boolean indicating if picking should only happen using bounding info (false by default)

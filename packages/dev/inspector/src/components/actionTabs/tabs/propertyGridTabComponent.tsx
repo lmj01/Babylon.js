@@ -75,6 +75,8 @@ import type { SSAORenderingPipeline } from "core/PostProcesses/RenderPipeline/Pi
 import { SSAORenderingPipelinePropertyGridComponent } from "./propertyGrids/postProcesses/ssaoRenderingPipelinePropertyGridComponent";
 import type { SSAO2RenderingPipeline } from "core/PostProcesses/RenderPipeline/Pipelines/ssao2RenderingPipeline";
 import { SSAO2RenderingPipelinePropertyGridComponent } from "./propertyGrids/postProcesses/ssao2RenderingPipelinePropertyGridComponent";
+import type { SSRRenderingPipeline } from "core/PostProcesses/RenderPipeline/Pipelines/ssrRenderingPipeline";
+import { SSRRenderingPipelinePropertyGridComponent } from "./propertyGrids/postProcesses/ssrRenderingPipelinePropertyGridComponent";
 import type { Skeleton } from "core/Bones/skeleton";
 import { SkeletonPropertyGridComponent } from "./propertyGrids/meshes/skeletonPropertyGridComponent";
 import type { Bone } from "core/Bones/bone";
@@ -103,6 +105,7 @@ import { SoundPropertyGridComponent } from "./propertyGrids/sounds/soundProperty
 import { LayerPropertyGridComponent } from "./propertyGrids/layers/layerPropertyGridComponent";
 import type { EffectLayer } from "core/Layers/effectLayer";
 import { EmptyPropertyGridComponent } from "./propertyGrids/emptyPropertyGridComponent";
+import { MetadataGridComponent } from "inspector/components/actionTabs/tabs/propertyGrids/metadata/metadataPropertyGridComponent";
 
 export class PropertyGridTabComponent extends PaneComponent {
     private _timerIntervalId: number;
@@ -126,7 +129,7 @@ export class PropertyGridTabComponent extends PaneComponent {
         window.clearInterval(this._timerIntervalId);
     }
 
-    render() {
+    renderContent() {
         const entity = this.props.selectedEntity;
 
         if (!entity) {
@@ -496,6 +499,18 @@ export class PropertyGridTabComponent extends PaneComponent {
                 );
             }
 
+            if (className.indexOf("SSRRenderingPipeline") !== -1) {
+                const renderPipeline = entity as SSRRenderingPipeline;
+                return (
+                    <SSRRenderingPipelinePropertyGridComponent
+                        renderPipeline={renderPipeline}
+                        globalState={this.props.globalState}
+                        lockObject={this._lockObject}
+                        onPropertyChangedObservable={this.props.onPropertyChangedObservable}
+                    />
+                );
+            }
+
             if (className.indexOf("RenderingPipeline") !== -1) {
                 const renderPipeline = entity as PostProcessRenderPipeline;
                 return (
@@ -680,5 +695,16 @@ export class PropertyGridTabComponent extends PaneComponent {
         }
 
         return null;
+    }
+
+    render() {
+        const entity = this.props.selectedEntity || {};
+        const entityHasMetadataProp = Object.prototype.hasOwnProperty.call(entity, "metadata");
+        return (
+            <div className="pane">
+                {this.renderContent()}
+                {entityHasMetadataProp && <MetadataGridComponent globalState={this.props.globalState} entity={entity} />}
+            </div>
+        );
     }
 }

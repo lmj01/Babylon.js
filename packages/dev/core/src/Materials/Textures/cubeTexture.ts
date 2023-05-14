@@ -1,8 +1,8 @@
-import { serialize, serializeAsMatrix, SerializationHelper } from "../../Misc/decorators";
+import { serialize, serializeAsMatrix, SerializationHelper, serializeAsVector3 } from "../../Misc/decorators";
 import { Tools } from "../../Misc/tools";
 import type { Nullable } from "../../types";
 import type { Scene } from "../../scene";
-import { Matrix, Vector3 } from "../../Maths/math.vector";
+import { Matrix, TmpVectors, Vector3 } from "../../Maths/math.vector";
 import { BaseTexture } from "../../Materials/Textures/baseTexture";
 import { Texture } from "../../Materials/Textures/texture";
 import { Constants } from "../../Engines/constants";
@@ -37,6 +37,7 @@ export class CubeTexture extends BaseTexture {
      * It must define where the camera used to render the texture was set
      * @see https://doc.babylonjs.com/features/featuresDeepDive/materials/using/reflectionTexture#using-local-cubemap-mode
      */
+    @serializeAsVector3()
     public boundingBoxPosition = Vector3.Zero();
 
     private _boundingBoxSize: Vector3;
@@ -61,6 +62,7 @@ export class CubeTexture extends BaseTexture {
      * Returns the bounding box size
      * @see https://doc.babylonjs.com/features/featuresDeepDive/materials/using/reflectionTexture#using-local-cubemap-mode
      */
+    @serializeAsVector3()
     public get boundingBoxSize(): Vector3 {
         return this._boundingBoxSize;
     }
@@ -110,6 +112,9 @@ export class CubeTexture extends BaseTexture {
 
     @serializeAsMatrix("textureMatrix")
     private _textureMatrix: Matrix;
+
+    @serializeAsMatrix("textureMatrixRefraction")
+    private _textureMatrixRefraction: Matrix = new Matrix();
 
     private _format: number;
     private _createPolynomials: boolean;
@@ -335,6 +340,30 @@ export class CubeTexture extends BaseTexture {
         }
 
         this._textureMatrix = value;
+
+        if (!this.getScene()?.useRightHandedSystem) {
+            return;
+        }
+
+        const scale = TmpVectors.Vector3[0];
+        const quat = TmpVectors.Quaternion[0];
+        const trans = TmpVectors.Vector3[1];
+
+        this._textureMatrix.decompose(scale, quat, trans);
+
+        quat.z *= -1; // these two operations correspond to negating the x and y euler angles
+        quat.w *= -1;
+
+        Matrix.ComposeToRef(scale, quat, trans, this._textureMatrixRefraction);
+    }
+
+    /**
+     * Gets a suitable rotate/transform matrix when the texture is used for refraction.
+     * There's a separate function from getReflectionTextureMatrix because refraction requires a special configuration of the matrix in right-handed mode.
+     * @returns The refraction matrix
+     */
+    public getRefractionTextureMatrix(): Matrix {
+        return this.getScene()?.useRightHandedSystem ? this._textureMatrixRefraction : this._textureMatrix;
     }
 
     private _loadTexture(onLoad: Nullable<() => void> = null, onError: Nullable<(message?: string, exception?: any) => void> = null) {
