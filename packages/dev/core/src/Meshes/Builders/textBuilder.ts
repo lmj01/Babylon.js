@@ -5,6 +5,8 @@ import type { Nullable } from "../../types";
 import { Mesh } from "../mesh";
 import { ExtrudePolygon } from "./polygonBuilder";
 
+declare let earcut: any;
+
 /**
  * Parser inspired by https://github.com/mrdoob/three.js/blob/master/examples/jsm/loaders/FontLoader.js
  */
@@ -217,6 +219,7 @@ function CreateShapePaths(text: string, size: number, resolution: number, fontDa
  * @param fontData defines the font data (can be generated with http://gero3.github.io/facetype.js/)
  * @param options defines options used to create the mesh
  * @param scene defines the hosting scene
+ * @param earcutInjection can be used to inject your own earcut reference
  * @returns a new Mesh
  * @see https://doc.babylonjs.com/features/featuresDeepDive/mesh/creation/set/text
  */
@@ -234,7 +237,8 @@ export function CreateText(
         resolution: 8,
         depth: 1.0,
     },
-    scene: Nullable<Scene> = null
+    scene: Nullable<Scene> = null,
+    earcutInjection = earcut
 ): Nullable<Mesh> {
     // First we need to generate the paths
     const shapePaths = CreateShapePaths(text, options.size || 50, options.resolution || 8, fontData);
@@ -282,6 +286,18 @@ export function CreateText(
                 holes.splice(holes.indexOf(hole), 1);
             }
 
+            // There is at least a hole but it was unaffected
+            if (!holeVectors.length && holes.length) {
+                for (const hole of holes) {
+                    const points = hole.getPoints();
+                    const holePoints: Vector3[] = [];
+                    for (const point of points) {
+                        holePoints.push(new Vector3(point.x, 0, point.y)); // ExtrudePolygon expects data on the xz plane
+                    }
+                    holeVectors.push(holePoints);
+                }
+            }
+
             // Extrusion!
             const mesh = ExtrudePolygon(
                 name,
@@ -291,7 +307,8 @@ export function CreateText(
                     depth: options.depth || 1.0,
                     sideOrientation: Mesh._GetDefaultSideOrientation(options.sideOrientation || Mesh.DOUBLESIDE),
                 },
-                scene
+                scene,
+                earcutInjection
             );
             meshes.push(mesh);
         }
