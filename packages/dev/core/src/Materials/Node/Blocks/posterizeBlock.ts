@@ -26,13 +26,14 @@ export class PosterizeBlock extends NodeMaterialBlock {
 
         this._inputs[0].excludedConnectionPointTypes.push(NodeMaterialBlockConnectionPointTypes.Matrix);
         this._inputs[1].excludedConnectionPointTypes.push(NodeMaterialBlockConnectionPointTypes.Matrix);
+        this._inputs[1].acceptedConnectionPointTypes.push(NodeMaterialBlockConnectionPointTypes.Float);
     }
 
     /**
      * Gets the current class name
      * @returns the class name
      */
-    public getClassName() {
+    public override getClassName() {
         return "PosterizeBlock";
     }
 
@@ -57,14 +58,14 @@ export class PosterizeBlock extends NodeMaterialBlock {
         return this._outputs[0];
     }
 
-    protected _buildBlock(state: NodeMaterialBuildState) {
+    protected override _buildBlock(state: NodeMaterialBuildState) {
         super._buildBlock(state);
 
         const output = this._outputs[0];
 
         state.compilationString +=
-            this._declareOutput(output, state) +
-            ` = floor(${this.value.associatedVariableName} / (1.0 / ${this.steps.associatedVariableName})) * (1.0 / ${this.steps.associatedVariableName});\r\n`;
+            state._declareOutput(output) +
+            ` = floor(${this.value.associatedVariableName} / (1.0 / ${this.steps.associatedVariableName})) * (1.0 / ${this.steps.associatedVariableName});\n`;
         return this;
     }
 }

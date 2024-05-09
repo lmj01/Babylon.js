@@ -40,6 +40,10 @@ import shadowOffsetXIcon from "shared-ui-components/imgs/shadowOffsetXIcon.svg";
 import colorIcon from "shared-ui-components/imgs/colorIcon.svg";
 import fillColorIcon from "shared-ui-components/imgs/fillColorIcon.svg";
 import linkedMeshOffsetIcon from "shared-ui-components/imgs/linkedMeshOffsetIcon.svg";
+import visibleIcon from "../../../../imgs/visibilityActiveIcon.svg";
+import addIcon from "shared-ui-components/imgs/addGridElementDark.svg";
+import removeIcon from "shared-ui-components/imgs/deleteGridElementDark.svg";
+import adtIcon from "../../../../imgs/adtIcon.svg";
 
 import hAlignCenterIcon from "shared-ui-components/imgs/hAlignCenterIcon.svg";
 import hAlignLeftIcon from "shared-ui-components/imgs/hAlignLeftIcon.svg";
@@ -55,6 +59,7 @@ import type { IInspectableOptions } from "core/Misc/iInspectable";
 
 import { WorkbenchComponent } from "../../../../diagram/workbench";
 import type { GlobalState } from "../../../../globalState";
+import { Popup } from "shared-ui-components/lines/popup";
 
 interface ICommonControlPropertyGridComponentProps {
     controls: Control[];
@@ -73,6 +78,7 @@ type ControlProperty = keyof Control | "_paddingLeft" | "_paddingRight" | "_padd
 export class CommonControlPropertyGridComponent extends React.Component<ICommonControlPropertyGridComponentProps, ICommonControlPropertyGridComponentState> {
     private _onPropertyChangedObserver: Nullable<Observer<PropertyChangedEvent>> | undefined;
     private _onFontsParsedObserver: Nullable<Observer<void>> | undefined;
+    private _onControlVisibilityChangedObservers: Array<Nullable<Observer<boolean>>> = [];
 
     constructor(props: ICommonControlPropertyGridComponentProps) {
         super(props);
@@ -97,6 +103,10 @@ export class CommonControlPropertyGridComponent extends React.Component<ICommonC
                 control.metadata = {};
             }
             control.metadata._previousCenter = transformed;
+            const visibilityObserver = control.onIsVisibleChangedObservable.add(() => {
+                this.forceUpdate();
+            });
+            this._onControlVisibilityChangedObservers.push(visibilityObserver);
         }
         this._onFontsParsedObserver = this.props.onFontsParsedObservable?.add(() => {
             this._checkFontsInLayout();
@@ -124,7 +134,7 @@ export class CommonControlPropertyGridComponent extends React.Component<ICommonC
         });
     }
 
-    componentWillMount() {
+    override componentWillMount() {
         this._checkFontsInLayout();
     }
 
@@ -213,6 +223,56 @@ export class CommonControlPropertyGridComponent extends React.Component<ICommonC
         }
     }
 
+    private _addOrUpdateMetadata(options: { [key: string]: any }) {
+        for (const control of this.props.controls) {
+            const initialValue = control.metadata;
+            // Convert strings to their proper types
+            for (const key in options) {
+                const v = options[key];
+                if (!isNaN(v) && !isNaN(parseFloat(v))) {
+                    options[key] = parseFloat(v);
+                } else if (v.trim() === "true") {
+                    options[key] = true;
+                } else if (v.trim() === "false") {
+                    options[key] = false;
+                }
+            }
+            const newValue = Object.assign({}, control.metadata, options);
+            control.metadata = newValue;
+            this.props.onPropertyChangedObservable?.notifyObservers({
+                object: control,
+                property: "metadata",
+                initialValue: initialValue,
+                value: newValue,
+            });
+        }
+    }
+
+    private _removeFromMetadata(key: string) {
+        for (const control of this.props.controls) {
+            const initialValue = Object.assign({}, control.metadata);
+            delete control.metadata[key];
+            this.props.onPropertyChangedObservable?.notifyObservers({
+                object: control,
+                property: "metadata",
+                initialValue: initialValue,
+                value: control.metadata,
+            });
+        }
+    }
+
+    private _getCommonPropertyKeys(objects: {}[]) {
+        objects = objects.filter((x) => !!x);
+        if (objects.length === 0) return [];
+        if (objects.length === 1) {
+            return Object.keys(objects[0]);
+        }
+        const [firstObject, ...restObjects] = objects;
+        return Object.keys(firstObject).filter((property) => {
+            return restObjects.every((obj) => property in obj);
+        });
+    }
+
     private _markChildrenAsDirty() {
         for (const control of this.props.controls) {
             if (control instanceof Container)
@@ -222,12 +282,15 @@ export class CommonControlPropertyGridComponent extends React.Component<ICommonC
         }
     }
 
-    componentWillUnmount() {
+    override componentWillUnmount() {
         if (this._onPropertyChangedObserver) {
             this.props.onPropertyChangedObservable?.remove(this._onPropertyChangedObserver);
         }
         if (this._onFontsParsedObserver) {
             this.props.onFontsParsedObservable?.remove(this._onFontsParsedObserver);
+        }
+        for (let i = 0; i < this._onControlVisibilityChangedObservers.length; i++) {
+            this.props.controls[i].onIsVisibleChangedObservable.remove(this._onControlVisibilityChangedObservers[i]);
         }
     }
 
@@ -241,7 +304,7 @@ export class CommonControlPropertyGridComponent extends React.Component<ICommonC
         });
     }
 
-    render() {
+    override render() {
         const controls = this.props.controls;
         const firstControl = controls[0];
         let horizontalAlignment = firstControl.horizontalAlignment;
@@ -590,6 +653,16 @@ export class CommonControlPropertyGridComponent extends React.Component<ICommonC
                         <hr className="ge" />
                     </>
                 )}
+                <TextLineComponent tooltip="" label="SERIALIZATION" value=" " color="grey"></TextLineComponent>
+                <div className="ge-divider">
+                    <IconComponent icon={adtIcon} label={"Serializable"} />
+                    <CheckBoxLineComponent label="ISSERIALIZABLE" target={proxy} propertyName="isSerializable" />
+                </div>
+                <TextLineComponent tooltip="" label="VISIBILITY" value=" " color="grey"></TextLineComponent>
+                <div className="ge-divider">
+                    <IconComponent icon={visibleIcon} label={"Visible"} />
+                    <CheckBoxLineComponent label="ISVISIBLE" target={proxy} propertyName="isVisible" onPropertyChangedObservable={this.props.onPropertyChangedObservable} />
+                </div>
                 <TextLineComponent tooltip="" label="TRANSFORMATION" value=" " color="grey"></TextLineComponent>
                 <div className="ge-divider double">
                     <IconComponent icon={scaleIcon} label={"Scale"} />
@@ -720,6 +793,67 @@ export class CommonControlPropertyGridComponent extends React.Component<ICommonC
                         </div>
                     </>
                 )}
+
+                <hr className="ge" />
+                <div className="ge-divider">
+                    <TextLineComponent tooltip="" label="METADATA" value=" " color="grey" />
+                    <CommandButtonComponent
+                        tooltip="Add"
+                        icon={addIcon}
+                        isActive={false}
+                        onClick={() => {
+                            const w = (Popup as any)["gui-editor"] ?? window;
+                            const input = w.prompt("Enter new key name for metadata value", "newKey");
+                            if (input === null || input.trim() === "") {
+                                return;
+                            }
+
+                            let keyName = input;
+                            let num = 1;
+                            while (controls.some((x) => keyName in x.metadata)) {
+                                num++;
+                                keyName = input + num;
+                            }
+                            this._addOrUpdateMetadata({ [keyName]: "" });
+                        }}
+                    />
+                </div>
+                {this._getCommonPropertyKeys(controls.map((x) => x.metadata)).map((metaKey) => {
+                    if (metaKey === "guiEditor" || metaKey.startsWith("_") || metaKey === "editorUniqueId") {
+                        return;
+                    }
+
+                    const firstControl = controls.find((x) => !!x.metadata);
+                    if (!firstControl) {
+                        return;
+                    }
+
+                    let value = firstControl.metadata[metaKey];
+                    const isNotEditableValue = typeof value === "object";
+
+                    const allValues = controls.map((x) => x.metadata[metaKey]);
+                    if (!allValues.every((x) => x === value)) {
+                        value = conflictingValuesPlaceholder;
+                    }
+
+                    return (
+                        <div key={metaKey}>
+                            <div className="ge-divider double">
+                                <TextInputLineComponent numbersOnly={false} lockObject={this.props.lockObject} label="" delayInput={true} value={metaKey} disabled={true} />
+                                <TextInputLineComponent
+                                    numbersOnly={false}
+                                    lockObject={this.props.lockObject}
+                                    label=":"
+                                    delayInput={true}
+                                    disabled={isNotEditableValue}
+                                    value={typeof value === "string" ? value : JSON.stringify(value)}
+                                    onChange={(x) => this._addOrUpdateMetadata({ [metaKey]: x })}
+                                />
+                                <CommandButtonComponent tooltip="Remove" icon={removeIcon} isActive={false} onClick={() => this._removeFromMetadata(metaKey)} />
+                            </div>
+                        </div>
+                    );
+                })}
             </div>
         );
     }

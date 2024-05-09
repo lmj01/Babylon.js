@@ -7,13 +7,13 @@ import type { AbstractActionManager } from "./abstractActionManager";
 import type { Nullable } from "../types";
 import type { Material } from "../Materials/material";
 
-declare type Scene = import("../scene").Scene;
-declare type ActionManager = import("./actionManager").ActionManager;
-declare type ActionEvent = import("./actionEvent").ActionEvent;
-declare type Mesh = import("../Meshes/mesh").Mesh;
-declare type Light = import("../Lights/light").Light;
-declare type Camera = import("../Cameras/camera").Camera;
-declare type Node = import("../node").Node;
+import type { Scene } from "../scene";
+import type { ActionManager } from "./actionManager";
+import type { ActionEvent } from "./actionEvent";
+import type { Mesh } from "../Meshes/mesh";
+import type { Light } from "../Lights/light";
+import type { Camera } from "../Cameras/camera";
+import type { Node } from "../node";
 
 /**
  * Interface used to define Action
@@ -233,7 +233,9 @@ export class Action implements IAction {
      * @returns the serialized object
      */
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    public serialize(parent: any): any {}
+    public serialize(parent: any): any {
+        return null;
+    }
 
     /**
      * Internal only called by serialize
@@ -309,12 +311,12 @@ export class Action implements IAction {
             targetType: (<Mesh>target)._isMesh
                 ? "MeshProperties"
                 : (<Light>target)._isLight
-                ? "LightProperties"
-                : (<Camera>target)._isCamera
-                ? "CameraProperties"
-                : (<Material>target)._isMaterial
-                ? "MaterialProperties"
-                : "SceneProperties",
+                  ? "LightProperties"
+                  : (<Camera>target)._isCamera
+                    ? "CameraProperties"
+                    : (<Material>target)._isMaterial
+                      ? "MaterialProperties"
+                      : "SceneProperties",
             value: (<Scene>target)._isScene ? "Scene" : (<Node>target).name,
         };
     };

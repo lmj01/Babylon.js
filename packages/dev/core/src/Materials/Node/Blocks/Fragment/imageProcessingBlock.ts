@@ -9,7 +9,7 @@ import type { Effect } from "../../../effect";
 import type { Mesh } from "../../../../Meshes/mesh";
 import { RegisterClass } from "../../../../Misc/typeStore";
 import type { Scene } from "../../../../scene";
-import { editableInPropertyPage, PropertyTypeForEdition } from "../../nodeMaterialDecorator";
+import { editableInPropertyPage, PropertyTypeForEdition } from "../../../../Decorators/nodeDecorator";
 
 import "../../../../Shaders/ShadersInclude/helperFunctions";
 import "../../../../Shaders/ShadersInclude/imageProcessingDeclaration";
@@ -48,7 +48,7 @@ export class ImageProcessingBlock extends NodeMaterialBlock {
      * Gets the current class name
      * @returns the class name
      */
-    public getClassName() {
+    public override getClassName() {
         return "ImageProcessingBlock";
     }
 
@@ -77,7 +77,7 @@ export class ImageProcessingBlock extends NodeMaterialBlock {
      * Initialize the block and prepare the context for build
      * @param state defines the state that will be used for the build
      */
-    public initialize(state: NodeMaterialBuildState) {
+    public override initialize(state: NodeMaterialBuildState) {
         state._excludeVariableName("exposureLinear");
         state._excludeVariableName("contrast");
         state._excludeVariableName("vInverseScreenSize");
@@ -91,7 +91,7 @@ export class ImageProcessingBlock extends NodeMaterialBlock {
         state._excludeVariableName("ditherIntensity");
     }
 
-    public isReady(mesh: AbstractMesh, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines) {
+    public override isReady(mesh: AbstractMesh, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines) {
         if (defines._areImageProcessingDirty && nodeMaterial.imageProcessingConfiguration) {
             if (!nodeMaterial.imageProcessingConfiguration.isReady()) {
                 return false;
@@ -100,13 +100,13 @@ export class ImageProcessingBlock extends NodeMaterialBlock {
         return true;
     }
 
-    public prepareDefines(mesh: AbstractMesh, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines) {
+    public override prepareDefines(mesh: AbstractMesh, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines) {
         if (defines._areImageProcessingDirty && nodeMaterial.imageProcessingConfiguration) {
             nodeMaterial.imageProcessingConfiguration.prepareDefines(defines);
         }
     }
 
-    public bind(effect: Effect, nodeMaterial: NodeMaterial, mesh?: Mesh) {
+    public override bind(effect: Effect, nodeMaterial: NodeMaterial, mesh?: Mesh) {
         if (!mesh) {
             return;
         }
@@ -118,7 +118,7 @@ export class ImageProcessingBlock extends NodeMaterialBlock {
         nodeMaterial.imageProcessingConfiguration.bind(effect);
     }
 
-    protected _buildBlock(state: NodeMaterialBuildState) {
+    protected override _buildBlock(state: NodeMaterialBuildState) {
         super._buildBlock(state);
 
         // Register for defines
@@ -154,40 +154,40 @@ export class ImageProcessingBlock extends NodeMaterialBlock {
 
         if (color.connectedPoint?.isConnected) {
             if (color.connectedPoint!.type === NodeMaterialBlockConnectionPointTypes.Color4 || color.connectedPoint!.type === NodeMaterialBlockConnectionPointTypes.Vector4) {
-                state.compilationString += `${this._declareOutput(output, state)} = ${color.associatedVariableName};\r\n`;
+                state.compilationString += `${state._declareOutput(output)} = ${color.associatedVariableName};\n`;
             } else {
-                state.compilationString += `${this._declareOutput(output, state)} = vec4(${color.associatedVariableName}, 1.0);\r\n`;
+                state.compilationString += `${state._declareOutput(output)} = vec4(${color.associatedVariableName}, 1.0);\n`;
             }
-            state.compilationString += `#ifdef IMAGEPROCESSINGPOSTPROCESS\r\n`;
+            state.compilationString += `#ifdef IMAGEPROCESSINGPOSTPROCESS\n`;
             if (this.convertInputToLinearSpace) {
-                state.compilationString += `${output.associatedVariableName}.rgb = toLinearSpace(${color.associatedVariableName}.rgb);\r\n`;
+                state.compilationString += `${output.associatedVariableName}.rgb = toLinearSpace(${color.associatedVariableName}.rgb);\n`;
             }
-            state.compilationString += `#else\r\n`;
-            state.compilationString += `#ifdef IMAGEPROCESSING\r\n`;
+            state.compilationString += `#else\n`;
+            state.compilationString += `#ifdef IMAGEPROCESSING\n`;
             if (this.convertInputToLinearSpace) {
-                state.compilationString += `${output.associatedVariableName}.rgb = toLinearSpace(${color.associatedVariableName}.rgb);\r\n`;
+                state.compilationString += `${output.associatedVariableName}.rgb = toLinearSpace(${color.associatedVariableName}.rgb);\n`;
             }
-            state.compilationString += `${output.associatedVariableName} = applyImageProcessing(${output.associatedVariableName});\r\n`;
-            state.compilationString += `#endif\r\n`;
-            state.compilationString += `#endif\r\n`;
+            state.compilationString += `${output.associatedVariableName} = applyImageProcessing(${output.associatedVariableName});\n`;
+            state.compilationString += `#endif\n`;
+            state.compilationString += `#endif\n`;
 
             if (this.rgb.hasEndpoints) {
-                state.compilationString += this._declareOutput(this.rgb, state) + ` = ${this.output.associatedVariableName}.xyz;\r\n`;
+                state.compilationString += state._declareOutput(this.rgb) + ` = ${this.output.associatedVariableName}.xyz;\n`;
             }
         }
 
         return this;
     }
 
-    protected _dumpPropertiesCode() {
+    protected override _dumpPropertiesCode() {
         let codeString = super._dumpPropertiesCode();
 
-        codeString += `${this._codeVariableName}.convertInputToLinearSpace = ${this.convertInputToLinearSpace};\r\n`;
+        codeString += `${this._codeVariableName}.convertInputToLinearSpace = ${this.convertInputToLinearSpace};\n`;
 
         return codeString;
     }
 
-    public serialize(): any {
+    public override serialize(): any {
         const serializationObject = super.serialize();
 
         serializationObject.convertInputToLinearSpace = this.convertInputToLinearSpace;
@@ -195,7 +195,7 @@ export class ImageProcessingBlock extends NodeMaterialBlock {
         return serializationObject;
     }
 
-    public _deserialize(serializationObject: any, scene: Scene, rootUrl: string) {
+    public override _deserialize(serializationObject: any, scene: Scene, rootUrl: string) {
         super._deserialize(serializationObject, scene, rootUrl);
 
         this.convertInputToLinearSpace = serializationObject.convertInputToLinearSpace ?? true;

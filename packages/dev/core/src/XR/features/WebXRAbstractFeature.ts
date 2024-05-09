@@ -1,7 +1,9 @@
 import type { IWebXRFeature } from "../webXRFeaturesManager";
-import type { Observer, Observable, EventState } from "../../Misc/observable";
+import type { Observer, EventState } from "../../Misc/observable";
+import { Observable } from "../../Misc/observable";
 import type { Nullable } from "../../types";
 import type { WebXRSessionManager } from "../webXRSessionManager";
+import { Logger } from "core/Misc/logger";
 
 /**
  * This is the base class for all WebXR features.
@@ -25,10 +27,36 @@ export abstract class WebXRAbstractFeature implements IWebXRFeature {
      */
     public disableAutoAttach: boolean = false;
 
+    protected _xrNativeFeatureName: string = "";
+
     /**
      * The name of the native xr feature name (like anchor, hit-test, or hand-tracking)
      */
-    public xrNativeFeatureName: string = "";
+    public get xrNativeFeatureName() {
+        return this._xrNativeFeatureName;
+    }
+
+    public set xrNativeFeatureName(name: string) {
+        // check if feature was initialized while in session but needs to be initialized before the session starts
+        if (!this._xrSessionManager.isNative && name && this._xrSessionManager.inXRSession && this._xrSessionManager.enabledFeatures?.indexOf(name) === -1) {
+            Logger.Warn(`The feature ${name} needs to be enabled before starting the XR session. Note - It is still possible it is not supported.`);
+        }
+        this._xrNativeFeatureName = name;
+    }
+
+    /**
+     * Observers registered here will be executed when the feature is attached
+     */
+    public onFeatureAttachObservable: Observable<IWebXRFeature> = new Observable();
+    /**
+     * Observers registered here will be executed when the feature is detached
+     */
+    public onFeatureDetachObservable: Observable<IWebXRFeature> = new Observable();
+
+    /**
+     * The dependencies of this feature, if any
+     */
+    public dependsOn?: string[];
 
     /**
      * Construct a new (abstract) WebXR feature
@@ -65,8 +93,18 @@ export abstract class WebXRAbstractFeature implements IWebXRFeature {
             }
         }
 
+        // if this is a native WebXR feature, check if it is enabled on the session
+        // For now only check if not using babylon native
+        // vision OS doesn't support the enabledFeatures array, so just warn instead of failing
+        if (!this._xrSessionManager.enabledFeatures) {
+            Logger.Warn("session.enabledFeatures is not available on this device. It is possible that this feature is not supported.");
+        } else if (!this._xrSessionManager.isNative && this.xrNativeFeatureName && this._xrSessionManager.enabledFeatures.indexOf(this.xrNativeFeatureName) === -1) {
+            return false;
+        }
+
         this._attached = true;
         this._addNewAttachObserver(this._xrSessionManager.onXRFrameObservable, (frame) => this._onXRFrame(frame));
+        this.onFeatureAttachObservable.notifyObservers(this);
         return true;
     }
 
@@ -84,6 +122,7 @@ export abstract class WebXRAbstractFeature implements IWebXRFeature {
         this._removeOnDetach.forEach((toRemove) => {
             toRemove.observable.remove(toRemove.observer);
         });
+        this.onFeatureDetachObservable.notifyObservers(this);
         return true;
     }
 
@@ -93,6 +132,8 @@ export abstract class WebXRAbstractFeature implements IWebXRFeature {
     public dispose(): void {
         this.detach();
         this.isDisposed = true;
+        this.onFeatureAttachObservable.clear();
+        this.onFeatureDetachObservable.clear();
     }
 
     /**
@@ -109,11 +150,12 @@ export abstract class WebXRAbstractFeature implements IWebXRFeature {
      * This is used to register callbacks that will automatically be removed when detach is called.
      * @param observable the observable to which the observer will be attached
      * @param callback the callback to register
+     * @param insertFirst should the callback be executed as soon as it is registered
      */
-    protected _addNewAttachObserver<T>(observable: Observable<T>, callback: (eventData: T, eventState: EventState) => void) {
+    protected _addNewAttachObserver<T>(observable: Observable<T>, callback: (eventData: T, eventState: EventState) => void, insertFirst?: boolean) {
         this._removeOnDetach.push({
             observable,
-            observer: observable.add(callback),
+            observer: observable.add(callback, undefined, insertFirst),
         });
     }
 

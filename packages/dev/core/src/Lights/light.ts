@@ -1,6 +1,7 @@
-import { serialize, SerializationHelper, serializeAsColor3, expandToProperty } from "../Misc/decorators";
+import { serialize, serializeAsColor3, expandToProperty } from "../Misc/decorators";
 import type { Nullable } from "../types";
 import type { Scene } from "../scene";
+import type { Matrix } from "../Maths/math.vector";
 import { Vector3 } from "../Maths/math.vector";
 import { Color3, TmpColors } from "../Maths/math.color";
 import { Node } from "../node";
@@ -12,6 +13,7 @@ import { GetClass } from "../Misc/typeStore";
 import type { ISortableLight } from "./lightConstants";
 import { LightConstants } from "./lightConstants";
 import type { Camera } from "../Cameras/camera";
+import { SerializationHelper } from "../Misc/decorators.serialization";
 
 /**
  * Base class of all the lights in Babylon. It groups all the generic information about lights.
@@ -315,6 +317,26 @@ export abstract class Light extends Node implements ISortableLight {
     }
 
     /**
+     * Returns the view matrix.
+     * @param _faceIndex The index of the face for which we want to extract the view matrix. Only used for point light types.
+     * @returns The view matrix. Can be null, if a view matrix cannot be defined for the type of light considered (as for a hemispherical light, for example).
+     */
+    public getViewMatrix(_faceIndex?: number): Nullable<Matrix> {
+        return null;
+    }
+
+    /**
+     * Returns the projection matrix.
+     * Note that viewMatrix and renderList are optional and are only used by lights that calculate the projection matrix from a list of meshes (e.g. directional lights with automatic extents calculation).
+     * @param _viewMatrix The view transform matrix of the light (optional).
+     * @param _renderList The list of meshes to take into account when calculating the projection matrix (optional).
+     * @returns The projection matrix. Can be null, if a projection matrix cannot be defined for the type of light considered (as for a hemispherical light, for example).
+     */
+    public getProjectionMatrix(_viewMatrix?: Matrix, _renderList?: Array<AbstractMesh>): Nullable<Matrix> {
+        return null;
+    }
+
+    /**
      * Shadow generators associated to the light.
      * @internal Internal use only.
      */
@@ -347,14 +369,14 @@ export abstract class Light extends Node implements ISortableLight {
      * @param name The friendly name of the light
      * @param scene The scene the light belongs too
      */
-    constructor(name: string, scene: Scene) {
+    constructor(name: string, scene?: Scene) {
         super(name, scene);
         this.getScene().addLight(this);
         this._uniformBuffer = new UniformBuffer(this.getScene().getEngine(), undefined, undefined, name);
         this._buildUniformLayout();
 
-        this.includedOnlyMeshes = new Array<AbstractMesh>();
-        this.excludedMeshes = new Array<AbstractMesh>();
+        this.includedOnlyMeshes = [] as AbstractMesh[];
+        this.excludedMeshes = [] as AbstractMesh[];
 
         this._resyncMeshes();
     }
@@ -443,7 +465,7 @@ export abstract class Light extends Node implements ISortableLight {
      * Returns the string "Light".
      * @returns the class name
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "Light";
     }
 
@@ -455,7 +477,7 @@ export abstract class Light extends Node implements ISortableLight {
      * @param fullDetails Supports for multiple levels of logging within scene loading
      * @returns the human readable light info
      */
-    public toString(fullDetails?: boolean): string {
+    public override toString(fullDetails?: boolean): string {
         let ret = "Name: " + this.name;
         ret += ", type: " + ["Point", "Directional", "Spot", "Hemispheric"][this.getTypeID()];
         if (this.animations) {
@@ -467,7 +489,7 @@ export abstract class Light extends Node implements ISortableLight {
     }
 
     /** @internal */
-    protected _syncParentEnabledState() {
+    protected override _syncParentEnabledState() {
         super._syncParentEnabledState();
         if (!this.isDisposed()) {
             this._resyncMeshes();
@@ -478,7 +500,7 @@ export abstract class Light extends Node implements ISortableLight {
      * Set the enabled state of this node.
      * @param value - the new enabled state
      */
-    public setEnabled(value: boolean): void {
+    public override setEnabled(value: boolean): void {
         super.setEnabled(value);
 
         this._resyncMeshes();
@@ -547,7 +569,7 @@ export abstract class Light extends Node implements ISortableLight {
      * @param doNotRecurse Set to true to not recurse into each children (recurse into each children by default)
      * @param disposeMaterialAndTextures Set to true to also dispose referenced materials and textures (false by default)
      */
-    public dispose(doNotRecurse?: boolean, disposeMaterialAndTextures = false): void {
+    public override dispose(doNotRecurse?: boolean, disposeMaterialAndTextures = false): void {
         if (this._shadowGenerators) {
             const iterator = this._shadowGenerators.values();
             for (let key = iterator.next(); key.done !== true; key = iterator.next()) {
@@ -602,7 +624,7 @@ export abstract class Light extends Node implements ISortableLight {
      * @param newParent The parent of this light, if it has one
      * @returns the new created light
      */
-    public clone(name: string, newParent: Nullable<Node> = null): Nullable<Light> {
+    public override clone(name: string, newParent: Nullable<Node> = null): Nullable<Light> {
         const constructor = Light.GetConstructorFromName(this.getTypeID(), name, this.getScene());
 
         if (!constructor) {
@@ -825,7 +847,7 @@ export abstract class Light extends Node implements ISortableLight {
     }
 
     /**
-     * Returns the Photometric Scale according to the light type and intensity mode.
+     * @returns the Photometric Scale according to the light type and intensity mode.
      */
     private _getPhotometricScale() {
         let photometricScale = 0.0;

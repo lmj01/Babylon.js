@@ -18,15 +18,6 @@ import { CompatibilityOptions } from "../../Compat/compatibilityOptions";
  * * sideOrientation optional and takes the values : Mesh.FRONTSIDE (default), Mesh.BACKSIDE or Mesh.DOUBLESIDE
  * * frontUvs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the front side, optional, default vector4 (0, 0, 1, 1)
  * * backUVs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the back side, optional, default vector4 (0, 0, 1, 1)
- * @param options.radius
- * @param options.radiusX
- * @param options.radiusY
- * @param options.radiusZ
- * @param options.flat
- * @param options.subdivisions
- * @param options.sideOrientation
- * @param options.frontUVs
- * @param options.backUVs
  * @returns the VertexData of the IcoSphere
  */
 export function CreateIcoSphereVertexData(options: {
@@ -43,7 +34,7 @@ export function CreateIcoSphereVertexData(options: {
     const sideOrientation = options.sideOrientation || VertexData.DEFAULTSIDE;
     const radius = options.radius || 1;
     const flat = options.flat === undefined ? true : options.flat;
-    const subdivisions = options.subdivisions || 4;
+    const subdivisions = (options.subdivisions || 4) | 0;
     const radiusX = options.radiusX || radius;
     const radiusY = options.radiusY || radius;
     const radiusZ = options.radiusZ || radius;
@@ -249,10 +240,10 @@ export function CreateIcoSphereVertexData(options: {
         0, //  15 - 19
     ];
 
-    const indices = new Array<number>();
-    const positions = new Array<number>();
-    const normals = new Array<number>();
-    const uvs = new Array<number>();
+    const indices: number[] = [];
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const uvs: number[] = [];
 
     let current_indice = 0;
     // prepare array of 3 vector (empty) (to be worked in place, shared for each face)
@@ -400,16 +391,6 @@ export function CreateIcoSphereVertexData(options: {
  * * The mesh can be set to updatable with the boolean parameter `updatable` (default false) if its internal geometry is supposed to change once created
  * @param name defines the name of the mesh
  * @param options defines the options used to create the mesh
- * @param options.radius
- * @param options.radiusX
- * @param options.radiusY
- * @param options.radiusZ
- * @param options.flat
- * @param options.subdivisions
- * @param options.sideOrientation
- * @param options.frontUVs
- * @param options.backUVs
- * @param options.updatable
  * @param scene defines the hosting scene
  * @returns the icosahedron mesh
  * @see https://doc.babylonjs.com/features/featuresDeepDive/mesh/creation/polyhedra#icosphere
@@ -452,10 +433,6 @@ export const IcoSphereBuilder = {
 
 VertexData.CreateIcoSphere = CreateIcoSphereVertexData;
 
-(Mesh as any).CreateIcoSphere = (
-    name: string,
-    options: { radius?: number; flat?: boolean; subdivisions?: number; sideOrientation?: number; updatable?: boolean },
-    scene: Scene
-): Mesh => {
+Mesh.CreateIcoSphere = (name: string, options: { radius?: number; flat?: boolean; subdivisions?: number; sideOrientation?: number; updatable?: boolean }, scene: Scene): Mesh => {
     return CreateIcoSphere(name, options, scene);
 };

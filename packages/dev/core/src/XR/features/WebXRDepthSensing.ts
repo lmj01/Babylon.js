@@ -10,6 +10,7 @@ import type { Nullable } from "../../types";
 import { Constants } from "../../Engines/constants";
 import { WebGLHardwareTexture } from "../../Engines/WebGL/webGLHardwareTexture";
 import { InternalTexture, InternalTextureSource } from "../../Materials/Textures/internalTexture";
+import type { ThinEngine } from "../../Engines/thinEngine";
 
 export type WebXRDepthUsage = "cpu" | "gpu";
 export type WebXRDepthDataFormat = "ushort" | "float";
@@ -117,7 +118,7 @@ export class WebXRDepthSensing extends WebXRAbstractFeature {
         internalTexture.height = this.height ?? 0;
         internalTexture._cachedWrapU = Constants.TEXTURE_WRAP_ADDRESSMODE;
         internalTexture._cachedWrapV = Constants.TEXTURE_WRAP_ADDRESSMODE;
-        internalTexture._hardwareTexture = new WebGLHardwareTexture(this._cachedWebGLTexture, engine._gl);
+        internalTexture._hardwareTexture = new WebGLHardwareTexture(this._cachedWebGLTexture, (engine as ThinEngine)._gl);
 
         return internalTexture;
     }
@@ -168,7 +169,10 @@ export class WebXRDepthSensing extends WebXRAbstractFeature {
      * @param _xrSessionManager the WebXRSessionManager
      * @param options options for WebXR Depth Sensing Feature
      */
-    constructor(_xrSessionManager: WebXRSessionManager, public readonly options: IWebXRDepthSensingOptions) {
+    constructor(
+        _xrSessionManager: WebXRSessionManager,
+        public readonly options: IWebXRDepthSensingOptions
+    ) {
         super(_xrSessionManager);
         this.xrNativeFeatureName = "depth-sensing";
 
@@ -179,10 +183,10 @@ export class WebXRDepthSensing extends WebXRAbstractFeature {
     /**
      * attach this feature
      * Will usually be called by the features manager
-     *
+     * @param force should attachment be forced (even when already attached)
      * @returns true if successful.
      */
-    public attach(force?: boolean | undefined): boolean {
+    public override attach(force?: boolean | undefined): boolean {
         if (!super.attach(force)) {
             return false;
         }
@@ -192,7 +196,7 @@ export class WebXRDepthSensing extends WebXRAbstractFeature {
             return false;
         }
 
-        this._glBinding = new XRWebGLBinding(this._xrSessionManager.session, this._xrSessionManager.scene.getEngine()._gl);
+        this._glBinding = new XRWebGLBinding(this._xrSessionManager.session, (this._xrSessionManager.scene.getEngine() as ThinEngine)._gl);
 
         return true;
     }
@@ -200,7 +204,7 @@ export class WebXRDepthSensing extends WebXRAbstractFeature {
     /**
      * Dispose this feature and all of the resources attached
      */
-    public dispose(): void {
+    public override dispose(): void {
         this._cachedDepthImageTexture?.dispose();
     }
 
@@ -291,7 +295,7 @@ export class WebXRDepthSensing extends WebXRAbstractFeature {
 
         const scene = this._xrSessionManager.scene;
         const engine = scene.getEngine();
-        const internalTexture = engine.wrapWebGLTexture(texture);
+        const internalTexture = (engine as Engine).wrapWebGLTexture(texture);
 
         if (!this._cachedDepthImageTexture) {
             this._cachedDepthImageTexture = RawTexture.CreateRTexture(

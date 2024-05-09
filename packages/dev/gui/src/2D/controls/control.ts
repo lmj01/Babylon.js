@@ -18,7 +18,8 @@ import { Measure } from "../measure";
 import type { Style } from "../style";
 import { Matrix2D, Vector2WithInfo } from "../math2D";
 import { GetClass, RegisterClass } from "core/Misc/typeStore";
-import { SerializationHelper, serialize } from "core/Misc/decorators";
+import { serialize } from "core/Misc/decorators";
+import { SerializationHelper } from "core/Misc/decorators.serialization";
 import type { ICanvasGradient, ICanvasRenderingContext } from "core/Engines/ICanvas";
 import { EngineStore } from "core/Engines/engineStore";
 import type { IAccessibilityTag } from "core/IAccessibilityTag";
@@ -26,6 +27,7 @@ import type { IPointerEvent } from "core/Events/deviceInputEvents";
 import type { IAnimatable } from "core/Animations/animatable.interface";
 import type { Animation } from "core/Animations/animation";
 import type { BaseGradient } from "./gradient/BaseGradient";
+import type { AbstractEngine } from "core/Engines/abstractEngine";
 
 /**
  * Root class used for all 2D controls
@@ -48,7 +50,7 @@ export class Control implements IAnimatable {
     public _currentMeasure = Measure.Empty();
     /** @internal */
     public _tempPaddingMeasure = Measure.Empty();
-    private _fontFamily = "Arial";
+    private _fontFamily = "";
     private _fontStyle = "";
     private _fontWeight = "";
     private _fontSize = new ValueAndUnit(18, ValueAndUnit.UNITMODE_PIXEL, false);
@@ -120,6 +122,14 @@ export class Control implements IAnimatable {
     private _gradient: Nullable<BaseGradient> = null;
     /** @internal */
     protected _rebuildLayout = false;
+
+    /** @internal */
+    protected _urlRewriter?: (url: string) => string;
+
+    /**
+     * Observable that fires when the control's enabled state changes
+     */
+    public onEnabledStateChangedObservable = new Observable<boolean>();
 
     /** @internal */
     public _customData: any = {};
@@ -321,6 +331,9 @@ export class Control implements IAnimatable {
 
     protected _accessibilityTag: Nullable<IAccessibilityTag> = null;
 
+    /**
+     * Observable that fires whenever the accessibility event of the control has changed
+     */
     public onAccessibilityTagChangedObservable = new Observable<Nullable<IAccessibilityTag>>();
 
     /**
@@ -445,6 +458,12 @@ export class Control implements IAnimatable {
         this._isHighlighted = value;
         this._markAsDirty();
     }
+
+    /**
+     * Indicates if the control should be serialized. Defaults to true.
+     */
+    @serialize()
+    public isSerializable: boolean = true;
 
     /**
      * Gets or sets a string defining the color to use for highlighting this control
@@ -588,6 +607,16 @@ export class Control implements IAnimatable {
         this._markAsDirty();
     }
 
+    private _fixedRatio = 0;
+    public set fixedRatio(value: number) {
+        if (this._fixedRatio === value) {
+            return;
+        }
+
+        this._fixedRatio = value;
+        this._markAsDirty();
+    }
+
     /**
      * Gets or sets a fixed ratio for this control.
      * When different from 0, the ratio is used to compute the "second" dimension.
@@ -595,9 +624,27 @@ export class Control implements IAnimatable {
      * second dimension is computed as first dimension * fixedRatio
      */
     @serialize()
-    public fixedRatio = 0;
+    public get fixedRatio(): number {
+        return this._fixedRatio;
+    }
 
-    protected _fixedRatioMasterIsWidth = true;
+    private _fixedRatioMasterIsWidth = true;
+    set fixedRatioMasterIsWidth(value: boolean) {
+        if (this._fixedRatioMasterIsWidth === value) {
+            return;
+        }
+        this._fixedRatioMasterIsWidth = value;
+        this._markAsDirty();
+    }
+
+    /**
+     * Gets or sets a boolean indicating that the fixed ratio is set on the width instead of the height. True by default.
+     * When the height of a control is set, this property is changed to false.
+     */
+    @serialize()
+    get fixedRatioMasterIsWidth(): boolean {
+        return this._fixedRatioMasterIsWidth;
+    }
 
     /**
      * Gets or sets control width
@@ -1207,6 +1254,7 @@ export class Control implements IAnimatable {
             }
         };
         recursivelyFirePointerOut(this);
+        this.onEnabledStateChangedObservable.notifyObservers(value);
     }
     /** Gets or sets background color of control if it's disabled. Only applies to Button class. */
     @serialize()
@@ -1409,7 +1457,7 @@ export class Control implements IAnimatable {
      * @returns all child controls
      */
     public getDescendants(directDescendantsOnly?: boolean, predicate?: (control: Control) => boolean): Control[] {
-        const results = new Array<Control>();
+        const results: Control[] = [];
 
         this.getDescendantsToRef(results, directDescendantsOnly, predicate);
 
@@ -1577,12 +1625,12 @@ export class Control implements IAnimatable {
     }
 
     /** @internal */
-    protected _computeAdditionnalOffsetX() {
+    protected _computeAdditionalOffsetX() {
         return 0;
     }
 
     /** @internal */
-    protected _computeAdditionnalOffsetY() {
+    protected _computeAdditionalOffsetY() {
         return 0;
     }
 
@@ -1607,8 +1655,8 @@ export class Control implements IAnimatable {
             const topShadowOffset = Math.min(Math.min(shadowOffsetY, 0) - shadowBlur * 2, 0);
             const bottomShadowOffset = Math.max(Math.max(shadowOffsetY, 0) + shadowBlur * 2, 0);
 
-            const offsetX = this._computeAdditionnalOffsetX();
-            const offsetY = this._computeAdditionnalOffsetY();
+            const offsetX = this._computeAdditionalOffsetX();
+            const offsetY = this._computeAdditionalOffsetY();
 
             this.host.invalidateRect(
                 Math.floor(this._tmpMeasureA.left + leftShadowOffset - offsetX),
@@ -1817,6 +1865,10 @@ export class Control implements IAnimatable {
         this._preMeasure(this._tempPaddingMeasure, context);
 
         this._measure();
+
+        // Let children take some post-measurement actions
+        this._postMeasure(this._tempPaddingMeasure, context);
+
         this._computeAlignment(this._tempPaddingMeasure, context);
 
         // Convert to int values
@@ -1882,11 +1934,11 @@ export class Control implements IAnimatable {
             this._currentMeasure.height *= this._height.getValue(this._host);
         }
 
-        if (this.fixedRatio !== 0) {
+        if (this._fixedRatio !== 0) {
             if (this._fixedRatioMasterIsWidth) {
-                this._currentMeasure.height = this._currentMeasure.width * this.fixedRatio;
+                this._currentMeasure.height = this._currentMeasure.width * this._fixedRatio;
             } else {
-                this._currentMeasure.width = this._currentMeasure.height * this.fixedRatio;
+                this._currentMeasure.width = this._currentMeasure.height * this._fixedRatio;
             }
         }
     }
@@ -1979,6 +2031,13 @@ export class Control implements IAnimatable {
      * @internal
      */
     protected _preMeasure(parentMeasure: Measure, context: ICanvasRenderingContext): void {
+        // Do nothing
+    }
+
+    /**
+     * @internal
+     */
+    protected _postMeasure(parentMeasure: Measure, context: ICanvasRenderingContext): void {
         // Do nothing
     }
 
@@ -2348,21 +2407,58 @@ export class Control implements IAnimatable {
         return false;
     }
 
+    private _getStyleProperty(propName: "fontStyle" | "fontWeight" | "fontFamily", defaultValue: string): string {
+        const prop = (this._style && this._style[propName]) ?? this[propName];
+        if (!prop && this.parent) {
+            return this.parent._getStyleProperty(propName, defaultValue);
+        } else if (!this.parent) {
+            return defaultValue;
+        } else {
+            return prop;
+        }
+    }
+
     private _prepareFont() {
         if (!this._font && !this._fontSet) {
             return;
         }
 
-        if (this._style) {
-            this._font = this._style.fontStyle + " " + this._style.fontWeight + " " + this.fontSizeInPixels + "px " + this._style.fontFamily;
-        } else {
-            this._font = this._fontStyle + " " + this._fontWeight + " " + this.fontSizeInPixels + "px " + this._fontFamily;
-        }
+        this._font =
+            this._getStyleProperty("fontStyle", "") +
+            " " +
+            this._getStyleProperty("fontWeight", "") +
+            " " +
+            this.fontSizeInPixels +
+            "px " +
+            this._getStyleProperty("fontFamily", "Arial");
 
-        this._fontOffset = Control._GetFontOffset(this._font);
+        this._fontOffset = Control._GetFontOffset(this._font, this._host.getScene()?.getEngine());
 
         //children need to be refreshed
         this.getDescendants().forEach((child) => child._markAllAsDirty());
+    }
+
+    /**
+     * A control has a dimension fully defined if that dimension doesn't depend on the parent's dimension.
+     * As an example, a control that has dimensions in pixels is fully defined, while in percentage is not fully defined.
+     * @param dim the dimension to check (width or height)
+     * @returns if the dimension is fully defined
+     */
+    public isDimensionFullyDefined(dim: "width" | "height"): boolean {
+        return this.getDimension(dim).isPixel;
+    }
+
+    /**
+     * Gets the dimension of the control along a specified axis
+     * @param dim the dimension to retrieve (width or height)
+     * @returns the dimension value along the specified axis
+     */
+    public getDimension(dim: "width" | "height"): ValueAndUnit {
+        if (dim === "width") {
+            return this._width;
+        } else {
+            return this._height;
+        }
     }
 
     /**
@@ -2372,7 +2468,7 @@ export class Control implements IAnimatable {
      */
     public clone(host?: AdvancedDynamicTexture): Control {
         const serialization: any = {};
-        this.serialize(serialization);
+        this.serialize(serialization, true);
 
         const controlType = Tools.Instantiate("BABYLON.GUI." + serialization.className);
         const cloned = new controlType();
@@ -2385,9 +2481,11 @@ export class Control implements IAnimatable {
      * Parses a serialized object into this control
      * @param serializedObject the object with the serialized properties
      * @param host the texture where the control will be instantiated. Can be empty, in which case the control will be created on the same texture
+     * @param urlRewriter defines an url rewriter to update urls before sending them to the controls
      * @returns this control
      */
-    public parse(serializedObject: any, host?: AdvancedDynamicTexture): Control {
+    public parse(serializedObject: any, host?: AdvancedDynamicTexture, urlRewriter?: (url: string) => string): Control {
+        this._urlRewriter = urlRewriter;
         SerializationHelper.Parse(() => this, serializedObject, null);
 
         this.name = serializedObject.name;
@@ -2400,18 +2498,31 @@ export class Control implements IAnimatable {
     /**
      * Serializes the current control
      * @param serializationObject defined the JSON serialized object
+     * @param force if the control should be serialized even if the isSerializable flag is set to false (default false)
+     * @param allowCanvas defines if the control is allowed to use a Canvas2D object to serialize (true by default)
      */
-    public serialize(serializationObject: any) {
+    public serialize(serializationObject: any, force: boolean = false, allowCanvas: boolean = true) {
+        if (!this.isSerializable && !force) {
+            return;
+        }
         SerializationHelper.Serialize(this, serializationObject);
         serializationObject.name = this.name;
         serializationObject.className = this.getClassName();
 
         // Call prepareFont to guarantee the font is properly set before serializing
-        this._prepareFont();
-        if (this._font) {
+        if (allowCanvas) {
+            this._prepareFont();
+        }
+        if (this._fontFamily) {
             serializationObject.fontFamily = this._fontFamily;
+        }
+        if (this.fontSize) {
             serializationObject.fontSize = this.fontSize;
+        }
+        if (this.fontWeight) {
             serializationObject.fontWeight = this.fontWeight;
+        }
+        if (this.fontStyle) {
             serializationObject.fontStyle = this.fontStyle;
         }
 
@@ -2427,7 +2538,7 @@ export class Control implements IAnimatable {
     /**
      * @internal
      */
-    public _parseFromContent(serializedObject: any, host: AdvancedDynamicTexture) {
+    public _parseFromContent(serializedObject: any, host: AdvancedDynamicTexture, urlRewriter?: (url: string) => string) {
         if (serializedObject.fontFamily) {
             this.fontFamily = serializedObject.fontFamily;
         }
@@ -2474,6 +2585,8 @@ export class Control implements IAnimatable {
                     );
             }
         }
+
+        this.fixedRatioMasterIsWidth = serializedObject.fixedRatioMasterIsWidth ?? this.fixedRatioMasterIsWidth;
     }
 
     /** Releases associated resources */
@@ -2555,12 +2668,12 @@ export class Control implements IAnimatable {
     /**
      * @internal
      */
-    public static _GetFontOffset(font: string): { ascent: number; height: number; descent: number } {
+    public static _GetFontOffset(font: string, engineToUse?: AbstractEngine): { ascent: number; height: number; descent: number } {
         if (Control._FontHeightSizes[font]) {
             return Control._FontHeightSizes[font];
         }
 
-        const engine = EngineStore.LastCreatedEngine;
+        const engine = engineToUse || EngineStore.LastCreatedEngine;
         if (!engine) {
             throw new Error("Invalid engine. Unable to create a canvas.");
         }
@@ -2575,15 +2688,24 @@ export class Control implements IAnimatable {
      * Creates a Control from parsed data
      * @param serializedObject defines parsed data
      * @param host defines the hosting AdvancedDynamicTexture
+     * @param urlRewriter defines an url rewriter to update urls before sending them to the controls
      * @returns a new Control
      */
-    public static Parse(serializedObject: any, host: AdvancedDynamicTexture): Control {
+    public static Parse(serializedObject: any, host: AdvancedDynamicTexture, urlRewriter?: (url: string) => string): Control {
         const controlType = Tools.Instantiate("BABYLON.GUI." + serializedObject.className);
-        const control = SerializationHelper.Parse(() => new controlType(), serializedObject, null);
+        const control = SerializationHelper.Parse(
+            () => {
+                const newControl = new controlType() as Control;
+                newControl._urlRewriter = urlRewriter;
+                return newControl;
+            },
+            serializedObject,
+            null
+        );
 
         control.name = serializedObject.name;
 
-        control._parseFromContent(serializedObject, host);
+        control._parseFromContent(serializedObject, host, urlRewriter);
 
         return control;
     }

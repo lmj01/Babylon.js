@@ -1,5 +1,3 @@
-import { Tools } from "core/Misc/tools";
-
 import { Container } from "./container";
 import type { Measure } from "../measure";
 import { Control } from "./control";
@@ -7,8 +5,7 @@ import { RegisterClass } from "core/Misc/typeStore";
 import { serialize } from "core/Misc/decorators";
 import type { AdvancedDynamicTexture } from "../advancedDynamicTexture";
 import type { ICanvasRenderingContext } from "core/Engines/ICanvas";
-import type { TextBlock } from "./textBlock";
-import { TextWrapping } from "./textBlock";
+import { Logger } from "core/Misc/logger";
 
 /**
  * Class used to create a 2D stack panel container
@@ -63,7 +60,7 @@ export class StackPanel extends Container {
      * This value should not be set when in horizontal mode as it will be computed automatically
      */
     @serialize()
-    public set width(value: string | number) {
+    public override set width(value: string | number) {
         if (!this._doNotTrackManualChanges) {
             this._manualWidth = true;
         }
@@ -77,7 +74,7 @@ export class StackPanel extends Container {
         }
     }
 
-    public get width(): string | number {
+    public override get width(): string | number {
         return this._width.toString(this._host);
     }
 
@@ -86,7 +83,7 @@ export class StackPanel extends Container {
      * This value should not be set when in vertical mode as it will be computed automatically
      */
     @serialize()
-    public set height(value: string | number) {
+    public override set height(value: string | number) {
         if (!this._doNotTrackManualChanges) {
             this._manualHeight = true;
         }
@@ -100,7 +97,7 @@ export class StackPanel extends Container {
         }
     }
 
-    public get height(): string | number {
+    public override get height(): string | number {
         return this._height.toString(this._host);
     }
 
@@ -108,18 +105,18 @@ export class StackPanel extends Container {
      * Creates a new StackPanel
      * @param name defines control name
      */
-    constructor(public name?: string) {
+    constructor(public override name?: string) {
         super(name);
     }
 
-    protected _getTypeName(): string {
+    protected override _getTypeName(): string {
         return "StackPanel";
     }
 
     /**
      * @internal
      */
-    protected _preMeasure(parentMeasure: Measure, context: ICanvasRenderingContext): void {
+    protected override _preMeasure(parentMeasure: Measure, context: ICanvasRenderingContext): void {
         for (const child of this._children) {
             if (this._isVertical) {
                 child.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -131,7 +128,7 @@ export class StackPanel extends Container {
         super._preMeasure(parentMeasure, context);
     }
 
-    protected _additionalProcessing(parentMeasure: Measure, context: ICanvasRenderingContext): void {
+    protected override _additionalProcessing(parentMeasure: Measure, context: ICanvasRenderingContext): void {
         super._additionalProcessing(parentMeasure, context);
 
         this._measureForChildren.copyFrom(parentMeasure);
@@ -148,7 +145,7 @@ export class StackPanel extends Container {
         }
     }
 
-    protected _postMeasure(): void {
+    protected override _postMeasure(): void {
         let stackWidth = 0;
         let stackHeight = 0;
         const childrenCount = this._children.length;
@@ -165,10 +162,8 @@ export class StackPanel extends Container {
                     child._top.ignoreAdaptiveScaling = true;
                 }
 
-                if (child._height.isPercentage && !child._automaticSize) {
-                    if (!this.ignoreLayoutWarnings) {
-                        Tools.Warn(`Control (Name:${child.name}, UniqueId:${child.uniqueId}) is using height in percentage mode inside a vertical StackPanel`);
-                    }
+                if (!this.ignoreLayoutWarnings && !child.isDimensionFullyDefined("height")) {
+                    Logger.Warn(`Control (Name:${child.name}, UniqueId:${child.uniqueId}) is using height in percentage mode inside a vertical StackPanel`, 1);
                 } else {
                     stackHeight += child._currentMeasure.height + child._paddingTopInPixels + child._paddingBottomInPixels + (index < childrenCount - 1 ? this._spacing : 0);
                 }
@@ -179,16 +174,8 @@ export class StackPanel extends Container {
                     child._left.ignoreAdaptiveScaling = true;
                 }
 
-                if (
-                    child._width.isPercentage &&
-                    !child._automaticSize &&
-                    child.getClassName() === "TextBlock" &&
-                    (child as TextBlock).textWrapping !== TextWrapping.Clip &&
-                    !(child as TextBlock).forceResizeWidth
-                ) {
-                    if (!this.ignoreLayoutWarnings) {
-                        Tools.Warn(`Control (Name:${child.name}, UniqueId:${child.uniqueId}) is using width in percentage mode inside a horizontal StackPanel`);
-                    }
+                if (!this.ignoreLayoutWarnings && !child.isDimensionFullyDefined("width")) {
+                    Logger.Warn(`Control (Name:${child.name}, UniqueId:${child.uniqueId}) is using width in percentage mode inside a horizontal StackPanel`, 1);
                 } else {
                     stackWidth += child._currentMeasure.width + child._paddingLeftInPixels + child._paddingRightInPixels + (index < childrenCount - 1 ? this._spacing : 0);
                 }
@@ -236,12 +223,37 @@ export class StackPanel extends Container {
         super._postMeasure();
     }
 
+    private _getManualDim(dim: "width" | "height") {
+        if (dim === "width") {
+            return this._manualWidth;
+        } else {
+            return this._manualHeight;
+        }
+    }
+
+    public override isDimensionFullyDefined(dim: "width" | "height"): boolean {
+        if (dim === "height" ? this.isVertical : !this.isVertical && !this._getManualDim(dim)) {
+            for (const child of this._children) {
+                if (!child.isDimensionFullyDefined(dim)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        return this.getDimension(dim).isPixel || this._getAdaptDimTo(dim);
+    }
+
     /**
      * Serializes the current control
      * @param serializationObject defined the JSON serialized object
+     * @param force force serialization even if isSerializable === false
      */
-    public serialize(serializationObject: any) {
-        super.serialize(serializationObject);
+    public override serialize(serializationObject: any, force: boolean) {
+        super.serialize(serializationObject, force);
+        if (!this.isSerializable && !force) {
+            return;
+        }
         serializationObject.manualWidth = this._manualWidth;
         serializationObject.manualHeight = this._manualHeight;
     }
@@ -249,7 +261,7 @@ export class StackPanel extends Container {
     /**
      * @internal
      */
-    public _parseFromContent(serializedObject: any, host: AdvancedDynamicTexture) {
+    public override _parseFromContent(serializedObject: any, host: AdvancedDynamicTexture) {
         this._manualWidth = serializedObject.manualWidth;
         this._manualHeight = serializedObject.manualHeight;
 

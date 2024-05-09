@@ -66,7 +66,6 @@ uniform float time;
 // Water varyings
 varying vec3 vRefractionMapTexCoord;
 varying vec3 vReflectionMapTexCoord;
-varying vec3 vPosition;
 
 #include<clipPlaneFragmentDeclaration>
 #include<logDepthDeclaration>
@@ -166,6 +165,8 @@ void main(void) {
     vec3 diffuseBase = vec3(0., 0., 0.);
     lightingInfo info;
     float shadow = 1.;
+	float aggShadow = 0.;
+	float numLights = 0.;
 
     #ifdef SPECULARTERM
         float glossiness = vSpecularColor.a;
@@ -218,6 +219,8 @@ void main(void) {
     vec3 diffuseBase = vec3(0., 0., 0.);
     lightingInfo info;
     float shadow = 1.;
+	float aggShadow = 0.;
+	float numLights = 0.;
 
     #ifdef SPECULARTERM
         float glossiness = vSpecularColor.a;

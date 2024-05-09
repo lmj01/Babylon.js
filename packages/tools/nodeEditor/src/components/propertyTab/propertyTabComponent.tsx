@@ -65,7 +65,7 @@ export class PropertyTabComponent extends React.Component<IPropertyTabComponentP
         this._modeSelect = React.createRef();
     }
 
-    componentDidMount() {
+    override componentDidMount() {
         this.props.globalState.stateManager.onSelectionChangedObservable.add((options) => {
             const { selection } = options || {};
             if (selection instanceof GraphNode) {
@@ -86,7 +86,7 @@ export class PropertyTabComponent extends React.Component<IPropertyTabComponentP
         });
     }
 
-    componentWillUnmount() {
+    override componentWillUnmount() {
         this.props.globalState.onBuiltObservable.remove(this._onBuiltObserver);
     }
 
@@ -94,7 +94,7 @@ export class PropertyTabComponent extends React.Component<IPropertyTabComponentP
         this.props.globalState.stateManager.onUpdateRequiredObservable.notifyObservers(ib);
 
         if (ib.isConstant) {
-            this.props.globalState.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+            this.props.globalState.stateManager.onRebuildRequiredObservable.notifyObservers();
         }
     }
 
@@ -381,11 +381,15 @@ export class PropertyTabComponent extends React.Component<IPropertyTabComponentP
         this.props.globalState.mode = value as NodeMaterialModes;
 
         this.props.globalState.onResetRequiredObservable.notifyObservers(true);
+        // Env
+        (this.props.globalState.envFile as any) = undefined;
+
+        DataStorage.WriteNumber("EnvType", this.props.globalState.envType);
 
         return true;
     }
 
-    render() {
+    override render() {
         if (this.state.currentNode) {
             return (
                 <div id="propertyTab">

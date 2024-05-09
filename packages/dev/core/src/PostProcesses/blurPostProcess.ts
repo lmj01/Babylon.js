@@ -6,15 +6,16 @@ import { PostProcess } from "./postProcess";
 import type { Camera } from "../Cameras/camera";
 import type { Effect } from "../Materials/effect";
 import { Texture } from "../Materials/Textures/texture";
-import type { Engine } from "../Engines/engine";
 import { Constants } from "../Engines/constants";
 
 import "../Shaders/kernelBlur.fragment";
 import "../Shaders/kernelBlur.vertex";
 import { RegisterClass } from "../Misc/typeStore";
-import { serialize, serializeAsVector2, SerializationHelper } from "../Misc/decorators";
+import { serialize, serializeAsVector2 } from "../Misc/decorators";
+import { SerializationHelper } from "../Misc/decorators.serialization";
 
-declare type Scene = import("../scene").Scene;
+import type { Scene } from "../scene";
+import type { AbstractEngine } from "core/Engines/abstractEngine";
 
 /**
  * The Blur Post Process which blurs an image based on a kernel and direction.
@@ -79,7 +80,7 @@ export class BlurPostProcess extends PostProcess {
      * Gets a string identifying the name of the class
      * @returns "BlurPostProcess" string
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "BlurPostProcess";
     }
 
@@ -105,7 +106,7 @@ export class BlurPostProcess extends PostProcess {
         options: number | PostProcessOptions,
         camera: Nullable<Camera>,
         samplingMode: number = Texture.BILINEAR_SAMPLINGMODE,
-        engine?: Engine,
+        engine?: AbstractEngine,
         reusable?: boolean,
         textureType = Constants.TEXTURETYPE_UNSIGNED_INT,
         defines = "",
@@ -151,7 +152,7 @@ export class BlurPostProcess extends PostProcess {
      * @param onCompiled Called when the shader has been compiled.
      * @param onError Called if there is an error when compiling a shader.
      */
-    public updateEffect(
+    public override updateEffect(
         defines: Nullable<string> = null,
         uniforms: Nullable<string[]> = null,
         samplers: Nullable<string[]> = null,
@@ -234,19 +235,19 @@ export class BlurPostProcess extends PostProcess {
 
         // The DOF fragment should ignore the center pixel when looping as it is handled manually in the fragment shader.
         if (this._staticDefines.indexOf("DOF") != -1) {
-            defines += `#define CENTER_WEIGHT ${this._glslFloat(weights[varyingCount - 1])}\r\n`;
+            defines += `#define CENTER_WEIGHT ${this._glslFloat(weights[varyingCount - 1])}\n`;
             varyingCount--;
         }
 
         for (let i = 0; i < varyingCount; i++) {
-            defines += `#define KERNEL_OFFSET${i} ${this._glslFloat(offsets[i])}\r\n`;
-            defines += `#define KERNEL_WEIGHT${i} ${this._glslFloat(weights[i])}\r\n`;
+            defines += `#define KERNEL_OFFSET${i} ${this._glslFloat(offsets[i])}\n`;
+            defines += `#define KERNEL_WEIGHT${i} ${this._glslFloat(weights[i])}\n`;
         }
 
         let depCount = 0;
         for (let i = freeVaryingVec2; i < offsets.length; i++) {
-            defines += `#define KERNEL_DEP_OFFSET${depCount} ${this._glslFloat(offsets[i])}\r\n`;
-            defines += `#define KERNEL_DEP_WEIGHT${depCount} ${this._glslFloat(weights[i])}\r\n`;
+            defines += `#define KERNEL_DEP_OFFSET${depCount} ${this._glslFloat(offsets[i])}\n`;
+            defines += `#define KERNEL_DEP_WEIGHT${depCount} ${this._glslFloat(weights[i])}\n`;
             depCount++;
         }
 
@@ -320,7 +321,7 @@ export class BlurPostProcess extends PostProcess {
     /**
      * @internal
      */
-    public static _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string): Nullable<BlurPostProcess> {
+    public static override _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string): Nullable<BlurPostProcess> {
         return SerializationHelper.Parse(
             () => {
                 return new BlurPostProcess(

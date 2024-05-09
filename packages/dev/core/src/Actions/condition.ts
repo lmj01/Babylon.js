@@ -1,7 +1,7 @@
 import { Action } from "./action";
 import { RegisterClass } from "../Misc/typeStore";
 
-declare type ActionManager = import("./actionManager").ActionManager;
+import type { ActionManager } from "./actionManager";
 
 /**
  * A Condition applied to an Action
@@ -53,6 +53,7 @@ export class Condition {
         return this._actionManager._getEffectiveTarget(target, propertyPath);
     }
 
+    // eslint-disable-next-line jsdoc/require-returns-check
     /**
      * Serialize placeholder for child classes
      * @returns the serialized object
@@ -113,7 +114,7 @@ export class ValueCondition extends Condition {
      * Internal only The action manager for the condition
      * @internal
      */
-    public _actionManager: ActionManager;
+    public override _actionManager: ActionManager;
 
     private _target: any;
     private _effectiveTarget: any;
@@ -148,7 +149,7 @@ export class ValueCondition extends Condition {
      * Compares the given value with the property value for the specified conditional operator
      * @returns the result of the comparison
      */
-    public isValid(): boolean {
+    public override isValid(): boolean {
         switch (this.operator) {
             case ValueCondition.IsGreater:
                 return this._effectiveTarget[this._property] > this.value;
@@ -174,7 +175,7 @@ export class ValueCondition extends Condition {
      * Serialize the ValueCondition into a JSON compatible object
      * @returns serialization object
      */
-    public serialize(): any {
+    public override serialize(): any {
         return this._serialize({
             name: "ValueCondition",
             properties: [
@@ -215,7 +216,7 @@ export class PredicateCondition extends Condition {
      * Internal only - manager for action
      * @internal
      */
-    public _actionManager: ActionManager;
+    public override _actionManager: ActionManager;
 
     /**
      * Creates a new PredicateCondition
@@ -233,7 +234,7 @@ export class PredicateCondition extends Condition {
     /**
      * @returns the validity of the predicate condition
      */
-    public isValid(): boolean {
+    public override isValid(): boolean {
         return this.predicate();
     }
 }
@@ -246,7 +247,7 @@ export class StateCondition extends Condition {
      * Internal only - manager for action
      * @internal
      */
-    public _actionManager: ActionManager;
+    public override _actionManager: ActionManager;
 
     private _target: any;
 
@@ -271,7 +272,7 @@ export class StateCondition extends Condition {
      * Gets a boolean indicating if the current condition is met
      * @returns the validity of the state
      */
-    public isValid(): boolean {
+    public override isValid(): boolean {
         return this._target.state === this.value;
     }
 
@@ -279,7 +280,7 @@ export class StateCondition extends Condition {
      * Serialize the StateCondition into a JSON compatible object
      * @returns serialization object
      */
-    public serialize(): any {
+    public override serialize(): any {
         return this._serialize({
             name: "StateCondition",
             properties: [Action._GetTargetProperty(this._target), { name: "value", value: this.value }],

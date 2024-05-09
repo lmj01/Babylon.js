@@ -14,11 +14,12 @@ import type { PrePassRenderer } from "../Rendering/prePassRenderer";
 import "../Animations/animatable";
 import "../Rendering/geometryBufferRendererSceneComponent";
 import "../Shaders/motionBlur.fragment";
-import { serialize, SerializationHelper } from "../Misc/decorators";
+import { serialize } from "../Misc/decorators";
+import { SerializationHelper } from "../Misc/decorators.serialization";
 import { RegisterClass } from "../Misc/typeStore";
 
-declare type Engine = import("../Engines/engine").Engine;
-declare type Scene = import("../scene").Scene;
+import type { AbstractEngine } from "../Engines/abstractEngine";
+import type { Scene } from "../scene";
 
 /**
  * The Motion Blur Post Process which blurs an image based on the objects velocity in scene.
@@ -103,7 +104,7 @@ export class MotionBlurPostProcess extends PostProcess {
      * Gets a string identifying the name of the class
      * @returns "MotionBlurPostProcess" string
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "MotionBlurPostProcess";
     }
 
@@ -126,7 +127,7 @@ export class MotionBlurPostProcess extends PostProcess {
         options: number | PostProcessOptions,
         camera: Nullable<Camera>,
         samplingMode?: number,
-        engine?: Engine,
+        engine?: AbstractEngine,
         reusable?: boolean,
         textureType: number = Constants.TEXTURETYPE_UNSIGNED_INT,
         blockCompilation = false,
@@ -156,7 +157,7 @@ export class MotionBlurPostProcess extends PostProcess {
             scene.enableGeometryBufferRenderer();
 
             if (this._geometryBufferRenderer) {
-                this._geometryBufferRenderer.enableVelocity = true;
+                this._geometryBufferRenderer.enableVelocity = this._isObjectBased;
             }
         } else {
             scene.enablePrePassRenderer();
@@ -216,7 +217,7 @@ export class MotionBlurPostProcess extends PostProcess {
      * Disposes the post process.
      * @param camera The camera to dispose the post process on.
      */
-    public dispose(camera?: Camera): void {
+    public override dispose(camera?: Camera): void {
         if (this._geometryBufferRenderer) {
             // Clear previous transformation matrices dictionary used to compute objects velocities
             this._geometryBufferRenderer._previousTransformationMatrices = {};
@@ -229,12 +230,17 @@ export class MotionBlurPostProcess extends PostProcess {
 
     /**
      * Called on the mode changed (object based or screen based).
+     * @returns void
      */
-    private _applyMode(): void {
+    private _applyMode() {
         if (!this._geometryBufferRenderer && !this._prePassRenderer) {
             // We can't get a velocity or depth texture. So, work as a passthrough.
             Logger.Warn("Multiple Render Target support needed to compute object based motion blur");
             return this.updateEffect();
+        }
+
+        if (this._geometryBufferRenderer) {
+            this._geometryBufferRenderer.enableVelocity = this._isObjectBased;
         }
 
         this._updateEffect();
@@ -327,7 +333,7 @@ export class MotionBlurPostProcess extends PostProcess {
     /**
      * @internal
      */
-    public static _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string): Nullable<MotionBlurPostProcess> {
+    public static override _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string): Nullable<MotionBlurPostProcess> {
         return SerializationHelper.Parse(
             () => {
                 return new MotionBlurPostProcess(

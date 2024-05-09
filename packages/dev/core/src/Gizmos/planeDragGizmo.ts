@@ -2,7 +2,7 @@ import type { Observer } from "../Misc/observable";
 import { Observable } from "../Misc/observable";
 import type { Nullable } from "../types";
 import type { PointerInfo } from "../Events/pointerEvents";
-import { Vector3 } from "../Maths/math.vector";
+import { TmpVectors, Vector3 } from "../Maths/math.vector";
 import { Color3 } from "../Maths/math.color";
 import { TransformNode } from "../Meshes/transformNode";
 import type { Node } from "../node";
@@ -26,7 +26,7 @@ export interface IPlaneDragGizmo extends IGizmo {
     snapDistance: number;
     /**
      * Event that fires each time the gizmo snaps to a new location.
-     * * snapDistance is the the change in distance
+     * * snapDistance is the change in distance
      */
     onSnapObservable: Observable<{ snapDistance: number }>;
     /** If the gizmo is enabled */
@@ -34,9 +34,9 @@ export interface IPlaneDragGizmo extends IGizmo {
 
     /** Default material used to render when gizmo is not disabled or hovered */
     coloredMaterial: StandardMaterial;
-    /** Material used to render when gizmo is hovered with mouse*/
+    /** Material used to render when gizmo is hovered with mouse */
     hoverMaterial: StandardMaterial;
-    /** Material used to render when gizmo is disabled. typically grey.*/
+    /** Material used to render when gizmo is disabled. typically grey. */
     disableMaterial: StandardMaterial;
 }
 
@@ -55,7 +55,7 @@ export class PlaneDragGizmo extends Gizmo implements IPlaneDragGizmo {
     public snapDistance = 0;
     /**
      * Event that fires each time the gizmo snaps to a new location.
-     * * snapDistance is the the change in distance
+     * * snapDistance is the change in distance
      */
     public onSnapObservable = new Observable<{ snapDistance: number }>();
 
@@ -82,6 +82,7 @@ export class PlaneDragGizmo extends Gizmo implements IPlaneDragGizmo {
     public get disableMaterial() {
         return this._disableMaterial;
     }
+
     /**
      * @internal
      */
@@ -101,12 +102,16 @@ export class PlaneDragGizmo extends Gizmo implements IPlaneDragGizmo {
      * @param color The color of the gizmo
      * @param gizmoLayer The utility layer the gizmo will be added to
      * @param parent
+     * @param hoverColor The color of the gizmo when hovering over and dragging
+     * @param disableColor The Color of the gizmo when its disabled
      */
     constructor(
         dragPlaneNormal: Vector3,
         color: Color3 = Color3.Gray(),
         gizmoLayer: UtilityLayerRenderer = UtilityLayerRenderer.DefaultUtilityLayer,
-        parent: Nullable<PositionGizmo> = null
+        parent: Nullable<PositionGizmo> = null,
+        hoverColor: Color3 = Color3.Yellow(),
+        disableColor: Color3 = Color3.Gray()
     ) {
         super(gizmoLayer);
         this._parent = parent;
@@ -116,10 +121,10 @@ export class PlaneDragGizmo extends Gizmo implements IPlaneDragGizmo {
         this._coloredMaterial.specularColor = color.subtract(new Color3(0.1, 0.1, 0.1));
 
         this._hoverMaterial = new StandardMaterial("", gizmoLayer.utilityLayerScene);
-        this._hoverMaterial.diffuseColor = Color3.Yellow();
+        this._hoverMaterial.diffuseColor = hoverColor;
 
         this._disableMaterial = new StandardMaterial("", gizmoLayer.utilityLayerScene);
-        this._disableMaterial.diffuseColor = Color3.Gray();
+        this._disableMaterial.diffuseColor = disableColor;
         this._disableMaterial.alpha = 0.4;
 
         // Build plane mesh on root node
@@ -139,14 +144,17 @@ export class PlaneDragGizmo extends Gizmo implements IPlaneDragGizmo {
 
         this.dragBehavior.onDragObservable.add((event) => {
             if (this.attachedNode) {
-                this._handlePivot();
                 // Keep world translation and use it to update world transform
                 // if the node has parent, the local transform properties (position, rotation, scale)
                 // will be recomputed in _matrixChanged function
 
                 // Snapping logic
                 if (this.snapDistance == 0) {
-                    this.attachedNode.getWorldMatrix().addTranslationFromFloats(event.delta.x, event.delta.y, event.delta.z);
+                    this.attachedNode.getWorldMatrix().getTranslationToRef(TmpVectors.Vector3[0]);
+                    TmpVectors.Vector3[0].addToRef(event.delta, TmpVectors.Vector3[0]);
+                    if (this.dragBehavior.validateDrag(TmpVectors.Vector3[0])) {
+                        this.attachedNode.getWorldMatrix().addTranslationFromFloats(event.delta.x, event.delta.y, event.delta.z);
+                    }
                 } else {
                     currentSnapDragDistance += event.dragDistance;
                     if (Math.abs(currentSnapDragDistance) > this.snapDistance) {
@@ -154,9 +162,13 @@ export class PlaneDragGizmo extends Gizmo implements IPlaneDragGizmo {
                         currentSnapDragDistance = currentSnapDragDistance % this.snapDistance;
                         event.delta.normalizeToRef(tmpVector);
                         tmpVector.scaleInPlace(this.snapDistance * dragSteps);
-                        this.attachedNode.getWorldMatrix().addTranslationFromFloats(tmpVector.x, tmpVector.y, tmpVector.z);
-                        tmpSnapEvent.snapDistance = this.snapDistance * dragSteps;
-                        this.onSnapObservable.notifyObservers(tmpSnapEvent);
+                        this.attachedNode.getWorldMatrix().getTranslationToRef(TmpVectors.Vector3[0]);
+                        TmpVectors.Vector3[0].addToRef(tmpVector, TmpVectors.Vector3[0]);
+                        if (this.dragBehavior.validateDrag(TmpVectors.Vector3[0])) {
+                            this.attachedNode.getWorldMatrix().addTranslationFromFloats(tmpVector.x, tmpVector.y, tmpVector.z);
+                            tmpSnapEvent.snapDistance = this.snapDistance * dragSteps;
+                            this.onSnapObservable.notifyObservers(tmpSnapEvent);
+                        }
                     }
                 }
                 this._matrixChanged();
@@ -198,7 +210,8 @@ export class PlaneDragGizmo extends Gizmo implements IPlaneDragGizmo {
             this._setGizmoMeshMaterial(cache.gizmoMeshes, newState ? this._coloredMaterial : this._disableMaterial);
         });
     }
-    protected _attachedNodeChanged(value: Nullable<Node>) {
+
+    protected override _attachedNodeChanged(value: Nullable<Node>) {
         if (this.dragBehavior) {
             this.dragBehavior.enabled = value ? true : false;
         }
@@ -217,13 +230,15 @@ export class PlaneDragGizmo extends Gizmo implements IPlaneDragGizmo {
             }
         }
     }
+
     public get isEnabled(): boolean {
         return this._isEnabled;
     }
+
     /**
      * Disposes of the gizmo
      */
-    public dispose() {
+    public override dispose() {
         this.onSnapObservable.clear();
         this.gizmoLayer.utilityLayerScene.onPointerObservable.remove(this._pointerObserver);
         this.dragBehavior.detach();

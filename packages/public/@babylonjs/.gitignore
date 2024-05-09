@@ -8,7 +8,10 @@ node_modules
 *.svg
 *.png
 *.jpg
+*.wasm
+*.license
 !inspector/**/*.*
 !node-editor/**/*.*
+!node-geometry-editor/**/*.*
 !gui-editor/**/*.*
 !accessibility/**/*.*

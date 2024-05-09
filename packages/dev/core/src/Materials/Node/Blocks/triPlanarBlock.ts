@@ -17,7 +17,7 @@ import "../../../Shaders/ShadersInclude/helperFunctions";
 import { ImageSourceBlock } from "./Dual/imageSourceBlock";
 import { NodeMaterialConnectionPointCustomObject } from "../nodeMaterialConnectionPointCustomObject";
 import { EngineStore } from "../../../Engines/engineStore";
-import { editableInPropertyPage, PropertyTypeForEdition } from "../nodeMaterialDecorator";
+import { editableInPropertyPage, PropertyTypeForEdition } from "../../../Decorators/nodeDecorator";
 
 /**
  * Block used to read a texture with triplanar mapping (see "boxmap" in https://iquilezles.org/articles/biplanar/)
@@ -175,6 +175,7 @@ export class TriPlanarBlock extends NodeMaterialBlock {
     /**
      * Create a new TriPlanarBlock
      * @param name defines the block name
+     * @param hideSourceZ defines a boolean indicating that normal Z should not be used (false by default)
      */
     public constructor(name: string, hideSourceZ = false) {
         super(name, NodeMaterialBlockTargets.Neutral);
@@ -227,7 +228,7 @@ export class TriPlanarBlock extends NodeMaterialBlock {
      * Gets the current class name
      * @returns the class name
      */
-    public getClassName() {
+    public override getClassName() {
         return "TriPlanarBlock";
     }
 
@@ -322,7 +323,7 @@ export class TriPlanarBlock extends NodeMaterialBlock {
         return this._outputs[6];
     }
 
-    public prepareDefines(mesh: AbstractMesh, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines) {
+    public override prepareDefines(mesh: AbstractMesh, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines) {
         if (!defines._areTexturesDirty) {
             return;
         }
@@ -335,7 +336,7 @@ export class TriPlanarBlock extends NodeMaterialBlock {
         defines.setValue(this._gammaDefineName, toLinear, true);
     }
 
-    public isReady() {
+    public override isReady() {
         if (this.texture && !this.texture.isReadyOrNotBlocking()) {
             return false;
         }
@@ -343,7 +344,7 @@ export class TriPlanarBlock extends NodeMaterialBlock {
         return true;
     }
 
-    public bind(effect: Effect) {
+    public override bind(effect: Effect) {
         if (!this.texture) {
             return;
         }
@@ -432,11 +433,11 @@ export class TriPlanarBlock extends NodeMaterialBlock {
             complement = ` * ${this._textureInfoName}`;
         }
 
-        state.compilationString += `${this._declareOutput(output, state)} = ${this._tempTextureRead}.${swizzle}${complement};\r\n`;
+        state.compilationString += `${state._declareOutput(output)} = ${this._tempTextureRead}.${swizzle}${complement};\n`;
         this._generateConversionCode(state, output, swizzle);
     }
 
-    protected _buildBlock(state: NodeMaterialBuildState) {
+    protected override _buildBlock(state: NodeMaterialBuildState) {
         super._buildBlock(state);
 
         if (this.source.isConnected) {
@@ -468,7 +469,7 @@ export class TriPlanarBlock extends NodeMaterialBlock {
         const comments = `//${this.name}`;
         state._emitFunctionFromInclude("helperFunctions", comments);
 
-        state._emitUniformFromString(this._textureInfoName, "float");
+        state._emitUniformFromString(this._textureInfoName, NodeMaterialBlockConnectionPointTypes.Float);
 
         this._generateTextureLookup(state);
 
@@ -481,34 +482,34 @@ export class TriPlanarBlock extends NodeMaterialBlock {
         return this;
     }
 
-    protected _dumpPropertiesCode() {
+    protected override _dumpPropertiesCode() {
         let codeString = super._dumpPropertiesCode();
 
-        codeString += `${this._codeVariableName}.convertToGammaSpace = ${this.convertToGammaSpace};\r\n`;
-        codeString += `${this._codeVariableName}.convertToLinearSpace = ${this.convertToLinearSpace};\r\n`;
-        codeString += `${this._codeVariableName}.disableLevelMultiplication = ${this.disableLevelMultiplication};\r\n`;
-        codeString += `${this._codeVariableName}.projectAsCube = ${this.projectAsCube};\r\n`;
+        codeString += `${this._codeVariableName}.convertToGammaSpace = ${this.convertToGammaSpace};\n`;
+        codeString += `${this._codeVariableName}.convertToLinearSpace = ${this.convertToLinearSpace};\n`;
+        codeString += `${this._codeVariableName}.disableLevelMultiplication = ${this.disableLevelMultiplication};\n`;
+        codeString += `${this._codeVariableName}.projectAsCube = ${this.projectAsCube};\n`;
 
         if (!this.texture) {
             return codeString;
         }
 
-        codeString += `${this._codeVariableName}.texture = new BABYLON.Texture("${this.texture.name}", null, ${this.texture.noMipmap}, ${this.texture.invertY}, ${this.texture.samplingMode});\r\n`;
-        codeString += `${this._codeVariableName}.texture.wrapU = ${this.texture.wrapU};\r\n`;
-        codeString += `${this._codeVariableName}.texture.wrapV = ${this.texture.wrapV};\r\n`;
-        codeString += `${this._codeVariableName}.texture.uAng = ${this.texture.uAng};\r\n`;
-        codeString += `${this._codeVariableName}.texture.vAng = ${this.texture.vAng};\r\n`;
-        codeString += `${this._codeVariableName}.texture.wAng = ${this.texture.wAng};\r\n`;
-        codeString += `${this._codeVariableName}.texture.uOffset = ${this.texture.uOffset};\r\n`;
-        codeString += `${this._codeVariableName}.texture.vOffset = ${this.texture.vOffset};\r\n`;
-        codeString += `${this._codeVariableName}.texture.uScale = ${this.texture.uScale};\r\n`;
-        codeString += `${this._codeVariableName}.texture.vScale = ${this.texture.vScale};\r\n`;
-        codeString += `${this._codeVariableName}.texture.coordinatesMode = ${this.texture.coordinatesMode};\r\n`;
+        codeString += `${this._codeVariableName}.texture = new BABYLON.Texture("${this.texture.name}", null, ${this.texture.noMipmap}, ${this.texture.invertY}, ${this.texture.samplingMode});\n`;
+        codeString += `${this._codeVariableName}.texture.wrapU = ${this.texture.wrapU};\n`;
+        codeString += `${this._codeVariableName}.texture.wrapV = ${this.texture.wrapV};\n`;
+        codeString += `${this._codeVariableName}.texture.uAng = ${this.texture.uAng};\n`;
+        codeString += `${this._codeVariableName}.texture.vAng = ${this.texture.vAng};\n`;
+        codeString += `${this._codeVariableName}.texture.wAng = ${this.texture.wAng};\n`;
+        codeString += `${this._codeVariableName}.texture.uOffset = ${this.texture.uOffset};\n`;
+        codeString += `${this._codeVariableName}.texture.vOffset = ${this.texture.vOffset};\n`;
+        codeString += `${this._codeVariableName}.texture.uScale = ${this.texture.uScale};\n`;
+        codeString += `${this._codeVariableName}.texture.vScale = ${this.texture.vScale};\n`;
+        codeString += `${this._codeVariableName}.texture.coordinatesMode = ${this.texture.coordinatesMode};\n`;
 
         return codeString;
     }
 
-    public serialize(): any {
+    public override serialize(): any {
         const serializationObject = super.serialize();
 
         serializationObject.convertToGammaSpace = this.convertToGammaSpace;
@@ -522,7 +523,7 @@ export class TriPlanarBlock extends NodeMaterialBlock {
         return serializationObject;
     }
 
-    public _deserialize(serializationObject: any, scene: Scene, rootUrl: string) {
+    public override _deserialize(serializationObject: any, scene: Scene, rootUrl: string) {
         super._deserialize(serializationObject, scene, rootUrl);
 
         this.convertToGammaSpace = serializationObject.convertToGammaSpace;

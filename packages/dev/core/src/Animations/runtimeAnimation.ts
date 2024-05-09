@@ -1,32 +1,19 @@
-import type { DeepImmutable, Nullable } from "../types";
-import { Quaternion, Vector3, Vector2, Matrix } from "../Maths/math.vector";
-import { Color3 } from "../Maths/math.color";
+import type { Nullable } from "../types";
+import { Matrix } from "../Maths/math.vector";
 import type { _IAnimationState } from "./animation";
-import { Animation } from "./animation";
+import {
+    Animation,
+    _staticOffsetValueColor3,
+    _staticOffsetValueColor4,
+    _staticOffsetValueQuaternion,
+    _staticOffsetValueSize,
+    _staticOffsetValueVector2,
+    _staticOffsetValueVector3,
+} from "./animation";
 import type { AnimationEvent } from "./animationEvent";
-
-declare type Animatable = import("./animatable").Animatable;
-
+import type { Animatable } from "./animatable";
 import type { Scene } from "../scene";
 import type { IAnimationKey } from "./animationKey";
-import { Size } from "../Maths/math.size";
-
-// Static values to help the garbage collector
-
-// Quaternion
-const _staticOffsetValueQuaternion: DeepImmutable<Quaternion> = Object.freeze(new Quaternion(0, 0, 0, 0));
-
-// Vector3
-const _staticOffsetValueVector3: DeepImmutable<Vector3> = Object.freeze(Vector3.Zero());
-
-// Vector2
-const _staticOffsetValueVector2: DeepImmutable<Vector2> = Object.freeze(Vector2.Zero());
-
-// Size
-const _staticOffsetValueSize: DeepImmutable<Size> = Object.freeze(Size.Zero());
-
-// Color3
-const _staticOffsetValueColor3: DeepImmutable<Color3> = Object.freeze(Color3.Black());
 
 /**
  * Defines a runtime animation
@@ -115,19 +102,21 @@ export class RuntimeAnimation {
     private _weight = 1.0;
 
     /**
-     * The ratio offset of the runtime animation
+     * The absolute frame offset of the runtime animation
      */
-    private _ratioOffset = 0;
+    private _absoluteFrameOffset = 0;
 
     /**
-     * The previous delay of the runtime animation
+     * The previous elapsed time (since start of animation) of the runtime animation
      */
-    private _previousDelay: number = 0;
+    private _previousElapsedTime: number = 0;
+
+    private _yoyoDirection: number = 1;
 
     /**
-     * The previous ratio of the runtime animation
+     * The previous absolute frame of the runtime animation (meaning, without taking into account the from/to values, only the elapsed time and the fps)
      */
-    private _previousRatio: number = 0;
+    private _previousAbsoluteFrame: number = 0;
 
     private _enableBlending: boolean;
 
@@ -254,10 +243,13 @@ export class RuntimeAnimation {
         const targetPropertyPath = this._animation.targetPropertyPath;
 
         if (targetPropertyPath.length > 1) {
-            let property = target[targetPropertyPath[0]];
-
-            for (let index = 1; index < targetPropertyPath.length - 1; index++) {
-                property = property[targetPropertyPath[index]];
+            let property = target;
+            for (let index = 0; index < targetPropertyPath.length - 1; index++) {
+                const name = targetPropertyPath[index];
+                property = property[name];
+                if (property === undefined) {
+                    throw new Error(`Invalid property (${name}) in property path (${targetPropertyPath.join(".")})`);
+                }
             }
 
             this._targetPath = targetPropertyPath[targetPropertyPath.length - 1];
@@ -265,6 +257,10 @@ export class RuntimeAnimation {
         } else {
             this._targetPath = targetPropertyPath[0];
             this._activeTargets[targetIndex] = target;
+        }
+
+        if (this._activeTargets[targetIndex][this._targetPath] === undefined) {
+            throw new Error(`Invalid property (${this._targetPath}) in property path (${targetPropertyPath.join(".")})`);
         }
     }
 
@@ -346,9 +342,9 @@ export class RuntimeAnimation {
         let originalValue: any;
         const target = this._activeTargets[targetIndex];
 
-        if (target.getRestPose && this._targetPath === "_matrix") {
+        if (target.getLocalMatrix && this._targetPath === "_matrix") {
             // For bones
-            originalValue = target.getRestPose();
+            originalValue = target.getLocalMatrix();
         } else {
             originalValue = target[this._targetPath];
         }
@@ -415,7 +411,15 @@ export class RuntimeAnimation {
         if (weight !== -1.0) {
             this._scene._registerTargetForLateAnimationBinding(this, this._originalValue[targetIndex]);
         } else {
-            destination[this._targetPath] = this._currentValue;
+            if (this._animationState.loopMode === Animation.ANIMATIONLOOPMODE_RELATIVE_FROM_CURRENT) {
+                if (this._currentValue.addToRef) {
+                    this._currentValue.addToRef(this._originalValue[targetIndex], destination[this._targetPath]);
+                } else {
+                    destination[this._targetPath] = this._originalValue[targetIndex] + this._currentValue;
+                }
+            } else {
+                destination[this._targetPath] = this._currentValue;
+            }
         }
 
         if (target.markAsDirty) {
@@ -469,22 +473,22 @@ export class RuntimeAnimation {
      * @internal Internal use only
      */
     public _prepareForSpeedRatioChange(newSpeedRatio: number): void {
-        const newRatio = (this._previousDelay * (this._animation.framePerSecond * newSpeedRatio)) / 1000.0;
+        const newAbsoluteFrame = (this._previousElapsedTime * (this._animation.framePerSecond * newSpeedRatio)) / 1000.0;
 
-        this._ratioOffset = this._previousRatio - newRatio;
+        this._absoluteFrameOffset = this._previousAbsoluteFrame - newAbsoluteFrame;
     }
 
     /**
      * Execute the current animation
-     * @param delay defines the delay to add to the current frame
-     * @param from defines the lower bound of the animation range
-     * @param to defines the upper bound of the animation range
+     * @param elapsedTimeSinceAnimationStart defines the elapsed time (in milliseconds) since the animation was started
+     * @param from defines the lower frame of the animation range
+     * @param to defines the upper frame of the animation range
      * @param loop defines if the current animation must loop
      * @param speedRatio defines the current speed ratio
      * @param weight defines the weight of the animation (default is -1 so no weight)
      * @returns a boolean indicating if the animation is running
      */
-    public animate(delay: number, from: number, to: number, loop: boolean, speedRatio: number, weight = -1.0): boolean {
+    public animate(elapsedTimeSinceAnimationStart: number, from: number, to: number, loop: boolean, speedRatio: number, weight = -1.0): boolean {
         const animation = this._animation;
         const targetPropertyPath = animation.targetPropertyPath;
         if (!targetPropertyPath || targetPropertyPath.length < 1) {
@@ -502,39 +506,49 @@ export class RuntimeAnimation {
             to = this._maxFrame;
         }
 
-        const range = to - from;
+        const frameRange = to - from;
         let offsetValue: any;
 
-        // Compute ratio which represents the frame delta between from and to
-        let ratio = (delay * (animation.framePerSecond * speedRatio)) / 1000.0 + this._ratioOffset;
+        // Compute the frame according to the elapsed time and the fps of the animation ("from" and "to" are not factored in!)
+        let absoluteFrame = (elapsedTimeSinceAnimationStart * (animation.framePerSecond * speedRatio)) / 1000.0 + this._absoluteFrameOffset;
         let highLimitValue = 0;
 
         // Apply the yoyo function if required
-        if (loop && this._animationState.loopMode === Animation.ANIMATIONLOOPMODE_YOYO) {
-            const position = (ratio - from) / range;
+        let yoyoLoop = false;
+        const yoyoMode = loop && this._animationState.loopMode === Animation.ANIMATIONLOOPMODE_YOYO;
+        if (yoyoMode) {
+            const position = (absoluteFrame - from) / frameRange;
 
             // Apply the yoyo curve
-            const yoyoPosition = Math.abs(Math.sin(position * Math.PI));
+            const sin = Math.sin(position * Math.PI);
+            const yoyoPosition = Math.abs(sin);
 
             // Map the yoyo position back to the range
-            ratio = yoyoPosition * range + from;
+            absoluteFrame = yoyoPosition * frameRange + from;
+
+            const direction = sin >= 0 ? 1 : -1;
+            if (this._yoyoDirection !== direction) {
+                yoyoLoop = true;
+            }
+
+            this._yoyoDirection = direction;
         }
 
-        this._previousDelay = delay;
-        this._previousRatio = ratio;
+        this._previousElapsedTime = elapsedTimeSinceAnimationStart;
+        this._previousAbsoluteFrame = absoluteFrame;
 
-        if (!loop && to >= from && ratio >= range) {
+        if (!loop && to >= from && ((absoluteFrame >= frameRange && speedRatio > 0) || (absoluteFrame <= 0 && speedRatio < 0))) {
             // If we are out of range and not looping get back to caller
             returnValue = false;
             highLimitValue = animation._getKeyValue(this._maxValue);
-        } else if (!loop && from >= to && ratio <= range) {
+        } else if (!loop && from >= to && ((absoluteFrame <= frameRange && speedRatio < 0) || (absoluteFrame >= 0 && speedRatio > 0))) {
             returnValue = false;
             highLimitValue = animation._getKeyValue(this._minValue);
         } else if (this._animationState.loopMode !== Animation.ANIMATIONLOOPMODE_CYCLE) {
             const keyOffset = to.toString() + from.toString();
             if (!this._offsetsCache[keyOffset]) {
                 this._animationState.repeatCount = 0;
-                this._animationState.loopMode = Animation.ANIMATIONLOOPMODE_CYCLE;
+                this._animationState.loopMode = Animation.ANIMATIONLOOPMODE_CYCLE; // force a specific codepath in animation._interpolate()!
                 const fromValue = animation._interpolate(from, this._animationState);
                 const toValue = animation._interpolate(to, this._animationState);
 
@@ -600,6 +614,10 @@ export class RuntimeAnimation {
                 // Color3
                 case Animation.ANIMATIONTYPE_COLOR3:
                     offsetValue = _staticOffsetValueColor3;
+                    break;
+                case Animation.ANIMATIONTYPE_COLOR4:
+                    offsetValue = _staticOffsetValueColor4;
+                    break;
             }
         }
 
@@ -607,21 +625,22 @@ export class RuntimeAnimation {
         let currentFrame: number;
 
         if (this._host && this._host.syncRoot) {
+            // If we must sync with an animatable, calculate the current frame based on the frame of the root animatable
             const syncRoot = this._host.syncRoot;
             const hostNormalizedFrame = (syncRoot.masterFrame - syncRoot.fromFrame) / (syncRoot.toFrame - syncRoot.fromFrame);
-            currentFrame = from + (to - from) * hostNormalizedFrame;
+            currentFrame = from + frameRange * hostNormalizedFrame;
         } else {
-            if ((ratio > 0 && from > to) || (ratio < 0 && from < to)) {
-                currentFrame = returnValue && range !== 0 ? to + (ratio % range) : from;
+            if ((absoluteFrame > 0 && from > to) || (absoluteFrame < 0 && from < to)) {
+                currentFrame = returnValue && frameRange !== 0 ? to + (absoluteFrame % frameRange) : from;
             } else {
-                currentFrame = returnValue && range !== 0 ? from + (ratio % range) : to;
+                currentFrame = returnValue && frameRange !== 0 ? from + (absoluteFrame % frameRange) : to;
             }
         }
 
         const events = this._events;
 
         // Reset event/state if looping
-        if ((speedRatio > 0 && this.currentFrame > currentFrame) || (speedRatio < 0 && this.currentFrame < currentFrame)) {
+        if ((!yoyoMode && ((speedRatio > 0 && this.currentFrame > currentFrame) || (speedRatio < 0 && this.currentFrame < currentFrame))) || (yoyoMode && yoyoLoop)) {
             this._onLoop();
 
             // Need to reset animation events
@@ -635,7 +654,7 @@ export class RuntimeAnimation {
             this._animationState.key = speedRatio > 0 ? 0 : animation.getKeys().length - 1;
         }
         this._currentFrame = currentFrame;
-        this._animationState.repeatCount = range === 0 ? 0 : (ratio / range) >> 0;
+        this._animationState.repeatCount = frameRange === 0 ? 0 : (absoluteFrame / frameRange) >> 0;
         this._animationState.highLimitValue = highLimitValue;
         this._animationState.offsetValue = offsetValue;
 
@@ -650,8 +669,8 @@ export class RuntimeAnimation {
                 // Make sure current frame has passed event frame and that event frame is within the current range
                 // Also, handle both forward and reverse animations
                 if (
-                    (range > 0 && currentFrame >= events[index].frame && events[index].frame >= from) ||
-                    (range < 0 && currentFrame <= events[index].frame && events[index].frame <= from)
+                    (frameRange >= 0 && currentFrame >= events[index].frame && events[index].frame >= from) ||
+                    (frameRange < 0 && currentFrame <= events[index].frame && events[index].frame <= from)
                 ) {
                     const event = events[index];
                     if (!event.isDone) {
@@ -662,7 +681,7 @@ export class RuntimeAnimation {
                         }
                         event.isDone = true;
                         event.action(currentFrame);
-                    } // Don't do anything if the event has already be done.
+                    } // Don't do anything if the event has already been done.
                 }
             }
         }

@@ -122,7 +122,7 @@ export class CustomPropertyGridComponent extends React.Component<ICustomProperty
                         onClick={
                             inspectable.callback ||
                             function () {
-                                console.warn("no call back function added");
+                                Logger.Warn("no call back function added");
                             }
                         }
                     />
@@ -138,7 +138,7 @@ export class CustomPropertyGridComponent extends React.Component<ICustomProperty
                         onSelect={
                             inspectable.callback ||
                             function (value) {
-                                console.log(`Option ${value} is selected`);
+                                Logger.Warn(`Option ${value} is selected`);
                             }
                         }
                     />
@@ -164,7 +164,7 @@ export class CustomPropertyGridComponent extends React.Component<ICustomProperty
         return null;
     }
 
-    render() {
+    override render() {
         const inspectables: IInspectable[] = this.props.target.inspectableCustomProperties;
 
         if (!inspectables || inspectables.length === 0) {

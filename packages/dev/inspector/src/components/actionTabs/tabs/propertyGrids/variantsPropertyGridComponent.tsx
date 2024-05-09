@@ -10,7 +10,7 @@ import type { GlobalState } from "../../../globalState";
 import { OptionsLineComponent } from "shared-ui-components/lines/optionsLineComponent";
 
 // eslint-disable-next-line @typescript-eslint/naming-convention
-declare type KHR_materials_variants = import("loaders/glTF/2.0/Extensions/KHR_materials_variants").KHR_materials_variants;
+import type { KHR_materials_variants } from "loaders/glTF/2.0/Extensions/KHR_materials_variants";
 
 interface IVariantsPropertyGridComponentProps {
     globalState: GlobalState;
@@ -28,7 +28,7 @@ export class VariantsPropertyGridComponent extends React.Component<IVariantsProp
         return this.props.globalState?.glTFLoaderExtensions["KHR_materials_variants"] as KHR_materials_variants;
     }
 
-    render() {
+    override render() {
         const extension = this._getVariantsExtension();
         if (!extension) {
             return null;

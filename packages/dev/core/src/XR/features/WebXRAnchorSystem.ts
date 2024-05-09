@@ -134,7 +134,10 @@ export class WebXRAnchorSystem extends WebXRAbstractFeature {
      * @param _xrSessionManager an instance of WebXRSessionManager
      * @param _options configuration object for this feature
      */
-    constructor(_xrSessionManager: WebXRSessionManager, private _options: IWebXRAnchorSystemOptions = {}) {
+    constructor(
+        _xrSessionManager: WebXRSessionManager,
+        private _options: IWebXRAnchorSystemOptions = {}
+    ) {
         super(_xrSessionManager);
         this.xrNativeFeatureName = "anchors";
     }
@@ -254,7 +257,7 @@ export class WebXRAnchorSystem extends WebXRAbstractFeature {
      *
      * @returns true if successful.
      */
-    public detach(): boolean {
+    public override detach(): boolean {
         if (!super.detach()) {
             return false;
         }
@@ -281,7 +284,7 @@ export class WebXRAnchorSystem extends WebXRAbstractFeature {
     /**
      * Dispose this feature and all of the resources attached
      */
-    public dispose(): void {
+    public override dispose(): void {
         this._futureAnchors.length = 0;
         super.dispose();
         this.onAnchorAddedObservable.clear();
@@ -365,6 +368,7 @@ export class WebXRAnchorSystem extends WebXRAbstractFeature {
     /**
      * avoiding using Array.find for global support.
      * @param xrAnchor the plane to find in the array
+     * @returns the index of the anchor in the array or -1 if not found
      */
     private _findIndexInAnchorArray(xrAnchor: XRAnchor) {
         for (let i = 0; i < this._trackedAnchors.length; ++i) {

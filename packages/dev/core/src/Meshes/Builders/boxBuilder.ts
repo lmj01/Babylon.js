@@ -1,10 +1,11 @@
 import type { Nullable } from "../../types";
 import type { Scene } from "../../scene";
-import { Vector4 } from "../../Maths/math.vector";
+import { Matrix, Vector4 } from "../../Maths/math.vector";
 import { Color4 } from "../../Maths/math.color";
 import { Mesh } from "../mesh";
 import { VertexData } from "../mesh.vertexData";
 import { CompatibilityOptions } from "../../Compat/compatibilityOptions";
+import { CreateGroundVertexData } from "./groundBuilder";
 
 /**
  * Creates the VertexData for a box
@@ -18,18 +19,6 @@ import { CompatibilityOptions } from "../../Compat/compatibilityOptions";
  * * sideOrientation optional and takes the values : Mesh.FRONTSIDE (default), Mesh.BACKSIDE or Mesh.DOUBLESIDE
  * * frontUvs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the front side, optional, default vector4 (0, 0, 1, 1)
  * * backUVs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the back side, optional, default vector4 (0, 0, 1, 1)
- * @param options.size
- * @param options.width
- * @param options.height
- * @param options.depth
- * @param options.faceUV
- * @param options.faceColors
- * @param options.sideOrientation
- * @param options.frontUVs
- * @param options.backUVs
- * @param options.wrap
- * @param options.topBaseAt
- * @param options.bottomBaseAt
  * @returns the VertexData of the box
  */
 export function CreateBoxVertexData(options: {
@@ -157,6 +146,79 @@ export function CreateBoxVertexData(options: {
 }
 
 /**
+ * Creates the VertexData for a segmented box
+ * @param options an object used to set the following optional parameters for the box, required but can be empty
+ * * size sets the width, height and depth of the box to the value of size, optional default 1
+ * * width sets the width (x direction) of the box, overwrites the width set by size, optional, default size
+ * * height sets the height (y direction) of the box, overwrites the height set by size, optional, default size
+ * * depth sets the depth (z direction) of the box, overwrites the depth set by size, optional, default size
+ * * segments sets the number of segments on the all axis (1 by default)
+ * * widthSegments sets the number of segments on the x axis (1 by default)
+ * * heightSegments sets the number of segments on the y axis (1 by default)
+ * * depthSegments sets the number of segments on the z axis (1 by default)
+ * @returns the VertexData of the box
+ */
+export function CreateSegmentedBoxVertexData(options: {
+    size?: number;
+    width?: number;
+    height?: number;
+    depth?: number;
+    segments?: number;
+    widthSegments?: number;
+    heightSegments?: number;
+    depthSegments?: number;
+}): VertexData {
+    const width = options.width || options.size || 1;
+    const height = options.height || options.size || 1;
+    const depth = options.depth || options.size || 1;
+    const widthSegments = (options.widthSegments || options.segments || 1) | 0;
+    const heightSegments = (options.heightSegments || options.segments || 1) | 0;
+    const depthSegments = (options.depthSegments || options.segments || 1) | 0;
+    const rotationMatrix = new Matrix();
+    const translationMatrix = new Matrix();
+    const transformMatrix = new Matrix();
+
+    const bottomPlane = CreateGroundVertexData({ width: width, height: depth, subdivisionsX: widthSegments, subdivisionsY: depthSegments });
+    Matrix.TranslationToRef(0, -height / 2, 0, translationMatrix);
+    Matrix.RotationZToRef(Math.PI, rotationMatrix);
+    rotationMatrix.multiplyToRef(translationMatrix, transformMatrix);
+    bottomPlane.transform(transformMatrix);
+
+    const topPlane = CreateGroundVertexData({ width: width, height: depth, subdivisionsX: widthSegments, subdivisionsY: depthSegments });
+    Matrix.TranslationToRef(0, height / 2, 0, transformMatrix);
+    topPlane.transform(transformMatrix);
+
+    const negXPlane = CreateGroundVertexData({ width: height, height: depth, subdivisionsX: heightSegments, subdivisionsY: depthSegments });
+    Matrix.TranslationToRef(-width / 2, 0, 0, translationMatrix);
+    Matrix.RotationZToRef(Math.PI / 2, rotationMatrix);
+    rotationMatrix.multiplyToRef(translationMatrix, transformMatrix);
+    negXPlane.transform(transformMatrix);
+
+    const posXPlane = CreateGroundVertexData({ width: height, height: depth, subdivisionsX: heightSegments, subdivisionsY: depthSegments });
+    Matrix.TranslationToRef(width / 2, 0, 0, translationMatrix);
+    Matrix.RotationZToRef(-Math.PI / 2, rotationMatrix);
+    rotationMatrix.multiplyToRef(translationMatrix, transformMatrix);
+    posXPlane.transform(transformMatrix);
+
+    const negZPlane = CreateGroundVertexData({ width: width, height: height, subdivisionsX: widthSegments, subdivisionsY: heightSegments });
+    Matrix.TranslationToRef(0, 0, -depth / 2, translationMatrix);
+    Matrix.RotationXToRef(-Math.PI / 2, rotationMatrix);
+    rotationMatrix.multiplyToRef(translationMatrix, transformMatrix);
+    negZPlane.transform(transformMatrix);
+
+    const posZPlane = CreateGroundVertexData({ width: width, height: height, subdivisionsX: widthSegments, subdivisionsY: heightSegments });
+    Matrix.TranslationToRef(0, 0, depth / 2, translationMatrix);
+    Matrix.RotationXToRef(Math.PI / 2, rotationMatrix);
+    rotationMatrix.multiplyToRef(translationMatrix, transformMatrix);
+    posZPlane.transform(transformMatrix);
+
+    // Result
+    bottomPlane.merge([topPlane, posXPlane, negXPlane, negZPlane, posZPlane], true);
+
+    return bottomPlane;
+}
+
+/**
  * Creates a box mesh
  * * The parameter `size` sets the size (float) of each box side (default 1)
  * * You can set some different box dimensions by using the parameters `width`, `height` and `depth` (all by default have the same value of `size`)
@@ -168,19 +230,6 @@ export function CreateBoxVertexData(options: {
  * @see https://doc.babylonjs.com/features/featuresDeepDive/mesh/creation/set#box
  * @param name defines the name of the mesh
  * @param options defines the options used to create the mesh
- * @param options.size
- * @param options.width
- * @param options.height
- * @param options.depth
- * @param options.faceUV
- * @param options.faceColors
- * @param options.sideOrientation
- * @param options.frontUVs
- * @param options.backUVs
- * @param options.wrap
- * @param options.topBaseAt
- * @param options.bottomBaseAt
- * @param options.updatable
  * @param scene defines the hosting scene
  * @returns the box mesh
  */
@@ -227,7 +276,7 @@ export const BoxBuilder = {
 // Side effects
 VertexData.CreateBox = CreateBoxVertexData;
 
-(Mesh as any).CreateBox = (name: string, size: number, scene: Nullable<Scene> = null, updatable?: boolean, sideOrientation?: number): Mesh => {
+Mesh.CreateBox = (name: string, size: number, scene: Nullable<Scene> = null, updatable?: boolean, sideOrientation?: number): Mesh => {
     const options = {
         size,
         sideOrientation,

@@ -1,8 +1,9 @@
+import { SerializationHelper } from "../Misc/decorators.serialization";
 import { Constants } from "../Engines/constants";
-import { SerializationHelper, serialize } from "../Misc/decorators";
+import { serialize } from "../Misc/decorators";
 import type { IStencilState } from "../States/IStencilState";
 
-declare type Scene = import("../scene").Scene;
+import type { Scene } from "../scene";
 
 /**
  * Class that holds the different stencil states of a material

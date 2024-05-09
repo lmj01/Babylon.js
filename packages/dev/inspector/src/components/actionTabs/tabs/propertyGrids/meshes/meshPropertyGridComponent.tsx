@@ -43,6 +43,7 @@ import "core/Physics/v1/physicsEngineComponent";
 
 import { ParentPropertyGridComponent } from "../parentPropertyGridComponent";
 import { Tools } from "core/Misc/tools";
+import { PhysicsBodyGridComponent } from "./physics/physicsBodyGridComponent";
 
 interface IMeshPropertyGridComponentProps {
     globalState: GlobalState;
@@ -102,7 +103,6 @@ export class MeshPropertyGridComponent extends React.Component<
         const material = new StandardMaterial("wireframeOver", scene);
         material.reservedDataStore = { hidden: true };
         wireframeOver.material = material;
-        material.zOffset = 1;
         material.disableLighting = true;
         material.backFaceCulling = false;
         material.emissiveColor = Color3.White();
@@ -351,7 +351,7 @@ export class MeshPropertyGridComponent extends React.Component<
         return "[INVALID ID]";
     }
 
-    render() {
+    override render() {
         const mesh = this.props.mesh;
         const scene = mesh.getScene();
 
@@ -462,7 +462,7 @@ export class MeshPropertyGridComponent extends React.Component<
                             propertyName="material"
                             noDirectUpdate={true}
                             onSelect={(value) => {
-                                if (value < 0) {
+                                if ((value as number) < 0) {
                                     mesh.material = null;
                                 } else {
                                     mesh.material = sortedMaterials[value as number];
@@ -522,6 +522,22 @@ export class MeshPropertyGridComponent extends React.Component<
                         onPropertyChangedObservable={this.props.onPropertyChangedObservable}
                     />
                 </LineContainerComponent>
+                {mesh._internalMetadata && mesh._internalMetadata.nodeGeometry && (
+                    <LineContainerComponent title="NODE GEOMETRY" selection={this.props.globalState}>
+                        <ButtonLineComponent
+                            label="Edit"
+                            onClick={() => {
+                                mesh._internalMetadata.nodeGeometry.edit({
+                                    nodeGeometryEditorConfig: {
+                                        backgroundColor: mesh.getScene().clearColor,
+                                        hostMesh: mesh,
+                                        hostScene: mesh.getScene(),
+                                    },
+                                });
+                            }}
+                        />
+                    </LineContainerComponent>
+                )}
                 <LineContainerComponent title="DISPLAY" closed={true} selection={this.props.globalState}>
                     {!mesh.isAnInstance && (
                         <SliderLineComponent
@@ -661,6 +677,14 @@ export class MeshPropertyGridComponent extends React.Component<
                         />
                         <TextLineComponent label="Type" value={this.convertPhysicsTypeToString()} />
                     </LineContainerComponent>
+                )}
+                {mesh.physicsBody && (
+                    <PhysicsBodyGridComponent
+                        lockObject={this.props.lockObject}
+                        globalState={this.props.globalState}
+                        body={mesh.physicsBody}
+                        onPropertyChangedObservable={this.props.onPropertyChangedObservable}
+                    />
                 )}
                 <LineContainerComponent title="OCCLUSIONS" closed={true} selection={this.props.globalState}>
                     <OptionsLineComponent

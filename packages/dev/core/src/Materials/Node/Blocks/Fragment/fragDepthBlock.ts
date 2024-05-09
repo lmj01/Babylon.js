@@ -4,6 +4,7 @@ import type { NodeMaterialBuildState } from "../../nodeMaterialBuildState";
 import { NodeMaterialBlockTargets } from "../../Enums/nodeMaterialBlockTargets";
 import type { NodeMaterialConnectionPoint } from "../../nodeMaterialBlockConnectionPoint";
 import { RegisterClass } from "../../../../Misc/typeStore";
+import { Logger } from "core/Misc/logger";
 /**
  * Block used to write the fragment depth
  */
@@ -24,7 +25,7 @@ export class FragDepthBlock extends NodeMaterialBlock {
      * Gets the current class name
      * @returns the class name
      */
-    public getClassName() {
+    public override getClassName() {
         return "FragDepthBlock";
     }
 
@@ -49,11 +50,11 @@ export class FragDepthBlock extends NodeMaterialBlock {
         return this._inputs[2];
     }
 
-    protected _buildBlock(state: NodeMaterialBuildState) {
+    protected override _buildBlock(state: NodeMaterialBuildState) {
         super._buildBlock(state);
 
         if (this.depth.isConnected) {
-            state.compilationString += `gl_FragDepth = ${this.depth.associatedVariableName};\r\n`;
+            state.compilationString += `gl_FragDepth = ${this.depth.associatedVariableName};\n`;
         } else if (this.worldPos.isConnected && this.viewProjection.isConnected) {
             state.compilationString += `
                 vec4 p = ${this.viewProjection.associatedVariableName} * ${this.worldPos.associatedVariableName};
@@ -65,7 +66,7 @@ export class FragDepthBlock extends NodeMaterialBlock {
     
             `;
         } else {
-            console.warn("FragDepthBlock: either the depth input or both the worldPos and viewProjection inputs must be connected!");
+            Logger.Warn("FragDepthBlock: either the depth input or both the worldPos and viewProjection inputs must be connected!");
         }
 
         return this;

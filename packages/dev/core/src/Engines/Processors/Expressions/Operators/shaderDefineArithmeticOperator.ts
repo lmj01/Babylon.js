@@ -2,11 +2,15 @@ import { ShaderDefineExpression } from "../shaderDefineExpression";
 
 /** @internal */
 export class ShaderDefineArithmeticOperator extends ShaderDefineExpression {
-    public constructor(public define: string, public operand: string, public testValue: string) {
+    public constructor(
+        public define: string,
+        public operand: string,
+        public testValue: string
+    ) {
         super();
     }
 
-    public isTrue(preprocessors: { [key: string]: string }) {
+    public override isTrue(preprocessors: { [key: string]: string }) {
         let value = preprocessors[this.define];
 
         if (value === undefined) {
@@ -32,6 +36,9 @@ export class ShaderDefineArithmeticOperator extends ShaderDefineExpression {
                 break;
             case "==":
                 condition = left === right;
+                break;
+            case "!=":
+                condition = left !== right;
                 break;
         }
 

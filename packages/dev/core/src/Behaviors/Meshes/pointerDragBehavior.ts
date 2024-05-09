@@ -5,7 +5,7 @@ import { Scene } from "../../scene";
 import type { Nullable } from "../../types";
 import type { Observer } from "../../Misc/observable";
 import { Observable } from "../../Misc/observable";
-import { Vector3 } from "../../Maths/math.vector";
+import { TmpVectors, Vector3 } from "../../Maths/math.vector";
 import type { PointerInfo } from "../../Events/pointerEvents";
 import { PointerEventTypes } from "../../Events/pointerEvents";
 import { Ray } from "../../Culling/ray";
@@ -14,6 +14,7 @@ import type { ArcRotateCamera } from "../../Cameras/arcRotateCamera";
 import { CreatePlane } from "../../Meshes/Builders/planeBuilder";
 
 import type { IPointerEvent } from "../../Events/deviceInputEvents";
+import { Epsilon } from "../../Maths/math.constants";
 
 /**
  * A behavior that when attached to a mesh will allow the mesh to be dragged around the screen based on pointer events
@@ -180,16 +181,19 @@ export class PointerDragBehavior implements Behavior<AbstractMesh> {
             optionCount++;
         }
         if (optionCount > 1) {
+            // eslint-disable-next-line no-throw-literal
             throw "Multiple drag modes specified in dragBehavior options. Only one expected";
         }
     }
 
     /**
-     * Predicate to determine if it is valid to move the object to a new position when it is moved
-     * @param targetPosition
+     * Predicate to determine if it is valid to move the object to a new position when it is moved.
+     * In the case of rotation gizmo, target contains the angle.
+     * @param target destination position or desired angle delta
+     * @returns boolean for whether or not it is valid to move
      */
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    public validateDrag = (targetPosition: Vector3) => {
+    public validateDrag = (target: Vector3) => {
         return true;
     };
 
@@ -502,14 +506,27 @@ export class PointerDragBehavior implements Behavior<AbstractMesh> {
             }
         }
 
-        const pickResult = PointerDragBehavior._PlaneScene.pickWithRay(ray, (m) => {
-            return m == this._dragPlane;
-        });
-        if (pickResult && pickResult.hit && pickResult.pickedMesh && pickResult.pickedPoint) {
-            return pickResult.pickedPoint;
-        } else {
+        // use an infinite plane instead of ray picking a mesh that must be updated every frame
+        const planeNormal = this._dragPlane.forward;
+        const planePosition = this._dragPlane.position;
+        const dotProduct = ray.direction.dot(planeNormal);
+        if (Math.abs(dotProduct) < Epsilon) {
+            // Ray and plane are parallel, no intersection
             return null;
         }
+
+        planePosition.subtractToRef(ray.origin, TmpVectors.Vector3[0]);
+        const t = TmpVectors.Vector3[0].dot(planeNormal) / dotProduct;
+        // Ensure the intersection point is in front of the ray (t must be positive)
+        if (t < 0) {
+            // Intersection point is behind the ray
+            return null;
+        }
+
+        // Calculate the intersection point using the parameter t
+        ray.direction.scaleToRef(t, TmpVectors.Vector3[0]);
+        const intersectionPoint = ray.origin.add(TmpVectors.Vector3[0]);
+        return intersectionPoint;
     }
 
     // Variables to avoid instantiation in the below method

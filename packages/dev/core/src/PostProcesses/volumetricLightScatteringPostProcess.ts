@@ -9,7 +9,6 @@ import type { Mesh } from "../Meshes/mesh";
 import type { Camera } from "../Cameras/camera";
 import type { Effect } from "../Materials/effect";
 import { Material } from "../Materials/material";
-import { MaterialHelper } from "../Materials/materialHelper";
 import { StandardMaterial } from "../Materials/standardMaterial";
 import { Texture } from "../Materials/Textures/texture";
 import { RenderTargetTexture } from "../Materials/Textures/renderTargetTexture";
@@ -28,7 +27,8 @@ import { Viewport } from "../Maths/math.viewport";
 import { RegisterClass } from "../Misc/typeStore";
 import type { Nullable } from "../types";
 
-declare type Engine = import("../Engines/engine").Engine;
+import { PushAttributesForInstances } from "../Materials/materialHelper.functions";
+import type { AbstractEngine } from "../Engines/abstractEngine";
 
 /**
  *  Inspired by https://developer.nvidia.com/gpugems/gpugems3/part-ii-light-and-shadows/chapter-13-volumetric-light-scattering-post-process
@@ -85,14 +85,14 @@ export class VolumetricLightScatteringPostProcess extends PostProcess {
      * Array containing the excluded meshes not rendered in the internal pass
      */
     @serialize()
-    public excludedMeshes = new Array<AbstractMesh>();
+    public excludedMeshes: AbstractMesh[] = [];
 
     /**
      * Array containing the only meshes rendered in the internal pass.
      * If this array is not empty, only the meshes from this array are rendered in the internal pass
      */
     @serialize()
-    public includedMeshes = new Array<AbstractMesh>();
+    public includedMeshes: AbstractMesh[] = [];
 
     /**
      * Controls the overall intensity of the post-process
@@ -137,7 +137,7 @@ export class VolumetricLightScatteringPostProcess extends PostProcess {
         mesh?: Mesh,
         samples: number = 100,
         samplingMode: number = Texture.BILINEAR_SAMPLINGMODE,
-        engine?: Engine,
+        engine?: AbstractEngine,
         reusable?: boolean,
         scene?: Scene
     ) {
@@ -188,7 +188,7 @@ export class VolumetricLightScatteringPostProcess extends PostProcess {
      * Returns the string "VolumetricLightScatteringPostProcess"
      * @returns "VolumetricLightScatteringPostProcess"
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "VolumetricLightScatteringPostProcess";
     }
 
@@ -239,7 +239,7 @@ export class VolumetricLightScatteringPostProcess extends PostProcess {
         // Instances
         if (useInstances) {
             defines.push("#define INSTANCES");
-            MaterialHelper.PushAttributesForInstances(attribs);
+            PushAttributesForInstances(attribs);
             if (subMesh.getRenderingMesh().hasThinInstances) {
                 defines.push("#define THIN_INSTANCES");
             }
@@ -290,9 +290,9 @@ export class VolumetricLightScatteringPostProcess extends PostProcess {
 
     /**
      * Disposes the internal assets and detaches the post-process from the camera
-     * @param camera
+     * @param camera The camera from which to detach the post-process
      */
-    public dispose(camera: Camera): void {
+    public override dispose(camera: Camera): void {
         const rttIndex = camera.getScene().customRenderTargets.indexOf(this._volumetricLightScatteringRTT);
         if (rttIndex !== -1) {
             camera.getScene().customRenderTargets.splice(rttIndex, 1);

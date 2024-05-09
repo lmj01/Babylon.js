@@ -14,8 +14,12 @@
         vec3 finalSheenRadianceScaled;
     #endif
     #if DEBUGMODE > 0
-        vec4 sheenMapData;
-        vec3 sheenEnvironmentReflectance;
+        #ifdef SHEEN_TEXTURE
+            vec4 sheenMapData;
+        #endif
+        #if defined(REFLECTION) && defined(ENVIRONMENTBRDF)
+            vec3 sheenEnvironmentReflectance;
+        #endif
     #endif
     };
 
@@ -25,7 +29,7 @@
         in vec4 vSheenColor,
     #ifdef SHEEN_ROUGHNESS
         in float vSheenRoughness,
-        #if defined(SHEEN_TEXTURE_ROUGHNESS) && !defined(SHEEN_TEXTURE_ROUGHNESS_IDENTICAL) && !defined(SHEEN_USE_ROUGHNESS_FROM_MAINTEXTURE)
+        #if defined(SHEEN_TEXTURE_ROUGHNESS) && !defined(SHEEN_USE_ROUGHNESS_FROM_MAINTEXTURE)
             in vec4 sheenMapRoughnessData,
         #endif
     #endif
@@ -114,11 +118,7 @@
                         sheenRoughness *= sheenMapData.a;
                     #endif
                 #elif defined(SHEEN_TEXTURE_ROUGHNESS)
-                    #ifdef SHEEN_TEXTURE_ROUGHNESS_IDENTICAL
-                        sheenRoughness *= sheenMapData.a;
-                    #else
-                        sheenRoughness *= sheenMapRoughnessData.a;
-                    #endif
+                    sheenRoughness *= sheenMapRoughnessData.a;
                 #endif
             #else
                 float sheenRoughness = roughness;

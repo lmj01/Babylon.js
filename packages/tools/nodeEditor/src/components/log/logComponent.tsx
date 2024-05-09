@@ -1,6 +1,5 @@
 import * as React from "react";
 import type { GlobalState } from "../../globalState";
-import * as ReactDOM from "react-dom";
 
 import "./log.scss";
 
@@ -11,17 +10,23 @@ interface ILogComponentProps {
 export class LogEntry {
     public time = new Date();
 
-    constructor(public message: string, public isError: boolean) {}
+    constructor(
+        public message: string,
+        public isError: boolean
+    ) {}
 }
 
 export class LogComponent extends React.Component<ILogComponentProps, { logs: LogEntry[] }> {
+    private _logConsoleRef: React.RefObject<HTMLDivElement>;
+
     constructor(props: ILogComponentProps) {
         super(props);
 
         this.state = { logs: [] };
+        this._logConsoleRef = React.createRef();
     }
 
-    componentDidMount() {
+    override componentDidMount() {
         this.props.globalState.onLogRequiredObservable.add((log) => {
             const currentLogs = this.state.logs;
             currentLogs.push(log);
@@ -30,18 +35,17 @@ export class LogComponent extends React.Component<ILogComponentProps, { logs: Lo
         });
     }
 
-    componentDidUpdate() {
-        const logConsole = ReactDOM.findDOMNode(this.refs["nme-log-console"]) as HTMLElement;
-        if (!logConsole) {
+    override componentDidUpdate() {
+        if (!this._logConsoleRef.current) {
             return;
         }
 
-        logConsole.scrollTop = logConsole.scrollHeight;
+        this._logConsoleRef.current.scrollTop = this._logConsoleRef.current.scrollHeight;
     }
 
-    render() {
+    override render() {
         return (
-            <div id="nme-log-console" ref={"log-console"}>
+            <div id="nme-log-console" ref={this._logConsoleRef}>
                 {this.state.logs.map((l, i) => {
                     return (
                         <div key={i} className={"log" + (l.isError ? " error" : "")}>

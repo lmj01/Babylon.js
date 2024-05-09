@@ -1,3 +1,6 @@
+/* eslint-disable babylonjs/available */
+/* eslint-disable jsdoc/require-jsdoc */
+import { Logger } from "core/Misc/logger";
 import { ShaderLanguage } from "../../Materials/shaderLanguage";
 import type { Nullable } from "../../types";
 import type { IShaderProcessor } from "../Processors/iShaderProcessor";
@@ -17,10 +20,13 @@ export abstract class WebGPUShaderProcessor implements IShaderProcessor {
         float: 1,
         vec2: 2,
         ivec2: 2,
+        uvec2: 2,
         vec3: 3,
         ivec3: 3,
+        uvec3: 3,
         vec4: 4,
         ivec4: 4,
+        uvec4: 4,
         mat2: 4,
         mat3: 12,
         mat4: 16,
@@ -32,6 +38,21 @@ export abstract class WebGPUShaderProcessor implements IShaderProcessor {
         mat2x2: 4,
         mat3x3: 12,
         mat4x4: 16,
+        mat2x2f: 4,
+        mat3x3f: 12,
+        mat4x4f: 16,
+        vec2i: 2,
+        vec3i: 3,
+        vec4i: 4,
+        vec2u: 2,
+        vec3u: 3,
+        vec4u: 4,
+        vec2f: 2,
+        vec3f: 3,
+        vec4f: 4,
+        vec2h: 1,
+        vec3h: 2,
+        vec4h: 2,
     };
 
     // eslint-disable-next-line @typescript-eslint/naming-convention
@@ -79,6 +100,10 @@ export abstract class WebGPUShaderProcessor implements IShaderProcessor {
     };
 
     public shaderLanguage = ShaderLanguage.GLSL;
+
+    // this object is populated only with vertex kinds known by the engine (position, uv, ...) and only if the type of the corresponding vertex buffer is an integer type)
+    // if the type is a signed type, the value is negated
+    public vertexBufferKindToNumberOfComponents: { [kind: string]: number } = {};
 
     protected _webgpuProcessingContext: WebGPUShaderProcessingContext;
 
@@ -287,7 +312,7 @@ export abstract class WebGPUShaderProcessor implements IShaderProcessor {
     protected _injectStartingAndEndingCode(code: string, mainFuncDecl: string, startingCode?: string, endingCode?: string): string {
         let idx = code.indexOf(mainFuncDecl);
         if (idx < 0) {
-            console.error(`No "main" function found in shader code! Processing aborted.`);
+            Logger.Error(`No "main" function found in shader code! Processing aborted.`);
             return code;
         }
         if (startingCode) {

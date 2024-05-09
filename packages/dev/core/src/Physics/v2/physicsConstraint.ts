@@ -1,13 +1,8 @@
 import type { Scene } from "../../scene";
 import type { Vector3 } from "../../Maths/math.vector";
-import type {
-    IPhysicsEnginePluginV2,
-    PhysicsConstraintAxis,
-    PhysicsConstraintParameters,
-    PhysicsConstraintAxisLimitMode,
-    PhysicsConstraintMotorType,
-} from "./IPhysicsEnginePlugin";
-import { PhysicsConstraintType } from "./IPhysicsEnginePlugin";
+import type { Nullable } from "../../types";
+import type { IPhysicsEnginePluginV2, PhysicsConstraintParameters, PhysicsConstraintAxisLimitMode, PhysicsConstraintMotorType, ConstrainedBodyPair } from "./IPhysicsEnginePlugin";
+import { PhysicsConstraintAxis, PhysicsConstraintType } from "./IPhysicsEnginePlugin";
 
 /**
  * This is a holder class for the physics constraint created by the physics plugin
@@ -25,6 +20,11 @@ export class PhysicsConstraint {
     protected _physicsPlugin: IPhysicsEnginePluginV2;
     protected _options: PhysicsConstraintParameters;
     protected _type: PhysicsConstraintType;
+    /**
+     * @internal
+     * The internal options that were used to init the constraint
+     */
+    public _initOptions?: PhysicsConstraintParameters;
 
     /**
      * Constructs a new constraint for the physics constraint.
@@ -113,6 +113,14 @@ export class PhysicsConstraint {
     }
 
     /**
+     * Gets all bodies that are using this constraint
+     * @returns
+     */
+    public getBodiesUsingConstraint(): ConstrainedBodyPair[] {
+        return this._physicsPlugin.getBodiesUsingConstraint(this);
+    }
+
+    /**
      * Disposes the constraint from the physics engine.
      *
      * This method is useful for cleaning up the physics engine when a body is no longer needed. Disposing the body will free up resources and prevent memory leaks.
@@ -140,6 +148,14 @@ export class Physics6DoFLimit {
      * Corresponds to a distance in meters for linear axes, an angle in radians for angular axes.
      */
     maxLimit?: number;
+    /**
+     * The stiffness of the constraint.
+     */
+    stiffness?: number;
+    /**
+     * A constraint parameter that specifies damping.
+     */
+    damping?: number;
 }
 
 /**
@@ -172,10 +188,10 @@ export class Physics6DoFConstraint extends PhysicsConstraint {
     /**
      * Gets the friction of the given axis of the physics engine.
      * @param axis - The axis of the physics engine.
-     * @returns The friction of the given axis.
+     * @returns The friction of the given axis, or null if the constraint hasn't been initialized yet.
      *
      */
-    public getAxisFriction(axis: PhysicsConstraintAxis): number {
+    public getAxisFriction(axis: PhysicsConstraintAxis): Nullable<number> {
         return this._physicsPlugin.getAxisFriction(this, axis);
     }
 
@@ -197,10 +213,10 @@ export class Physics6DoFConstraint extends PhysicsConstraint {
      * Gets the limit mode of the given axis of the constraint.
      *
      * @param axis - The axis of the constraint.
-     * @returns The limit mode of the given axis.
+     * @returns The limit mode of the given axis, or null if the constraint hasn't been initialized yet.
      *
      */
-    public getAxisMode(axis: PhysicsConstraintAxis): PhysicsConstraintAxisLimitMode {
+    public getAxisMode(axis: PhysicsConstraintAxis): Nullable<PhysicsConstraintAxisLimitMode> {
         return this._physicsPlugin.getAxisMode(this, axis);
     }
 
@@ -217,10 +233,10 @@ export class Physics6DoFConstraint extends PhysicsConstraint {
     /**
      * Gets the minimum limit of the given axis of the physics engine.
      * @param axis - The axis of the physics engine.
-     * @returns The minimum limit of the given axis.
+     * @returns The minimum limit of the given axis, or null if the constraint hasn't been initialized yet.
      *
      */
-    public getAxisMinLimit(axis: PhysicsConstraintAxis): number {
+    public getAxisMinLimit(axis: PhysicsConstraintAxis): Nullable<number> {
         return this._physicsPlugin.getAxisMinLimit(this, axis);
     }
 
@@ -240,10 +256,10 @@ export class Physics6DoFConstraint extends PhysicsConstraint {
     /**
      * Gets the maximum limit of the given axis of the physics engine.
      * @param axis - The axis of the physics engine.
-     * @returns The maximum limit of the given axis.
+     * @returns The maximum limit of the given axis, or null if the constraint hasn't been initialized yet.
      *
      */
-    public getAxisMaxLimit(axis: PhysicsConstraintAxis): number {
+    public getAxisMaxLimit(axis: PhysicsConstraintAxis): Nullable<number> {
         return this._physicsPlugin.getAxisMaxLimit(this, axis);
     }
 
@@ -251,8 +267,6 @@ export class Physics6DoFConstraint extends PhysicsConstraint {
      * Sets the motor type of the given axis of the constraint.
      * @param axis - The axis of the constraint.
      * @param motorType - The type of motor to use.
-     * @returns void
-     *
      */
     public setAxisMotorType(axis: PhysicsConstraintAxis, motorType: PhysicsConstraintMotorType): void {
         this._physicsPlugin.setAxisMotorType(this, axis, motorType);
@@ -262,10 +276,10 @@ export class Physics6DoFConstraint extends PhysicsConstraint {
      * Gets the motor type of the specified axis of the constraint.
      *
      * @param axis - The axis of the constraint.
-     * @returns The motor type of the specified axis.
+     * @returns The motor type of the specified axis, or null if the constraint hasn't been initialized yet.
      *
      */
-    public getAxisMotorType(axis: PhysicsConstraintAxis): PhysicsConstraintMotorType {
+    public getAxisMotorType(axis: PhysicsConstraintAxis): Nullable<PhysicsConstraintMotorType> {
         return this._physicsPlugin.getAxisMotorType(this, axis);
     }
 
@@ -283,10 +297,10 @@ export class Physics6DoFConstraint extends PhysicsConstraint {
     /**
      * Gets the target velocity of the motor associated to the given constraint axis.
      * @param axis - The constraint axis associated to the motor.
-     * @returns The target velocity of the motor.
+     * @returns The target velocity of the motor, or null if the constraint hasn't been initialized yet.
      *
      */
-    public getAxisMotorTarget(axis: PhysicsConstraintAxis): number {
+    public getAxisMotorTarget(axis: PhysicsConstraintAxis): Nullable<number> {
         return this._physicsPlugin.getAxisMotorTarget(this, axis);
     }
 
@@ -303,10 +317,10 @@ export class Physics6DoFConstraint extends PhysicsConstraint {
     /**
      * Gets the maximum force of the motor of the given axis of the constraint.
      * @param axis - The axis of the constraint.
-     * @returns The maximum force of the motor.
+     * @returns The maximum force of the motor, or null if the constraint hasn't been initialized yet.
      *
      */
-    public getAxisMotorMaxForce(axis: PhysicsConstraintAxis): number {
+    public getAxisMotorMaxForce(axis: PhysicsConstraintAxis): Nullable<number> {
         return this._physicsPlugin.getAxisMotorMaxForce(this, axis);
     }
 }
@@ -418,5 +432,26 @@ export class LockConstraint extends PhysicsConstraint {
 export class PrismaticConstraint extends PhysicsConstraint {
     constructor(pivotA: Vector3, pivotB: Vector3, axisA: Vector3, axisB: Vector3, scene: Scene) {
         super(PhysicsConstraintType.PRISMATIC, { pivotA: pivotA, pivotB: pivotB, axisA: axisA, axisB: axisB }, scene);
+    }
+}
+
+/**
+ * Creates a SpringConstraint, which is a type of Physics6DoFConstraint. This constraint applies a force at the ends which is proportional
+ * to the distance between ends, and a stiffness and damping factor. The force is calculated as (stiffness * positionError) - (damping * velocity)
+ *
+ * @param pivotA - The first pivot of the constraint in local space.
+ * @param pivotB - The second pivot of the constraint in local space.
+ * @param axisA - The first axis of the constraint in local space.
+ * @param axisB - The second axis of the constraint in local space.
+ * @param minDistance - The minimum distance between the two pivots.
+ * @param maxDistance - The maximum distance between the two pivots.
+ * @param stiffness - The stiffness of the spring.
+ * @param damping - The damping of the spring.
+ * @param scene - The scene the constraint belongs to.
+ * @returns The created SpringConstraint.
+ */
+export class SpringConstraint extends Physics6DoFConstraint {
+    constructor(pivotA: Vector3, pivotB: Vector3, axisA: Vector3, axisB: Vector3, minDistance: number, maxDistance: number, stiffness: number, damping: number, scene: Scene) {
+        super({ pivotA, pivotB, axisA, axisB }, [{ axis: PhysicsConstraintAxis.LINEAR_DISTANCE, minLimit: minDistance, maxLimit: maxDistance, stiffness, damping }], scene);
     }
 }

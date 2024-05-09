@@ -9,7 +9,7 @@ interface IFloatPropertyTabComponentProps {
 }
 
 export class FloatPropertyTabComponent extends React.Component<IFloatPropertyTabComponentProps> {
-    render() {
+    override render() {
         return (
             <FloatLineComponent
                 lockObject={this.props.globalState.lockObject}
@@ -18,7 +18,7 @@ export class FloatPropertyTabComponent extends React.Component<IFloatPropertyTab
                 propertyName="value"
                 onChange={() => {
                     if (this.props.inputBlock.isConstant) {
-                        this.props.globalState.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+                        this.props.globalState.stateManager.onRebuildRequiredObservable.notifyObservers();
                     }
                     this.props.globalState.stateManager.onUpdateRequiredObservable.notifyObservers(this.props.inputBlock);
                 }}

@@ -1,13 +1,13 @@
 /* eslint-disable @typescript-eslint/naming-convention */
 import type { Nullable } from "core/types";
-import { serializeAsTexture, serialize, expandToProperty, serializeAsColor3, SerializationHelper } from "core/Misc/decorators";
+import { serializeAsTexture, serialize, expandToProperty, serializeAsColor3 } from "core/Misc/decorators";
+import { SerializationHelper } from "core/Misc/decorators.serialization";
 import type { Matrix } from "core/Maths/math.vector";
 import { Color3 } from "core/Maths/math.color";
 import { Tags } from "core/Misc/tags";
 import type { BaseTexture } from "core/Materials/Textures/baseTexture";
 import { Texture } from "core/Materials/Textures/texture";
 import { MaterialDefines } from "core/Materials/materialDefines";
-import { MaterialHelper } from "core/Materials/materialHelper";
 import { PushMaterial } from "core/Materials/pushMaterial";
 import { MaterialFlags } from "core/Materials/materialFlags";
 import { VertexBuffer } from "core/Buffers/buffer";
@@ -22,6 +22,15 @@ import "./fire.fragment";
 import "./fire.vertex";
 import { EffectFallbacks } from "core/Materials/effectFallbacks";
 import { addClipPlaneUniforms, bindClipPlane } from "core/Materials/clipPlaneMaterialHelper";
+import {
+    BindBonesParameters,
+    BindFogParameters,
+    BindLogDepth,
+    PrepareAttributesForBones,
+    PrepareAttributesForInstances,
+    PrepareDefinesForAttributes,
+    PrepareDefinesForFrameBoundValues,
+} from "core/Materials/materialHelper.functions";
 
 class FireMaterialDefines extends MaterialDefines {
     public DIFFUSE = false;
@@ -44,6 +53,7 @@ class FireMaterialDefines extends MaterialDefines {
     public INSTANCESCOLOR = false;
     public IMAGEPROCESSINGPOSTPROCESS = false;
     public SKIPFINALCOLORCLAMP = false;
+    public LOGARITHMICDEPTH = false;
 
     constructor() {
         super();
@@ -80,22 +90,24 @@ export class FireMaterial extends PushMaterial {
         super(name, scene);
     }
 
-    public needAlphaBlending(): boolean {
+    public override needAlphaBlending(): boolean {
         return false;
     }
 
-    public needAlphaTesting(): boolean {
+    public override needAlphaTesting(): boolean {
         return true;
     }
 
-    public getAlphaTestTexture(): Nullable<BaseTexture> {
+    public override getAlphaTestTexture(): Nullable<BaseTexture> {
         return null;
     }
 
     // Methods
-    public isReadyForSubMesh(mesh: AbstractMesh, subMesh: SubMesh, useInstances?: boolean): boolean {
+    public override isReadyForSubMesh(mesh: AbstractMesh, subMesh: SubMesh, useInstances?: boolean): boolean {
+        const drawWrapper = subMesh._drawWrapper;
+
         if (this.isFrozen) {
-            if (subMesh.effect && subMesh.effect._wasPreviouslyReady && subMesh.effect._wasPreviouslyUsingInstances === useInstances) {
+            if (drawWrapper._wasPreviouslyReady && drawWrapper._wasPreviouslyUsingInstances === useInstances) {
                 return true;
             }
         }
@@ -132,13 +144,14 @@ export class FireMaterial extends PushMaterial {
         if (defines._areMiscDirty) {
             defines.POINTSIZE = this.pointsCloud || scene.forcePointsCloud;
             defines.FOG = scene.fogEnabled && mesh.applyFog && scene.fogMode !== Scene.FOGMODE_NONE && this.fogEnabled;
+            defines.LOGARITHMICDEPTH = this._useLogarithmicDepth;
         }
 
         // Values that need to be evaluated on every frame
-        MaterialHelper.PrepareDefinesForFrameBoundValues(scene, engine, this, defines, useInstances ? true : false);
+        PrepareDefinesForFrameBoundValues(scene, engine, this, defines, useInstances ? true : false);
 
         // Attribs
-        MaterialHelper.PrepareDefinesForAttributes(mesh, defines, false, true);
+        PrepareDefinesForAttributes(mesh, defines, false, true);
 
         // Get correct effect
         if (defines.isDirty) {
@@ -169,8 +182,8 @@ export class FireMaterial extends PushMaterial {
                 attribs.push(VertexBuffer.ColorKind);
             }
 
-            MaterialHelper.PrepareAttributesForBones(attribs, mesh, defines, fallbacks);
-            MaterialHelper.PrepareAttributesForInstances(attribs, defines);
+            PrepareAttributesForBones(attribs, mesh, defines, fallbacks);
+            PrepareAttributesForInstances(attribs, defines);
 
             // Legacy browser patch
             const shaderName = "fire";
@@ -186,6 +199,7 @@ export class FireMaterial extends PushMaterial {
                 "vDiffuseInfos",
                 "mBones",
                 "diffuseMatrix",
+                "logarithmicDepthConstant",
                 // Fire
                 "time",
                 "speed",
@@ -226,13 +240,13 @@ export class FireMaterial extends PushMaterial {
         }
 
         defines._renderId = scene.getRenderId();
-        subMesh.effect._wasPreviouslyReady = true;
-        subMesh.effect._wasPreviouslyUsingInstances = !!useInstances;
+        drawWrapper._wasPreviouslyReady = true;
+        drawWrapper._wasPreviouslyUsingInstances = !!useInstances;
 
         return true;
     }
 
-    public bindForSubMesh(world: Matrix, mesh: Mesh, subMesh: SubMesh): void {
+    public override bindForSubMesh(world: Matrix, mesh: Mesh, subMesh: SubMesh): void {
         const scene = this.getScene();
 
         const defines = <FireMaterialDefines>subMesh.materialDefines;
@@ -251,9 +265,9 @@ export class FireMaterial extends PushMaterial {
         this._activeEffect.setMatrix("viewProjection", scene.getTransformMatrix());
 
         // Bones
-        MaterialHelper.BindBonesParameters(mesh, this._activeEffect);
+        BindBonesParameters(mesh, this._activeEffect);
 
-        if (this._mustRebind(scene, effect)) {
+        if (this._mustRebind(scene, effect, subMesh)) {
             // Textures
             if (this._diffuseTexture && MaterialFlags.DiffuseTextureEnabled) {
                 this._activeEffect.setTexture("diffuseSampler", this._diffuseTexture);
@@ -273,6 +287,11 @@ export class FireMaterial extends PushMaterial {
                 this._activeEffect.setFloat("pointSize", this.pointSize);
             }
 
+            // Log. depth
+            if (this._useLogarithmicDepth) {
+                BindLogDepth(defines, effect, scene);
+            }
+
             scene.bindEyePosition(effect);
         }
 
@@ -284,7 +303,7 @@ export class FireMaterial extends PushMaterial {
         }
 
         // Fog
-        MaterialHelper.BindFogParameters(scene, mesh, this._activeEffect);
+        BindFogParameters(scene, mesh, this._activeEffect);
 
         // Time
         this._lastTime += scene.getEngine().getDeltaTime();
@@ -293,10 +312,10 @@ export class FireMaterial extends PushMaterial {
         // Speed
         this._activeEffect.setFloat("speed", this.speed);
 
-        this._afterBind(mesh, this._activeEffect);
+        this._afterBind(mesh, this._activeEffect, subMesh);
     }
 
-    public getAnimatables(): IAnimatable[] {
+    public override getAnimatables(): IAnimatable[] {
         const results = [];
 
         if (this._diffuseTexture && this._diffuseTexture.animations && this._diffuseTexture.animations.length > 0) {
@@ -312,7 +331,7 @@ export class FireMaterial extends PushMaterial {
         return results;
     }
 
-    public getActiveTextures(): BaseTexture[] {
+    public override getActiveTextures(): BaseTexture[] {
         const activeTextures = super.getActiveTextures();
 
         if (this._diffuseTexture) {
@@ -330,7 +349,7 @@ export class FireMaterial extends PushMaterial {
         return activeTextures;
     }
 
-    public hasTexture(texture: BaseTexture): boolean {
+    public override hasTexture(texture: BaseTexture): boolean {
         if (super.hasTexture(texture)) {
             return true;
         }
@@ -350,11 +369,11 @@ export class FireMaterial extends PushMaterial {
         return false;
     }
 
-    public getClassName(): string {
+    public override getClassName(): string {
         return "FireMaterial";
     }
 
-    public dispose(forceDisposeEffect?: boolean): void {
+    public override dispose(forceDisposeEffect?: boolean): void {
         if (this._diffuseTexture) {
             this._diffuseTexture.dispose();
         }
@@ -365,11 +384,11 @@ export class FireMaterial extends PushMaterial {
         super.dispose(forceDisposeEffect);
     }
 
-    public clone(name: string): FireMaterial {
+    public override clone(name: string): FireMaterial {
         return SerializationHelper.Clone<FireMaterial>(() => new FireMaterial(name, this.getScene()), this);
     }
 
-    public serialize(): any {
+    public override serialize(): any {
         const serializationObject = super.serialize();
         serializationObject.customType = "BABYLON.FireMaterial";
         serializationObject.diffuseColor = this.diffuseColor.asArray();
@@ -390,7 +409,7 @@ export class FireMaterial extends PushMaterial {
         return serializationObject;
     }
 
-    public static Parse(source: any, scene: Scene, rootUrl: string): FireMaterial {
+    public static override Parse(source: any, scene: Scene, rootUrl: string): FireMaterial {
         const material = new FireMaterial(source.name, scene);
 
         material.diffuseColor = Color3.FromArray(source.diffuseColor);

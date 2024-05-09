@@ -11,7 +11,7 @@ export class CurvePropertyTabComponent extends React.Component<IPropertyComponen
         super(props);
     }
 
-    render() {
+    override render() {
         const curveBlock = this.props.nodeData.data as CurveBlock;
 
         const typeOptions: { label: string; value: CurveBlockTypes }[] = [];
@@ -38,7 +38,7 @@ export class CurvePropertyTabComponent extends React.Component<IPropertyComponen
                         propertyName="type"
                         onSelect={() => {
                             this.props.stateManager.onUpdateRequiredObservable.notifyObservers(curveBlock);
-                            this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+                            this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
                             this.forceUpdate();
                         }}
                     />

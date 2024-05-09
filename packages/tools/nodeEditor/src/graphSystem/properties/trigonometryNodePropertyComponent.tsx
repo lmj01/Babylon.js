@@ -11,7 +11,7 @@ export class TrigonometryPropertyTabComponent extends React.Component<IPropertyC
         super(props);
     }
 
-    render() {
+    override render() {
         const trigonometryBlock = this.props.nodeData.data as TrigonometryBlock;
 
         const operationOptions: { label: string; value: TrigonometryBlockOperations }[] = [
@@ -50,7 +50,7 @@ export class TrigonometryPropertyTabComponent extends React.Component<IPropertyC
                         propertyName="operation"
                         onSelect={() => {
                             this.props.stateManager.onUpdateRequiredObservable.notifyObservers(trigonometryBlock);
-                            this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+                            this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
                             this.forceUpdate();
                         }}
                     />

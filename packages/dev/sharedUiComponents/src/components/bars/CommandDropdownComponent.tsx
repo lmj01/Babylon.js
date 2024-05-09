@@ -29,7 +29,7 @@ export class CommandDropdownComponent extends React.Component<ICommandDropdownCo
         this.state = { isExpanded: false, activeState: "" };
     }
 
-    public render() {
+    public override render() {
         return (
             <>
                 {this.state.isExpanded && (
@@ -123,6 +123,7 @@ export class CommandDropdownComponent extends React.Component<ICommandDropdownCo
                                         </div>
                                     );
                                 } else {
+                                    // eslint-disable-next-line no-console
                                     return <FileButtonLineComponent key={m.label} label="Load" onClick={(file) => console.log("file btn clicked")} accept=".json" />;
                                 }
                             })}

@@ -5,8 +5,8 @@ import { Utilities } from "../tools/utilities";
 import { DownloadManager } from "../tools/downloadManager";
 import { Engine, WebGPUEngine } from "@dev/core";
 
-declare type Nullable<T> = import("@dev/core").Nullable<T>;
-declare type Scene = import("@dev/core").Scene;
+import type { Nullable } from "@dev/core";
+import type { Scene } from "@dev/core";
 
 import "../scss/rendering.scss";
 
@@ -34,6 +34,7 @@ export class RenderingComponent extends React.Component<IRenderingComponentProps
 
         // Create the global handleException
         (window as any).handleException = (e: Error) => {
+            // eslint-disable-next-line no-console
             console.error(e);
             this.props.globalState.onErrorObservable.notifyObservers(e);
         };
@@ -87,7 +88,8 @@ export class RenderingComponent extends React.Component<IRenderingComponentProps
     private async _loadScriptAsync(url: string): Promise<void> {
         return new Promise((resolve) => {
             const script = document.createElement("script");
-            script.src = url;
+            script.setAttribute("type", "text/javascript");
+            script.setAttribute("src", url);
             script.onload = () => {
                 resolve();
             };
@@ -139,12 +141,20 @@ export class RenderingComponent extends React.Component<IRenderingComponentProps
 
             if (useWebGPU) {
                 globalObject.createDefaultEngine = async function () {
-                    const engine = new WebGPUEngine(canvas, {
-                        enableAllFeatures: true,
-                        setMaximumLimits: true,
-                    });
-                    await engine.initAsync();
-                    return engine;
+                    try {
+                        const engine = new WebGPUEngine(canvas, {
+                            enableAllFeatures: true,
+                            setMaximumLimits: true,
+                        });
+                        await engine.initAsync();
+                        return engine;
+                    } catch (e) {
+                        // eslint-disable-next-line no-console
+                        console.error("The Playground could not create a WebGPU engine instance. Make sure WebGPU is supported by your browser.");
+                        // eslint-disable-next-line no-console
+                        console.error(e);
+                        return null;
+                    }
                 };
             } else {
                 globalObject.createDefaultEngine = function () {
@@ -190,11 +200,18 @@ export class RenderingComponent extends React.Component<IRenderingComponentProps
                 havokInit = "globalThis.HK = await HavokPhysics();";
             }
 
+            const unityToolkit =
+                !this._unityToolkitWasLoaded &&
+                (code.includes("UNITY.SceneManager.InitializePlayground") ||
+                    code.includes("SM.InitializePlayground") ||
+                    location.href.indexOf("UnityToolkit") !== -1 ||
+                    Utilities.ReadBoolFromStore("unity-toolkit", false));
             // Check for Unity Toolkit
-            if ((location.href.indexOf("UnityToolkit") !== -1 || Utilities.ReadBoolFromStore("unity-toolkit", false)) && !this._unityToolkitWasLoaded) {
-                await this._loadScriptAsync("/libs/babylon.manager.js");
+            if (unityToolkit) {
+                await this._loadScriptAsync("https://cdn.jsdelivr.net/gh/BabylonJS/UnityExporter@master/Redist/Runtime/babylon.toolkit.js");
                 this._unityToolkitWasLoaded = true;
             }
+            Utilities.StoreBoolToStore("unity-toolkit-used", unityToolkit);
 
             let createEngineFunction = "createDefaultEngine";
             let createSceneFunction = "";
@@ -361,12 +378,13 @@ export class RenderingComponent extends React.Component<IRenderingComponentProps
                 });
             }
         } catch (err) {
+            // eslint-disable-next-line no-console
             console.error(err, "Retrying if possible. If this error persists please notify the team.");
             this.props.globalState.onErrorObservable.notifyObservers(this._tmpErrorEvent || err);
         }
     }
 
-    public render() {
+    public override render() {
         return <canvas id="renderCanvas" ref={this._canvasRef}></canvas>;
     }
 }

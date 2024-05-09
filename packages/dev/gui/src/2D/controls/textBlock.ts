@@ -76,7 +76,8 @@ export class TextBlock extends Control {
     }
 
     /**
-     * Gets or sets an boolean indicating that the TextBlock will be resized to fit container
+     * Gets or sets a boolean indicating that the TextBlock will be resized to fit its content
+
      */
     @serialize()
     public get resizeToFit(): boolean {
@@ -84,7 +85,8 @@ export class TextBlock extends Control {
     }
 
     /**
-     * Gets or sets an boolean indicating that the TextBlock will be resized to fit container
+     * Gets or sets a boolean indicating that the TextBlock will be resized to fit its content
+
      */
     public set resizeToFit(value: boolean) {
         if (this._resizeToFit === value) {
@@ -335,7 +337,7 @@ export class TextBlock extends Control {
         /**
          * Defines the name of the control
          */
-        public name?: string,
+        public override name?: string,
         text: string = ""
     ) {
         super(name);
@@ -343,13 +345,13 @@ export class TextBlock extends Control {
         this.text = text;
     }
 
-    protected _getTypeName(): string {
+    protected override _getTypeName(): string {
         return "TextBlock";
     }
 
-    protected _processMeasures(parentMeasure: Measure, context: ICanvasRenderingContext): void {
+    protected override _processMeasures(parentMeasure: Measure, context: ICanvasRenderingContext): void {
         if (!this._fontOffset || this.isDirty) {
-            this._fontOffset = Control._GetFontOffset(context.font);
+            this._fontOffset = Control._GetFontOffset(context.font, this._host.getScene()?.getEngine());
         }
         super._processMeasures(parentMeasure, context);
 
@@ -451,7 +453,7 @@ export class TextBlock extends Control {
     /**
      * @internal
      */
-    public _draw(context: ICanvasRenderingContext): void {
+    public override _draw(context: ICanvasRenderingContext): void {
         context.save();
 
         this._applyStates(context);
@@ -462,7 +464,7 @@ export class TextBlock extends Control {
         context.restore();
     }
 
-    protected _applyStates(context: ICanvasRenderingContext): void {
+    protected override _applyStates(context: ICanvasRenderingContext): void {
         super._applyStates(context);
         if (this.outlineWidth) {
             context.lineWidth = this.outlineWidth;
@@ -644,6 +646,13 @@ export class TextBlock extends Control {
         return newHeight;
     }
 
+    public override isDimensionFullyDefined(dim: "width" | "height"): boolean {
+        if (this.resizeToFit) {
+            return true;
+        }
+        return super.isDimensionFullyDefined(dim);
+    }
+
     /**
      * Given a width constraint applied on the text block, find the expected height
      * @returns expected height
@@ -655,7 +664,7 @@ export class TextBlock extends Control {
             if (context) {
                 this._applyStates(context);
                 if (!this._fontOffset) {
-                    this._fontOffset = Control._GetFontOffset(context.font);
+                    this._fontOffset = Control._GetFontOffset(context.font, this._host.getScene()?.getEngine());
                 }
                 const lines = this._lines
                     ? this._lines
@@ -670,7 +679,7 @@ export class TextBlock extends Control {
         return 0;
     }
 
-    dispose(): void {
+    override dispose(): void {
         super.dispose();
 
         this.onTextChangedObservable.clear();

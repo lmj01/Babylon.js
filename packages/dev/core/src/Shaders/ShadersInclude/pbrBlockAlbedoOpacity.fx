@@ -44,7 +44,9 @@ void albedoOpacityBlock(
         surfaceAlbedo *= albedoInfos.y;
     #endif
 
-    #include<decalFragment>
+    #ifndef DECAL_AFTER_DETAIL
+        #include<decalFragment>
+    #endif
 
     #if defined(VERTEXCOLOR) || defined(INSTANCESCOLOR) && defined(INSTANCES)
         surfaceAlbedo *= vColor.rgb;
@@ -53,6 +55,10 @@ void albedoOpacityBlock(
     #ifdef DETAIL
         float detailAlbedo = 2.0 * mix(0.5, detailColor.r, vDetailInfos.y);
         surfaceAlbedo.rgb = surfaceAlbedo.rgb * detailAlbedo * detailAlbedo; // should be pow(detailAlbedo, 2.2) but detailAlbedo² is close enough and cheaper to compute
+    #endif
+
+    #ifdef DECAL_AFTER_DETAIL
+        #include<decalFragment>
     #endif
 
     #define CUSTOM_FRAGMENT_UPDATE_ALBEDO
@@ -73,9 +79,11 @@ void albedoOpacityBlock(
     #endif
 
     #if !defined(SS_LINKREFRACTIONTOTRANSPARENCY) && !defined(ALPHAFRESNEL)
-        #ifdef ALPHATEST
-            if (alpha < ALPHATESTVALUE)
-                discard;
+        #ifdef ALPHATEST 
+            #if DEBUGMODE != 88
+                if (alpha < ALPHATESTVALUE)
+                    discard;
+            #endif
 
             #ifndef ALPHABLEND
                 // Prevent to blend with the canvas.

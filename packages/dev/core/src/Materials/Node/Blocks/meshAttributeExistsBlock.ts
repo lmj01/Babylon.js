@@ -6,7 +6,7 @@ import { NodeMaterialBlockTargets } from "../Enums/nodeMaterialBlockTargets";
 import { RegisterClass } from "../../../Misc/typeStore";
 import { InputBlock } from "./Input/inputBlock";
 import { MorphTargetsBlock } from "./Vertex/morphTargetsBlock";
-import { PropertyTypeForEdition, editableInPropertyPage } from "../nodeMaterialDecorator";
+import { PropertyTypeForEdition, editableInPropertyPage } from "../../../Decorators/nodeDecorator";
 import type { Scene } from "core/scene";
 
 export enum MeshAttributeExistsBlockTypes {
@@ -98,7 +98,7 @@ export class MeshAttributeExistsBlock extends NodeMaterialBlock {
      * Gets the current class name
      * @returns the class name
      */
-    public getClassName() {
+    public override getClassName() {
         return "MeshAttributeExistsBlock";
     }
 
@@ -143,7 +143,7 @@ export class MeshAttributeExistsBlock extends NodeMaterialBlock {
         return this._outputs[0];
     }
 
-    protected _buildBlock(state: NodeMaterialBuildState) {
+    protected override _buildBlock(state: NodeMaterialBuildState) {
         super._buildBlock(state);
 
         let attributeDefine: null | string = null;
@@ -177,22 +177,22 @@ export class MeshAttributeExistsBlock extends NodeMaterialBlock {
                 break;
         }
 
-        const output = this._declareOutput(this.output, state);
+        const output = state._declareOutput(this.output);
         if (attributeDefine) {
-            state.compilationString += `#ifdef ${attributeDefine}\r\n`;
+            state.compilationString += `#ifdef ${attributeDefine}\n`;
         }
 
-        state.compilationString += `${output} = ${this.input.associatedVariableName};\r\n`;
+        state.compilationString += `${output} = ${this.input.associatedVariableName};\n`;
 
         if (attributeDefine) {
-            state.compilationString += `#else\r\n`;
-            state.compilationString += `${output} = ${this.fallback.associatedVariableName};\r\n`;
-            state.compilationString += `#endif\r\n`;
+            state.compilationString += `#else\n`;
+            state.compilationString += `${output} = ${this.fallback.associatedVariableName};\n`;
+            state.compilationString += `#endif\n`;
         }
         return this;
     }
 
-    public serialize(): any {
+    public override serialize(): any {
         const serializationObject = super.serialize();
 
         serializationObject.attributeType = this.attributeType;
@@ -200,16 +200,16 @@ export class MeshAttributeExistsBlock extends NodeMaterialBlock {
         return serializationObject;
     }
 
-    public _deserialize(serializationObject: any, scene: Scene, rootUrl: string) {
+    public override _deserialize(serializationObject: any, scene: Scene, rootUrl: string) {
         super._deserialize(serializationObject, scene, rootUrl);
 
         this.attributeType = serializationObject.attributeType ?? MeshAttributeExistsBlockTypes.None;
     }
 
-    protected _dumpPropertiesCode() {
+    protected override _dumpPropertiesCode() {
         let codeString = super._dumpPropertiesCode();
 
-        codeString += `${this._codeVariableName}.attributeType = ${this.attributeType};\r\n`;
+        codeString += `${this._codeVariableName}.attributeType = ${this.attributeType};\n`;
 
         return codeString;
     }

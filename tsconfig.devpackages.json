@@ -38,12 +38,14 @@
             "path": "packages/tools/nodeEditor/tsconfig.build.json"
         },
         {
+            "path": "packages/tools/nodeGeometryEditor/tsconfig.build.json"
+        },
+        {
             "path": "packages/dev/inspector/tsconfig.build.json"
         },
         {
             "path": "packages/tools/ktx2Decoder/tsconfig.build.json"
         }
-
     ],
     "include": []
 }

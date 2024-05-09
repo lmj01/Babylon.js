@@ -10,10 +10,12 @@ import type { WebGPUCacheRenderPipeline } from "./webgpuCacheRenderPipeline";
 import { WebGPUCacheRenderPipelineTree } from "./webgpuCacheRenderPipelineTree";
 import type { WebGPUPipelineContext } from "./webgpuPipelineContext";
 import { WebGPUShaderProcessingContext } from "./webgpuShaderProcessingContext";
-import { renderableTextureFormatToIndex, WebGPUTextureHelper } from "./webgpuTextureHelper";
+import { WebGPUTextureHelper } from "./webgpuTextureHelper";
+import { renderableTextureFormatToIndex } from "./webgpuTextureManager";
 
-import "../../Shaders/clearQuad.vertex";
-import "../../Shaders/clearQuad.fragment";
+import "../../ShadersWGSL/clearQuad.vertex";
+import "../../ShadersWGSL/clearQuad.fragment";
+import { ShaderLanguage } from "../../Materials/shaderLanguage";
 
 /** @internal */
 export class WebGPUClearQuad {
@@ -44,11 +46,11 @@ export class WebGPUClearQuad {
         this._device = device;
         this._engine = engine;
 
-        this._cacheRenderPipeline = new WebGPUCacheRenderPipelineTree(this._device, emptyVertexBuffer, !engine._caps.textureFloatLinearFiltering);
+        this._cacheRenderPipeline = new WebGPUCacheRenderPipelineTree(this._device, emptyVertexBuffer);
         this._cacheRenderPipeline.setDepthTestEnabled(false);
         this._cacheRenderPipeline.setStencilReadMask(0xff);
 
-        this._effect = engine.createEffect("clearQuad", [], ["color", "depthValue"]);
+        this._effect = engine.createEffect("clearQuad", [], ["color", "depthValue"], undefined, undefined, undefined, undefined, undefined, undefined, ShaderLanguage.WGSL);
     }
 
     public clear(
@@ -92,9 +94,10 @@ export class WebGPUClearQuad {
             }
 
             renderPass2 = this._device.createRenderBundleEncoder({
+                label: "clearQuadRenderBundle",
                 colorFormats: this._cacheRenderPipeline.colorFormats,
                 depthStencilFormat: this._depthTextureFormat,
-                sampleCount,
+                sampleCount: WebGPUTextureHelper.GetSample(sampleCount),
             });
         }
 
@@ -129,6 +132,7 @@ export class WebGPUClearQuad {
             bindGroups = this._bindGroups[key] = [];
             bindGroups.push(
                 this._device.createBindGroup({
+                    label: `clearQuadBindGroup0-${key}`,
                     layout: bindGroupLayouts[0],
                     entries: [],
                 })
@@ -136,6 +140,7 @@ export class WebGPUClearQuad {
             if (!WebGPUShaderProcessingContext._SimplifiedKnownBindings) {
                 bindGroups.push(
                     this._device.createBindGroup({
+                        label: `clearQuadBindGroup1-${key}`,
                         layout: bindGroupLayouts[1],
                         entries: [],
                     })
@@ -143,6 +148,7 @@ export class WebGPUClearQuad {
             }
             bindGroups.push(
                 this._device.createBindGroup({
+                    label: `clearQuadBindGroup${WebGPUShaderProcessingContext._SimplifiedKnownBindings ? 1 : 2}-${key}`,
                     layout: bindGroupLayouts[WebGPUShaderProcessingContext._SimplifiedKnownBindings ? 1 : 2],
                     entries: [
                         {

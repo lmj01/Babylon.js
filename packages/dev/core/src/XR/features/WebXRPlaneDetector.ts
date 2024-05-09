@@ -93,7 +93,10 @@ export class WebXRPlaneDetector extends WebXRAbstractFeature {
      * @param _xrSessionManager an instance of xr Session manager
      * @param _options configuration to use when constructing this feature
      */
-    constructor(_xrSessionManager: WebXRSessionManager, private _options: IWebXRPlaneDetectorOptions = {}) {
+    constructor(
+        _xrSessionManager: WebXRSessionManager,
+        private _options: IWebXRPlaneDetectorOptions = {}
+    ) {
         super(_xrSessionManager);
         this.xrNativeFeatureName = "plane-detection";
         if (this._xrSessionManager.session) {
@@ -111,7 +114,7 @@ export class WebXRPlaneDetector extends WebXRAbstractFeature {
      *
      * @returns true if successful.
      */
-    public detach(): boolean {
+    public override detach(): boolean {
         if (!super.detach()) {
             return false;
         }
@@ -131,7 +134,7 @@ export class WebXRPlaneDetector extends WebXRAbstractFeature {
     /**
      * Dispose this feature and all of the resources attached
      */
-    public dispose(): void {
+    public override dispose(): void {
         super.dispose();
         this.onPlaneAddedObservable.clear();
         this.onPlaneRemovedObservable.clear();
@@ -141,9 +144,24 @@ export class WebXRPlaneDetector extends WebXRAbstractFeature {
     /**
      * Check if the needed objects are defined.
      * This does not mean that the feature is enabled, but that the objects needed are well defined.
+     * @returns true if the initial compatibility test passed
      */
-    public isCompatible(): boolean {
+    public override isCompatible(): boolean {
         return typeof XRPlane !== "undefined";
+    }
+
+    /**
+     * Enable room capture mode.
+     * When enabled and supported by the system,
+     * the detectedPlanes array will be populated with the detected room boundaries
+     * @see https://immersive-web.github.io/real-world-geometry/plane-detection.html#dom-xrsession-initiateroomcapture
+     * @returns true if plane detection is enabled and supported. Will reject if not supported.
+     */
+    public async initiateRoomCapture(): Promise<void> {
+        if (this._xrSessionManager.session.initiateRoomCapture) {
+            return this._xrSessionManager.session.initiateRoomCapture();
+        }
+        return Promise.reject("initiateRoomCapture is not supported on this session");
     }
 
     protected _onXRFrame(frame: XRFrame) {
@@ -233,6 +251,7 @@ export class WebXRPlaneDetector extends WebXRAbstractFeature {
     /**
      * avoiding using Array.find for global support.
      * @param xrPlane the plane to find in the array
+     * @returns the index of the plane in the array or -1 if not found
      */
     private _findIndexInPlaneArray(xrPlane: XRPlane) {
         for (let i = 0; i < this._detectedPlanes.length; ++i) {

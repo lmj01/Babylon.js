@@ -25,21 +25,6 @@ import { Path3D } from "../../Maths/math.path";
  * * The optional `adjustFrame` (boolean, default false) will cause the internally generated Path3D tangents, normals, and binormals to be adjusted so that a) they are always well-defined, and b) they do not reverse from one path point to the next. This prevents the extruded shape from being flipped and/or rotated with resulting mesh self-intersections. This is primarily useful for straight paths that can reverse direction.
  * @param name defines the name of the mesh
  * @param options defines the options used to create the mesh
- * @param options.shape
- * @param options.path
- * @param options.scale
- * @param options.rotation
- * @param options.closeShape
- * @param options.closePath
- * @param options.cap
- * @param options.updatable
- * @param options.sideOrientation
- * @param options.frontUVs
- * @param options.backUVs
- * @param options.instance
- * @param options.invertUV
- * @param options.firstNormal
- * @param options.adjustFrame
  * @param scene defines the hosting scene
  * @returns the extruded shape mesh
  * @see https://doc.babylonjs.com/features/featuresDeepDive/mesh/creation/param
@@ -126,23 +111,6 @@ export function ExtrudeShape(
  * * The optional `adjustFrame` (boolean, default false) will cause the internally generated Path3D tangents, normals, and binormals to be adjusted so that a) they are always well-defined, and b) they do not reverse from one path point to the next. This prevents the extruded shape from being flipped and/or rotated with resulting mesh self-intersections. This is primarily useful for straight paths that can reverse direction.
  * @param name defines the name of the mesh
  * @param options defines the options used to create the mesh
- * @param options.shape
- * @param options.path
- * @param options.scaleFunction
- * @param options.rotationFunction
- * @param options.ribbonCloseArray
- * @param options.ribbonClosePath
- * @param options.closeShape
- * @param options.closePath
- * @param options.cap
- * @param options.updatable
- * @param options.sideOrientation
- * @param options.frontUVs
- * @param options.backUVs
- * @param options.instance
- * @param options.invertUV
- * @param options.firstNormal
- * @param options.adjustFrame
  * @param scene defines the hosting scene
  * @returns the custom extruded shape mesh
  * @see https://doc.babylonjs.com/features/featuresDeepDive/mesh/creation/param#custom-extruded-shapes
@@ -298,7 +266,7 @@ function _ExtrudeShapeGeneric(
         const rotationMatrix: Matrix = TmpVectors.Matrix[0];
 
         for (let i = 0; i < curve.length; i++) {
-            const shapePath = new Array<Vector3>();
+            const shapePath: Vector3[] = [];
             const angleStep = rotate(i, distances[i]);
             const scaleRatio = scl(i, distances[i]);
             Matrix.RotationAxisToRef(tangents[i], angle, rotationMatrix);
@@ -397,7 +365,7 @@ export const ShapeBuilder = {
     ExtrudeShapeCustom,
 };
 
-(Mesh as any).ExtrudeShape = (
+Mesh.ExtrudeShape = (
     name: string,
     shape: Vector3[],
     path: Vector3[],
@@ -423,7 +391,7 @@ export const ShapeBuilder = {
     return ExtrudeShape(name, options, scene);
 };
 
-(Mesh as any).ExtrudeShapeCustom = (
+Mesh.ExtrudeShapeCustom = (
     name: string,
     shape: Vector3[],
     path: Vector3[],

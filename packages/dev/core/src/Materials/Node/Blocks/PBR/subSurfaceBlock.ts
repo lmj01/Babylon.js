@@ -37,6 +37,7 @@ export class SubSurfaceBlock extends NodeMaterialBlock {
             NodeMaterialBlockTargets.Fragment,
             new NodeMaterialConnectionPointCustomObject("refraction", this, NodeMaterialConnectionPointDirection.Input, RefractionBlock, "RefractionBlock")
         );
+        this.registerInput("dispersion", NodeMaterialBlockConnectionPointTypes.Float, true, NodeMaterialBlockTargets.Fragment);
 
         this.registerOutput(
             "subsurface",
@@ -50,18 +51,20 @@ export class SubSurfaceBlock extends NodeMaterialBlock {
      * Initialize the block and prepare the context for build
      * @param state defines the state that will be used for the build
      */
-    public initialize(state: NodeMaterialBuildState) {
+    public override initialize(state: NodeMaterialBuildState) {
         state._excludeVariableName("subSurfaceOut");
         state._excludeVariableName("vThicknessParam");
         state._excludeVariableName("vTintColor");
+        state._excludeVariableName("vTranslucencyColor");
         state._excludeVariableName("vSubSurfaceIntensity");
+        state._excludeVariableName("dispersion");
     }
 
     /**
      * Gets the current class name
      * @returns the class name
      */
-    public getClassName() {
+    public override getClassName() {
         return "SubSurfaceBlock";
     }
 
@@ -101,13 +104,20 @@ export class SubSurfaceBlock extends NodeMaterialBlock {
     }
 
     /**
+     * Gets the dispersion input component
+     */
+    public get dispersion(): NodeMaterialConnectionPoint {
+        return this._inputs[5];
+    }
+
+    /**
      * Gets the sub surface object output component
      */
     public get subsurface(): NodeMaterialConnectionPoint {
         return this._outputs[0];
     }
 
-    public autoConfigure() {
+    public override autoConfigure() {
         if (!this.thickness.isConnected) {
             const thicknessInput = new InputBlock("SubSurface thickness", NodeMaterialBlockTargets.Fragment, NodeMaterialBlockConnectionPointTypes.Float);
             thicknessInput.value = 0;
@@ -115,7 +125,7 @@ export class SubSurfaceBlock extends NodeMaterialBlock {
         }
     }
 
-    public prepareDefines(mesh: AbstractMesh, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines) {
+    public override prepareDefines(mesh: AbstractMesh, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines) {
         super.prepareDefines(mesh, nodeMaterial, defines);
 
         const translucencyEnabled = this.translucencyDiffusionDist.isConnected || this.translucencyIntensity.isConnected;
@@ -125,8 +135,8 @@ export class SubSurfaceBlock extends NodeMaterialBlock {
         defines.setValue("SS_THICKNESSANDMASK_TEXTURE", false, true);
         defines.setValue("SS_REFRACTIONINTENSITY_TEXTURE", false, true);
         defines.setValue("SS_TRANSLUCENCYINTENSITY_TEXTURE", false, true);
-        defines.setValue("SS_MASK_FROM_THICKNESS_TEXTURE", false, true);
         defines.setValue("SS_USE_GLTF_TEXTURES", false, true);
+        defines.setValue("SS_DISPERSION", this.dispersion.isConnected, true);
     }
 
     /**
@@ -151,6 +161,8 @@ export class SubSurfaceBlock extends NodeMaterialBlock {
         const refractionIntensity = refractionBlock?.intensity.isConnected ? refractionBlock.intensity.associatedVariableName : "1.";
         const refractionView = refractionBlock?.view.isConnected ? refractionBlock.view.associatedVariableName : "";
 
+        const dispersion = ssBlock?.dispersion.isConnected ? ssBlock?.dispersion.associatedVariableName : "0.0";
+
         code += refractionBlock?.getCode(state) ?? "";
 
         code += `subSurfaceOutParams subSurfaceOut;
@@ -159,7 +171,7 @@ export class SubSurfaceBlock extends NodeMaterialBlock {
             vec2 vThicknessParam = vec2(0., ${thickness});
             vec4 vTintColor = vec4(${tintColor}, ${refractionTintAtDistance});
             vec3 vSubSurfaceIntensity = vec3(${refractionIntensity}, ${translucencyIntensity}, 0.);
-
+            float dispersion = ${dispersion};
             subSurfaceBlock(
                 vSubSurfaceIntensity,
                 vThicknessParam,
@@ -231,9 +243,16 @@ export class SubSurfaceBlock extends NodeMaterialBlock {
                     vRefractionPosition,
                     vRefractionSize,
                 #endif
+                #ifdef SS_DISPERSION
+                    dispersion,
+                #endif
             #endif
             #ifdef SS_TRANSLUCENCY
                 ${translucencyDiffusionDistance},
+                vTintColor,
+                #ifdef SS_TRANSLUCENCYCOLOR_TEXTURE
+                    vec4(0.),
+                #endif
             #endif
                 subSurfaceOut
             );
@@ -246,12 +265,12 @@ export class SubSurfaceBlock extends NodeMaterialBlock {
             #endif
         #else
             subSurfaceOut.specularEnvironmentReflectance = specularEnvironmentReflectance;
-        #endif\r\n`;
+        #endif\n`;
 
         return code;
     }
 
-    protected _buildBlock(state: NodeMaterialBuildState) {
+    protected override _buildBlock(state: NodeMaterialBuildState) {
         if (state.target === NodeMaterialBlockTargets.Fragment) {
             state.sharedData.blocksWithDefines.push(this);
         }

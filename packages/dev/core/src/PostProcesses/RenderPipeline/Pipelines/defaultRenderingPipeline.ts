@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/naming-convention */
 import type { Nullable } from "../../../types";
-import { serialize, SerializationHelper } from "../../../Misc/decorators";
+import { serialize } from "../../../Misc/decorators";
+import { SerializationHelper } from "../../../Misc/decorators.serialization";
 import type { Observer } from "../../../Misc/observable";
 import { Observable } from "../../../Misc/observable";
 import type { IAnimatable } from "../../../Animations/animatable.interface";
@@ -8,7 +9,7 @@ import { Logger } from "../../../Misc/logger";
 import type { Camera } from "../../../Cameras/camera";
 import type { ImageProcessingConfiguration } from "../../../Materials/imageProcessingConfiguration";
 import { Texture } from "../../../Materials/Textures/texture";
-import type { Engine } from "../../../Engines/engine";
+import type { AbstractEngine } from "../../../Engines/abstractEngine";
 import { Constants } from "../../../Engines/constants";
 import type { IDisposable, Scene } from "../../../scene";
 import { GlowLayer } from "../../../Layers/glowLayer";
@@ -29,7 +30,7 @@ import { Tools } from "core/Misc/tools";
 
 import "../../../PostProcesses/RenderPipeline/postProcessRenderPipelineManagerSceneComponent";
 
-declare type Animation = import("../../../Animations/animation").Animation;
+import type { Animation } from "../../../Animations/animation";
 
 /**
  * The default rendering pipeline can be added to a scene to apply common post processing effects such as anti-aliasing or depth of field.
@@ -155,7 +156,7 @@ export class DefaultRenderingPipeline extends PostProcessRenderPipeline implemen
         return this._sharpenEnabled;
     }
 
-    private _resizeObserver: Nullable<Observer<Engine>> = null;
+    private _resizeObserver: Nullable<Observer<AbstractEngine>> = null;
     private _hardwareScaleLevel = 1.0;
     private _bloomKernel: number = 64;
     /**
@@ -510,6 +511,8 @@ export class DefaultRenderingPipeline extends PostProcessRenderPipeline implemen
             true
         );
 
+        let avoidReentrancyAtConstructionTime = true;
+
         this._imageProcessingConfigurationObserver = this._scene.imageProcessingConfiguration.onUpdateParameters.add(() => {
             this.bloom._downscale._exposure = this._scene.imageProcessingConfiguration.exposure;
 
@@ -519,20 +522,26 @@ export class DefaultRenderingPipeline extends PostProcessRenderPipeline implemen
                 // at the end of the constructor could end up triggering imageProcessingConfiguration.onUpdateParameters!
                 // Note that the pipeline could have been disposed before the deferred call was executed, but in that case
                 // _buildAllowed will have been set to false, preventing _buildPipeline from being executed.
-                Tools.SetImmediate(() => {
+                if (avoidReentrancyAtConstructionTime) {
+                    Tools.SetImmediate(() => {
+                        this._buildPipeline();
+                    });
+                } else {
                     this._buildPipeline();
-                });
+                }
             }
         });
 
         this._buildPipeline();
+
+        avoidReentrancyAtConstructionTime = false;
     }
 
     /**
      * Get the class name
      * @returns "DefaultRenderingPipeline"
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "DefaultRenderingPipeline";
     }
 
@@ -731,6 +740,8 @@ export class DefaultRenderingPipeline extends PostProcessRenderPipeline implemen
             });
         }
 
+        this._adaptPostProcessesToViewPort();
+
         if (!this._enableMSAAOnFirstPostProcess(this.samples) && this.samples > 1) {
             Logger.Warn("MSAA failed to enable, MSAA is only supported in browsers that support webGL >= 2.0");
         }
@@ -816,7 +827,7 @@ export class DefaultRenderingPipeline extends PostProcessRenderPipeline implemen
     /**
      * Dispose of the pipeline and stop all post processes
      */
-    public dispose(): void {
+    public override dispose(): void {
         this._buildAllowed = false;
         this.onBuildObservable.clear();
         this._disposePostProcesses(true);

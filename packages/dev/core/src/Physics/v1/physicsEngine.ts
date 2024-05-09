@@ -33,6 +33,7 @@ export class PhysicsEngine implements IPhysicsEngine {
         return this._physicsPlugin.getPluginVersion();
     }
     /**
+     * @virtual
      * Factory used to create the default physics plugin.
      * @returns The default physics plugin
      */
@@ -45,7 +46,10 @@ export class PhysicsEngine implements IPhysicsEngine {
      * @param gravity defines the gravity vector used by the simulation
      * @param _physicsPlugin defines the plugin to use (CannonJS by default)
      */
-    constructor(gravity: Nullable<Vector3>, private _physicsPlugin: IPhysicsEnginePlugin = PhysicsEngine.DefaultPluginFactory()) {
+    constructor(
+        gravity: Nullable<Vector3>,
+        private _physicsPlugin: IPhysicsEnginePlugin = PhysicsEngine.DefaultPluginFactory()
+    ) {
         if (!this._physicsPlugin.isSupported()) {
             throw new Error("Physics Engine " + this._physicsPlugin.name + " cannot be found. " + "Please make sure it is included.");
         }
@@ -263,6 +267,7 @@ export class PhysicsEngine implements IPhysicsEngine {
      * @param from when should the ray start?
      * @param to when should the ray end?
      * @param result resulting PhysicsRaycastResult
+     * @returns true if the ray hits an impostor, else false
      */
     public raycastToRef(from: Vector3, to: Vector3, result: PhysicsRaycastResult) {
         return this._physicsPlugin.raycastToRef(from, to, result);

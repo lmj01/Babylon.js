@@ -19,12 +19,20 @@ struct clearcoatOutParams
     vec3 energyConservationFactorClearCoat;
 #endif
 #if DEBUGMODE > 0
-    mat3 TBNClearCoat;
-    vec2 clearCoatMapData;
-    vec4 clearCoatTintMapData;
-    vec4 environmentClearCoatRadiance;
+    #ifdef CLEARCOAT_BUMP
+        mat3 TBNClearCoat;
+    #endif
+    #ifdef CLEARCOAT_TEXTURE
+        vec2 clearCoatMapData;
+    #endif
+    #if defined(CLEARCOAT_TINT) && defined(CLEARCOAT_TINT_TEXTURE)
+        vec4 clearCoatTintMapData;
+    #endif
+    #ifdef REFLECTION
+        vec4 environmentClearCoatRadiance;
+        vec3 clearCoatEnvironmentReflectance;
+    #endif
     float clearCoatNdotV;
-    vec3 clearCoatEnvironmentReflectance;
 #endif
 };
 
@@ -117,11 +125,7 @@ struct clearcoatOutParams
 
 
         #if defined(CLEARCOAT_TEXTURE_ROUGHNESS) && !defined(CLEARCOAT_USE_ROUGHNESS_FROM_MAINTEXTURE)
-            #ifdef CLEARCOAT_TEXTURE_ROUGHNESS_IDENTICAL
-                clearCoatRoughness *= clearCoatMapData.y;
-            #else
-                clearCoatRoughness *= clearCoatMapRoughnessData.y;
-            #endif
+           clearCoatRoughness *= clearCoatMapRoughnessData.y;
         #endif
 
         outParams.clearCoatIntensity = clearCoatIntensity;

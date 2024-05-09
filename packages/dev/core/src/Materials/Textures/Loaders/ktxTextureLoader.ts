@@ -127,7 +127,7 @@ export class _KTXTextureLoader implements IInternalTextureLoader {
             );
         } else if (KhronosTextureContainer2.IsValid(data)) {
             const ktx2 = new KhronosTextureContainer2(texture.getEngine());
-            ktx2.uploadAsync(data, texture, options).then(
+            ktx2._uploadAsync(data, texture, options).then(
                 () => {
                     callback(texture.width, texture.height, texture.generateMipMaps, true, () => {}, false);
                 },
@@ -144,4 +144,4 @@ export class _KTXTextureLoader implements IInternalTextureLoader {
 }
 
 // Register the loader.
-Engine._TextureLoaders.unshift(new _KTXTextureLoader());
+Engine._TextureLoaders.push(new _KTXTextureLoader());

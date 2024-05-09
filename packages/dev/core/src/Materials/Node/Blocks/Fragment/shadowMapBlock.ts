@@ -30,7 +30,7 @@ export class ShadowMapBlock extends NodeMaterialBlock {
      * Gets the current class name
      * @returns the class name
      */
-    public getClassName() {
+    public override getClassName() {
         return "ShadowMapBlock";
     }
 
@@ -38,7 +38,7 @@ export class ShadowMapBlock extends NodeMaterialBlock {
      * Initialize the block and prepare the context for build
      * @param state defines the state that will be used for the build
      */
-    public initialize(state: NodeMaterialBuildState) {
+    public override initialize(state: NodeMaterialBuildState) {
         state._excludeVariableName("vPositionWSM");
         state._excludeVariableName("lightDataSM");
         state._excludeVariableName("biasAndScaleSM");
@@ -76,28 +76,28 @@ export class ShadowMapBlock extends NodeMaterialBlock {
         return this._outputs[0];
     }
 
-    protected _buildBlock(state: NodeMaterialBuildState) {
+    protected override _buildBlock(state: NodeMaterialBuildState) {
         super._buildBlock(state);
 
         const comments = `//${this.name}`;
 
-        state._emitUniformFromString("biasAndScaleSM", "vec3");
-        state._emitUniformFromString("lightDataSM", "vec3");
-        state._emitUniformFromString("depthValuesSM", "vec2");
+        state._emitUniformFromString("biasAndScaleSM", NodeMaterialBlockConnectionPointTypes.Vector3);
+        state._emitUniformFromString("lightDataSM", NodeMaterialBlockConnectionPointTypes.Vector3);
+        state._emitUniformFromString("depthValuesSM", NodeMaterialBlockConnectionPointTypes.Vector3);
 
         state._emitFunctionFromInclude("packingFunctions", comments);
 
-        state.compilationString += `vec4 worldPos = ${this.worldPosition.associatedVariableName};\r\n`;
-        state.compilationString += `vec3 vPositionWSM;\r\n`;
-        state.compilationString += `float vDepthMetricSM = 0.0;\r\n`;
-        state.compilationString += `float zSM;\r\n`;
+        state.compilationString += `vec4 worldPos = ${this.worldPosition.associatedVariableName};\n`;
+        state.compilationString += `vec3 vPositionWSM;\n`;
+        state.compilationString += `float vDepthMetricSM = 0.0;\n`;
+        state.compilationString += `float zSM;\n`;
 
         if (this.worldNormal.isConnected) {
-            state.compilationString += `vec3 vNormalW = ${this.worldNormal.associatedVariableName}.xyz;\r\n`;
+            state.compilationString += `vec3 vNormalW = ${this.worldNormal.associatedVariableName}.xyz;\n`;
             state.compilationString += state._emitCodeFromInclude("shadowMapVertexNormalBias", comments);
         }
 
-        state.compilationString += `vec4 clipPos = ${this.viewProjection.associatedVariableName} * worldPos;\r\n`;
+        state.compilationString += `vec4 clipPos = ${this.viewProjection.associatedVariableName} * worldPos;\n`;
 
         state.compilationString += state._emitCodeFromInclude("shadowMapVertexMetric", comments, {
             replaceStrings: [
@@ -127,7 +127,7 @@ export class ShadowMapBlock extends NodeMaterialBlock {
             #endif
         `;
 
-        state.compilationString += `${this._declareOutput(this.depth, state)} = vec3(depthSM, 1., 1.);\r\n`;
+        state.compilationString += `${state._declareOutput(this.depth)} = vec3(depthSM, 1., 1.);\n`;
 
         return this;
     }

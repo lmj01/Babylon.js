@@ -7,12 +7,12 @@ import type { Mesh } from "../../../../Meshes/mesh";
 import type { Effect } from "../../../effect";
 import type { NodeMaterialConnectionPoint } from "../../nodeMaterialBlockConnectionPoint";
 import type { AbstractMesh } from "../../../../Meshes/abstractMesh";
-import { MaterialHelper } from "../../../materialHelper";
 import type { NodeMaterial, NodeMaterialDefines } from "../../nodeMaterial";
 import { InputBlock } from "../Input/inputBlock";
 import { RegisterClass } from "../../../../Misc/typeStore";
 
 import "../../../../Shaders/ShadersInclude/fogFragmentDeclaration";
+import { GetFogState } from "core/Materials/materialHelper.functions";
 
 /**
  * Block used to add support for scene fog
@@ -50,7 +50,7 @@ export class FogBlock extends NodeMaterialBlock {
      * Gets the current class name
      * @returns the class name
      */
-    public getClassName() {
+    public override getClassName() {
         return "FogBlock";
     }
 
@@ -89,9 +89,9 @@ export class FogBlock extends NodeMaterialBlock {
         return this._outputs[0];
     }
 
-    public autoConfigure(material: NodeMaterial) {
+    public override autoConfigure(material: NodeMaterial, additionalFilteringInfo: (node: NodeMaterialBlock) => boolean = () => true) {
         if (!this.view.isConnected) {
-            let viewInput = material.getInputBlockByPredicate((b) => b.systemValue === NodeMaterialSystemValues.View);
+            let viewInput = material.getInputBlockByPredicate((b) => b.systemValue === NodeMaterialSystemValues.View && additionalFilteringInfo(b));
 
             if (!viewInput) {
                 viewInput = new InputBlock("view");
@@ -100,7 +100,7 @@ export class FogBlock extends NodeMaterialBlock {
             viewInput.output.connectTo(this.view);
         }
         if (!this.fogColor.isConnected) {
-            let fogColorInput = material.getInputBlockByPredicate((b) => b.systemValue === NodeMaterialSystemValues.FogColor);
+            let fogColorInput = material.getInputBlockByPredicate((b) => b.systemValue === NodeMaterialSystemValues.FogColor && additionalFilteringInfo(b));
 
             if (!fogColorInput) {
                 fogColorInput = new InputBlock("fogColor", undefined, NodeMaterialBlockConnectionPointTypes.Color3);
@@ -110,12 +110,12 @@ export class FogBlock extends NodeMaterialBlock {
         }
     }
 
-    public prepareDefines(mesh: AbstractMesh, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines) {
+    public override prepareDefines(mesh: AbstractMesh, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines) {
         const scene = mesh.getScene();
-        defines.setValue("FOG", nodeMaterial.fogEnabled && MaterialHelper.GetFogState(mesh, scene));
+        defines.setValue("FOG", nodeMaterial.fogEnabled && GetFogState(mesh, scene));
     }
 
-    public bind(effect: Effect, nodeMaterial: NodeMaterial, mesh?: Mesh) {
+    public override bind(effect: Effect, nodeMaterial: NodeMaterial, mesh?: Mesh) {
         if (!mesh) {
             return;
         }
@@ -124,7 +124,7 @@ export class FogBlock extends NodeMaterialBlock {
         effect.setFloat4(this._fogParameters, scene.fogMode, scene.fogStart, scene.fogEnd, scene.fogDensity);
     }
 
-    protected _buildBlock(state: NodeMaterialBuildState) {
+    protected override _buildBlock(state: NodeMaterialBuildState) {
         super._buildBlock(state);
 
         if (state.target === NodeMaterialBlockTargets.Fragment) {
@@ -144,21 +144,21 @@ export class FogBlock extends NodeMaterialBlock {
             this._fogParameters = state._getFreeVariableName("fogParameters");
             const output = this._outputs[0];
 
-            state._emitUniformFromString(this._fogParameters, "vec4");
+            state._emitUniformFromString(this._fogParameters, NodeMaterialBlockConnectionPointTypes.Vector4);
 
-            state.compilationString += `#ifdef FOG\r\n`;
-            state.compilationString += `float ${tempFogVariablename} = CalcFogFactor(${this._fogDistanceName}, ${this._fogParameters});\r\n`;
+            state.compilationString += `#ifdef FOG\n`;
+            state.compilationString += `float ${tempFogVariablename} = CalcFogFactor(${this._fogDistanceName}, ${this._fogParameters});\n`;
             state.compilationString +=
-                this._declareOutput(output, state) +
-                ` = ${tempFogVariablename} * ${color.associatedVariableName}.rgb + (1.0 - ${tempFogVariablename}) * ${fogColor.associatedVariableName}.rgb;\r\n`;
-            state.compilationString += `#else\r\n${this._declareOutput(output, state)} =  ${color.associatedVariableName}.rgb;\r\n`;
-            state.compilationString += `#endif\r\n`;
+                state._declareOutput(output) +
+                ` = ${tempFogVariablename} * ${color.associatedVariableName}.rgb + (1.0 - ${tempFogVariablename}) * ${fogColor.associatedVariableName}.rgb;\n`;
+            state.compilationString += `#else\n${state._declareOutput(output)} =  ${color.associatedVariableName}.rgb;\n`;
+            state.compilationString += `#endif\n`;
         } else {
             const worldPos = this.worldPosition;
             const view = this.view;
             this._fogDistanceName = state._getFreeVariableName("vFogDistance");
-            state._emitVaryingFromString(this._fogDistanceName, "vec3");
-            state.compilationString += `${this._fogDistanceName} = (${view.associatedVariableName} * ${worldPos.associatedVariableName}).xyz;\r\n`;
+            state._emitVaryingFromString(this._fogDistanceName, NodeMaterialBlockConnectionPointTypes.Vector3);
+            state.compilationString += `${this._fogDistanceName} = (${view.associatedVariableName} * ${worldPos.associatedVariableName}).xyz;\n`;
         }
 
         return this;

@@ -101,7 +101,7 @@ function walkCompilerAstAndFindComments(node: ts.Node, indent: string, notFoundC
     // the same comment twice (e.g. for a MethodDeclaration and its PublicKeyword).
     if (isDeclarationKind(node.kind)) {
         let skip = false;
-        node.modifiers?.forEach((modifier) => {
+        ts.getModifiers(node as ts.HasModifiers)?.forEach((modifier) => {
             if (modifier.kind === ts.SyntaxKind.PrivateKeyword || modifier.kind === ts.SyntaxKind.ProtectedKeyword) {
                 skip = true;
             }
@@ -167,7 +167,7 @@ const plugin: IPlugin = {
                 const tsdocConfiguration: TSDocConfiguration = new TSDocConfiguration();
 
                 try {
-                    const tsdocConfigFile: TSDocConfigFile = ConfigCache.getForSourceFile(sourceFilePath);
+                    const tsdocConfigFile: TSDocConfigFile = ConfigCache.GetForSourceFile(sourceFilePath);
                     if (!tsdocConfigFile.fileNotFound) {
                         if (tsdocConfigFile.hasErrors) {
                             context.report({

@@ -295,7 +295,7 @@ class Walker {
             if (!this._walker) {
                 this._walker = new WalkingTracker(event.leftApex, event.rightApex, event.currentPosition, event.currentStepDirection);
                 this._walker.onFootfall.add(() => {
-                    console.log("Footfall!");
+                    Logger.Log("Footfall!");
                 });
                 this._walker.onMovement.add((event) => {
                     this._walker!.forward.scaleAndAddToRef(0.024 * event.deltaT, this._movement);
@@ -415,7 +415,7 @@ export class WebXRWalkingLocomotion extends WebXRAbstractFeature {
      * Walking locomotion is only compatible with "immersive-vr" sessions.
      * @returns true if compatible, false otherwise
      */
-    public isCompatible(): boolean {
+    public override isCompatible(): boolean {
         return this._sessionManager.sessionMode === undefined || this._sessionManager.sessionMode === "immersive-vr";
     }
 
@@ -424,12 +424,12 @@ export class WebXRWalkingLocomotion extends WebXRAbstractFeature {
      * Typically called automatically by the features manager.
      * @returns true if attach succeeded, false otherwise
      */
-    public attach(): boolean {
+    public override attach(): boolean {
         if (!this.isCompatible || !super.attach()) {
             return false;
         }
 
-        this._walker = new Walker(this._sessionManager.scene.getEngine());
+        this._walker = new Walker(this._sessionManager.scene.getEngine() as Engine);
         return true;
     }
 
@@ -438,7 +438,7 @@ export class WebXRWalkingLocomotion extends WebXRAbstractFeature {
      * Typically called automatically by the features manager.
      * @returns true if detach succeeded, false otherwise
      */
-    public detach(): boolean {
+    public override detach(): boolean {
         if (!super.detach()) {
             return false;
         }

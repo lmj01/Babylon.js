@@ -178,6 +178,8 @@ export class Constants {
     public static readonly TEXTUREFORMAT_DEPTH32FLOAT_STENCIL8 = 18;
     /** Stencil 8 bits */
     public static readonly TEXTUREFORMAT_STENCIL8 = 19;
+    /** UNDEFINED */
+    public static readonly TEXTUREFORMAT_UNDEFINED = 0xffffffff;
 
     /** Compressed BC7 */
     public static readonly TEXTUREFORMAT_COMPRESSED_RGBA_BPTC_UNORM = 36492;
@@ -632,6 +634,8 @@ export class Constants {
     public static readonly BUFFER_CREATIONFLAG_INDEX = 16;
     /** Flag to create a buffer suitable to be used as a storage buffer */
     public static readonly BUFFER_CREATIONFLAG_STORAGE = 32;
+    /** Flag to create a buffer suitable to be used for indirect calls, such as `dispatchIndirect` */
+    public static readonly BUFFER_CREATIONFLAG_INDIRECT = 64;
 
     /**
      * Prefixes used by the engine for sub mesh draw wrappers
@@ -729,10 +733,6 @@ export class Constants {
      */
     public static readonly RIG_MODE_VR = 20;
     /**
-     * Defines that both eyes of the camera should be renderered in a VR mode (webVR).
-     */
-    public static readonly RIG_MODE_WEBVR = 21;
-    /**
      * Custom rig mode allowing rig cameras to be populated manually with any number of cameras
      */
     public static readonly RIG_MODE_CUSTOM = 22;
@@ -785,4 +785,109 @@ export class Constants {
 
     /** URL to the snippet server. Points to the public snippet server by default */
     public static SnippetUrl = "https://snippet.babylonjs.com";
+
+    /** The fog is deactivated */
+    public static FOGMODE_NONE = 0;
+    /** The fog density is following an exponential function */
+    public static FOGMODE_EXP = 1;
+    /** The fog density is following an exponential function faster than FOGMODE_EXP */
+    public static FOGMODE_EXP2 = 2;
+    /** The fog density is following a linear function. */
+    public static FOGMODE_LINEAR = 3;
+
+    /**
+     * The byte type.
+     */
+    public static BYTE = 5120;
+
+    /**
+     * The unsigned byte type.
+     */
+    public static UNSIGNED_BYTE = 5121;
+
+    /**
+     * The short type.
+     */
+    public static SHORT = 5122;
+
+    /**
+     * The unsigned short type.
+     */
+    public static UNSIGNED_SHORT = 5123;
+
+    /**
+     * The integer type.
+     */
+    public static INT = 5124;
+
+    /**
+     * The unsigned integer type.
+     */
+    public static UNSIGNED_INT = 5125;
+
+    /**
+     * The float type.
+     */
+    public static FLOAT = 5126;
+
+    /**
+     * Positions
+     */
+    public static PositionKind = "position";
+    /**
+     * Normals
+     */
+    public static NormalKind = "normal";
+    /**
+     * Tangents
+     */
+    public static TangentKind = "tangent";
+    /**
+     * Texture coordinates
+     */
+    public static UVKind = "uv";
+    /**
+     * Texture coordinates 2
+     */
+    public static UV2Kind = "uv2";
+    /**
+     * Texture coordinates 3
+     */
+    public static UV3Kind = "uv3";
+    /**
+     * Texture coordinates 4
+     */
+    public static UV4Kind = "uv4";
+    /**
+     * Texture coordinates 5
+     */
+    public static UV5Kind = "uv5";
+    /**
+     * Texture coordinates 6
+     */
+    public static UV6Kind = "uv6";
+    /**
+     * Colors
+     */
+    public static ColorKind = "color";
+    /**
+     * Instance Colors
+     */
+    public static ColorInstanceKind = "instanceColor";
+    /**
+     * Matrix indices (for bones)
+     */
+    public static MatricesIndicesKind = "matricesIndices";
+    /**
+     * Matrix weights (for bones)
+     */
+    public static MatricesWeightsKind = "matricesWeights";
+    /**
+     * Additional matrix indices (for bones)
+     */
+    public static MatricesIndicesExtraKind = "matricesIndicesExtra";
+    /**
+     * Additional matrix weights (for bones)
+     */
+    public static MatricesWeightsExtraKind = "matricesWeightsExtra";
 }

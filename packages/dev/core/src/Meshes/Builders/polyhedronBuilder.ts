@@ -25,18 +25,6 @@ import { CompatibilityOptions } from "../../Compat/compatibilityOptions";
  * * sideOrientation optional and takes the values : Mesh.FRONTSIDE (default), Mesh.BACKSIDE or Mesh.DOUBLESIDE
  * * frontUvs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the front side, optional, default vector4 (0, 0, 1, 1)
  * * backUVs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the back side, optional, default vector4 (0, 0, 1, 1)
- * @param options.type
- * @param options.size
- * @param options.sizeX
- * @param options.sizeY
- * @param options.sizeZ
- * @param options.custom
- * @param options.faceUV
- * @param options.faceColors
- * @param options.flat
- * @param options.sideOrientation
- * @param options.frontUVs
- * @param options.backUVs
  * @returns the VertexData of the Polyhedron
  */
 export function CreatePolyhedronVertexData(options: {
@@ -490,14 +478,14 @@ export function CreatePolyhedronVertexData(options: {
     const flat = options.flat === undefined ? true : options.flat;
     const sideOrientation = options.sideOrientation === 0 ? 0 : options.sideOrientation || VertexData.DEFAULTSIDE;
 
-    const positions = new Array<number>();
-    const indices = new Array<number>();
-    const normals = new Array<number>();
-    const uvs = new Array<number>();
-    const colors = new Array<number>();
+    const positions: number[] = [];
+    const indices: number[] = [];
+    const normals: number[] = [];
+    const uvs: number[] = [];
+    const colors: number[] = [];
     let index = 0;
     let faceIdx = 0; // face cursor in the array "indexes"
-    const indexes = new Array<number>();
+    const indexes: number[] = [];
     let i = 0;
     let f = 0;
     let u: number, v: number, ang: number, x: number, y: number, tmp: number;
@@ -587,19 +575,6 @@ export function CreatePolyhedronVertexData(options: {
  * * The mesh can be set to updatable with the boolean parameter `updatable` (default false) if its internal geometry is supposed to change once created
  * @param name defines the name of the mesh
  * @param options defines the options used to create the mesh
- * @param options.type
- * @param options.size
- * @param options.sizeX
- * @param options.sizeY
- * @param options.sizeZ
- * @param options.custom
- * @param options.faceUV
- * @param options.faceColors
- * @param options.flat
- * @param options.updatable
- * @param options.sideOrientation
- * @param options.frontUVs
- * @param options.backUVs
  * @param scene defines the hosting scene
  * @returns the polyhedron mesh
  * @see https://doc.babylonjs.com/features/featuresDeepDive/mesh/creation/polyhedra
@@ -646,7 +621,7 @@ export const PolyhedronBuilder = {
 
 VertexData.CreatePolyhedron = CreatePolyhedronVertexData;
 
-(Mesh as any).CreatePolyhedron = (
+Mesh.CreatePolyhedron = (
     name: string,
     options: {
         type?: number;

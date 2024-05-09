@@ -1,5 +1,5 @@
 import type { Nullable } from "../types";
-import type { ThinEngine } from "../Engines/thinEngine";
+import type { AbstractEngine } from "../Engines/abstractEngine";
 import { VertexBuffer } from "../Buffers/buffer";
 import { Viewport } from "../Maths/math.viewport";
 import { Constants } from "../Engines/constants";
@@ -42,20 +42,23 @@ export class EffectRenderer {
     /**
      * The engine the effect renderer has been created for.
      */
-    public readonly engine: ThinEngine;
+    public readonly engine: AbstractEngine;
 
     private _vertexBuffers: { [key: string]: VertexBuffer };
     private _indexBuffer: DataBuffer;
 
     private _fullscreenViewport = new Viewport(0, 0, 1, 1);
-    private _onContextRestoredObserver: Nullable<Observer<ThinEngine>>;
+    private _onContextRestoredObserver: Nullable<Observer<AbstractEngine>>;
+
+    private _savedStateDepthTest: boolean;
+    private _savedStateStencilTest: boolean;
 
     /**
      * Creates an effect renderer
      * @param engine the engine to use for rendering
      * @param options defines the options of the effect renderer
      */
-    constructor(engine: ThinEngine, options: IEffectRendererOptions = defaultOptions) {
+    constructor(engine: AbstractEngine, options: IEffectRendererOptions = defaultOptions) {
         const positions = options.positions ?? defaultOptions.positions;
         const indices = options.indices ?? defaultOptions.indices;
 
@@ -107,11 +110,19 @@ export class EffectRenderer {
     }
 
     /**
+     * Saves engine states
+     */
+    public saveStates(): void {
+        this._savedStateDepthTest = this.engine.depthCullingState.depthTest;
+        this._savedStateStencilTest = this.engine.stencilState.stencilTest;
+    }
+
+    /**
      * Restores engine states
      */
     public restoreStates(): void {
-        this.engine.depthCullingState.depthTest = true;
-        this.engine.stencilState.stencilTest = true;
+        this.engine.depthCullingState.depthTest = this._savedStateDepthTest;
+        this.engine.stencilState.stencilTest = this._savedStateStencilTest;
     }
 
     /**
@@ -135,6 +146,8 @@ export class EffectRenderer {
         if (!effectWrapper.effect.isReady()) {
             return;
         }
+
+        this.saveStates();
 
         // Reset state
         this.setViewport();
@@ -184,7 +197,7 @@ interface EffectWrapperCreationOptions {
     /**
      * Engine to use to create the effect
      */
-    engine: ThinEngine;
+    engine: AbstractEngine;
     /**
      * Fragment shader for the effect
      */
@@ -249,7 +262,7 @@ export class EffectWrapper {
     /** @internal */
     public _drawWrapper: DrawWrapper;
 
-    private _onContextRestoredObserver: Nullable<Observer<ThinEngine>>;
+    private _onContextRestoredObserver: Nullable<Observer<AbstractEngine>>;
 
     /**
      * Creates an effect to be renderer
@@ -323,7 +336,6 @@ export class EffectWrapper {
 
             this._onContextRestoredObserver = creationOptions.engine.onContextRestoredObservable.add(() => {
                 this.effect._pipelineContext = null; // because _prepareEffect will try to dispose this pipeline before recreating it and that would lead to webgl errors
-                this.effect._wasPreviouslyReady = false;
                 this.effect._prepareEffect();
             });
         }

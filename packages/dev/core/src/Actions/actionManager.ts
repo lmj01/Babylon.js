@@ -147,7 +147,7 @@ export class ActionManager extends AbstractActionManager {
      * Releases all associated resources
      */
     public dispose(): void {
-        const index = this._scene.actionManagers.indexOf(this);
+        const sceneIndex = this._scene.actionManagers.indexOf(this);
 
         for (let i = 0; i < this.actions.length; i++) {
             const action = this.actions[i];
@@ -157,8 +157,15 @@ export class ActionManager extends AbstractActionManager {
             }
         }
 
-        if (index > -1) {
-            this._scene.actionManagers.splice(index, 1);
+        this.actions.length = 0;
+
+        if (sceneIndex > -1) {
+            this._scene.actionManagers.splice(sceneIndex, 1);
+        }
+
+        const ownerMeshes = this._scene.meshes.filter((m) => m.actionManager === this);
+        for (const ownerMesh of ownerMeshes) {
+            ownerMesh.actionManager = null;
         }
     }
 
@@ -470,7 +477,7 @@ export class ActionManager extends AbstractActionManager {
             }
 
             // Parameters with multiple values such as Vector3 etc.
-            const split = new Array<number>();
+            const split: number[] = [];
             for (let i = 0; i < values.length; i++) {
                 split.push(parseFloat(values[i]));
             }
@@ -500,7 +507,7 @@ export class ActionManager extends AbstractActionManager {
                 return;
             }
 
-            const parameters = new Array<any>();
+            const parameters: any[] = [];
             let target: any = null;
             let propertyPath: Nullable<string> = null;
             const combine = parsedAction.combine && parsedAction.combine.length > 0;
@@ -513,7 +520,7 @@ export class ActionManager extends AbstractActionManager {
             }
 
             if (combine) {
-                const actions = new Array<Action>();
+                const actions: Action[] = [];
                 for (let j = 0; j < parsedAction.combine.length; j++) {
                     traverse(parsedAction.combine[j], ActionManager.NothingTrigger, condition, action, actions);
                 }

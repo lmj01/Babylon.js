@@ -1,10 +1,18 @@
 const path = require("path");
+const webpackTools = require("@dev/build-tools").webpackTools;
 
 module.exports = (env) => {
     const commonConfig = {
-        mode: env.production ? "production" : "development",
         entry: "./src/index.ts",
-        devtool: env.production ? "source-map" : "eval-cheap-module-source-map",
+        ...webpackTools.commonDevWebpackConfiguration(
+            {
+                mode: env.mode,
+            },
+            {
+                post: 1339,
+                static: ["public"],
+            }
+        ),
         output: {
             path: path.resolve(__dirname, "dist"),
             filename: "babylon.viewer.assets.js",
@@ -47,17 +55,6 @@ module.exports = (env) => {
                     },
                 },
             ],
-        },
-        devServer: {
-            static: {
-                directory: path.join(__dirname, "public"),
-                watch: false,
-            },
-            hot: false,
-            port: 1339,
-            headers: {
-                "Access-Control-Allow-Origin": "*",
-            },
         },
         plugins: [],
     };

@@ -1,6 +1,5 @@
 import type { Nullable, IndicesArray, DeepImmutable, FloatArray } from "../types";
 import type { Matrix, Vector3 } from "../Maths/math.vector";
-import type { Engine } from "../Engines/engine";
 import { VertexBuffer } from "../Buffers/buffer";
 import { IntersectionInfo } from "../Collisions/intersectionInfo";
 import type { ICullable } from "../Culling/boundingInfo";
@@ -13,20 +12,21 @@ import type { Plane } from "../Maths/math.plane";
 import { DrawWrapper } from "../Materials/drawWrapper";
 import type { IMaterialContext } from "../Engines/IMaterialContext";
 
-declare type Collider = import("../Collisions/collider").Collider;
-declare type Material = import("../Materials/material").Material;
-declare type MaterialDefines = import("../Materials/materialDefines").MaterialDefines;
-declare type MultiMaterial = import("../Materials/multiMaterial").MultiMaterial;
-declare type AbstractMesh = import("./abstractMesh").AbstractMesh;
-declare type Mesh = import("./mesh").Mesh;
-declare type Ray = import("../Culling/ray").Ray;
-declare type TrianglePickingPredicate = import("../Culling/ray").TrianglePickingPredicate;
+import type { Collider } from "../Collisions/collider";
+import type { Material } from "../Materials/material";
+import type { MaterialDefines } from "../Materials/materialDefines";
+import type { MultiMaterial } from "../Materials/multiMaterial";
+import type { AbstractMesh } from "./abstractMesh";
+import type { Mesh } from "./mesh";
+import type { Ray } from "../Culling/ray";
+import type { TrianglePickingPredicate } from "../Culling/ray";
+import type { AbstractEngine } from "core/Engines/abstractEngine";
 
 /**
  * Defines a subdivision inside a mesh
  */
 export class SubMesh implements ICullable {
-    private _engine: Engine;
+    private _engine: AbstractEngine;
     /** @internal */
     public _drawWrappers: Array<DrawWrapper>; // index in this array = pass id
     private _mainDrawWrapperOverride: Nullable<DrawWrapper> = null;
@@ -240,7 +240,7 @@ export class SubMesh implements ICullable {
      * @returns current bounding info (or mesh's one if the submesh is global)
      */
     public getBoundingInfo(): BoundingInfo {
-        if (this.IsGlobal) {
+        if (this.IsGlobal || this._mesh.hasThinInstances) {
             return this._mesh.getBoundingInfo();
         }
 
@@ -431,7 +431,7 @@ export class SubMesh implements ICullable {
     /**
      * @internal
      */
-    public _getLinesIndexBuffer(indices: IndicesArray, engine: Engine): DataBuffer {
+    public _getLinesIndexBuffer(indices: IndicesArray, engine: AbstractEngine): DataBuffer {
         if (!this._linesIndexBuffer) {
             const linesIndices = [];
 

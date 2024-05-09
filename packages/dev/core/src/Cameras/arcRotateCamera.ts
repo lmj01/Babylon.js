@@ -2,7 +2,7 @@ import { serialize, serializeAsVector3, serializeAsMeshReference, serializeAsVec
 import { Observable } from "../Misc/observable";
 import type { Nullable } from "../types";
 import type { Scene } from "../scene";
-import { Matrix, Vector3, Vector2 } from "../Maths/math.vector";
+import { Matrix, Vector3, Vector2, TmpVectors } from "../Maths/math.vector";
 import { Node } from "../node";
 import type { AbstractMesh } from "../Meshes/abstractMesh";
 import { Mesh } from "../Meshes/mesh";
@@ -17,8 +17,10 @@ import type { ArcRotateCameraMouseWheelInput } from "../Cameras/Inputs/arcRotate
 import { ArcRotateCameraInputsManager } from "../Cameras/arcRotateCameraInputsManager";
 import { Epsilon } from "../Maths/math.constants";
 import { Tools } from "../Misc/tools";
+import { RegisterClass } from "../Misc/typeStore";
 
-declare type Collider = import("../Collisions/collider").Collider;
+import type { Collider } from "../Collisions/collider";
+import type { TransformNode } from "core/Meshes/transformNode";
 
 Node.AddNodeConstructor("ArcRotateCamera", (name, scene) => {
     return () => new ArcRotateCamera(name, 0, 0, 1.0, Vector3.Zero(), scene);
@@ -60,28 +62,28 @@ export class ArcRotateCamera extends TargetCamera {
     @serializeAsVector3("target")
     protected _target: Vector3;
     @serializeAsMeshReference("targetHost")
-    protected _targetHost: Nullable<AbstractMesh>;
+    protected _targetHost: Nullable<TransformNode>;
 
     /**
      * Defines the target point of the camera.
      * The camera looks towards it from the radius distance.
      */
-    public get target(): Vector3 {
+    public override get target(): Vector3 {
         return this._target;
     }
-    public set target(value: Vector3) {
+    public override set target(value: Vector3) {
         this.setTarget(value);
     }
 
     /**
-     * Defines the target mesh of the camera.
+     * Defines the target transform node of the camera.
      * The camera looks towards it from the radius distance.
      * Please note that setting a target host will disable panning.
      */
-    public get targetHost(): Nullable<AbstractMesh> {
+    public get targetHost(): Nullable<TransformNode> {
         return this._targetHost;
     }
-    public set targetHost(value: Nullable<AbstractMesh>) {
+    public set targetHost(value: Nullable<TransformNode>) {
         if (value) {
             this.setTarget(value);
         }
@@ -91,18 +93,18 @@ export class ArcRotateCamera extends TargetCamera {
      * Return the current target position of the camera. This value is expressed in local space.
      * @returns the target position
      */
-    public getTarget(): Vector3 {
+    public override getTarget(): Vector3 {
         return this.target;
     }
 
     /**
      * Define the current local position of the camera in the scene
      */
-    public get position(): Vector3 {
+    public override get position(): Vector3 {
         return this._position;
     }
 
-    public set position(newPosition: Vector3) {
+    public override set position(newPosition: Vector3) {
         this.setPosition(newPosition);
     }
 
@@ -114,7 +116,7 @@ export class ArcRotateCamera extends TargetCamera {
      * Setting this will copy the given vector to the camera's upVector, and set rotation matrices to and from Y up.
      * DO NOT set the up vector using copyFrom or copyFromFloats, as this bypasses setting the above matrices.
      */
-    set upVector(vec: Vector3) {
+    override set upVector(vec: Vector3) {
         if (!this._upToYMatrix) {
             this._yToUpMatrix = new Matrix();
             this._upToYMatrix = new Matrix();
@@ -127,7 +129,7 @@ export class ArcRotateCamera extends TargetCamera {
         this.setMatUp();
     }
 
-    get upVector() {
+    override get upVector() {
         return this._upVector;
     }
 
@@ -306,7 +308,7 @@ export class ArcRotateCamera extends TargetCamera {
 
     /**
      * Gets or Set the pointer pinch delta percentage or how fast is the camera zooming.
-     * It will be used instead of pinchDeltaPrecision if different from 0.
+     * It will be used instead of pinchPrecision if different from 0.
      * It defines the percentage of current camera.radius to use as delta when pinch zoom is used.
      */
     public get pinchDeltaPercentage(): number {
@@ -485,8 +487,8 @@ export class ArcRotateCamera extends TargetCamera {
 
     /**
      * Gets or Set the mouse wheel delta percentage or how fast is the camera zooming.
-     * It will be used instead of pinchDeltaPrecision if different from 0.
-     * It defines the percentage of current camera.radius to use as delta when pinch zoom is used.
+     * It will be used instead of wheelPrecision if different from 0.
+     * It defines the percentage of current camera.radius to use as delta when wheel zoom is used.
      */
     public get wheelDeltaPercentage(): number {
         const mousewheel = <ArcRotateCameraMouseWheelInput>this.inputs.attached["mousewheel"];
@@ -532,7 +534,7 @@ export class ArcRotateCamera extends TargetCamera {
     public useInputToRestoreState = true;
 
     /** @internal */
-    public _viewMatrix = new Matrix();
+    public override _viewMatrix = new Matrix();
     /** @internal */
     public _useCtrlForPanning: boolean;
     /** @internal */
@@ -541,10 +543,10 @@ export class ArcRotateCamera extends TargetCamera {
     /**
      * Defines the input associated to the camera.
      */
-    public inputs: ArcRotateCameraInputsManager;
+    public override inputs: ArcRotateCameraInputsManager;
 
     /** @internal */
-    public _reset: () => void;
+    public override _reset: () => void;
 
     /**
      * Defines the allowed panning axis.
@@ -655,9 +657,9 @@ export class ArcRotateCamera extends TargetCamera {
     }
 
     /**
-     * Observable triggered when the mesh target has been changed on the camera.
+     * Observable triggered when the transform node target has been changed on the camera.
      */
-    public onMeshTargetChangedObservable = new Observable<Nullable<AbstractMesh>>();
+    public onMeshTargetChangedObservable = new Observable<Nullable<TransformNode>>();
 
     /**
      * Event raised when the camera is colliding with a mesh.
@@ -720,7 +722,7 @@ export class ArcRotateCamera extends TargetCamera {
 
     // Cache
     /** @internal */
-    public _initCache(): void {
+    public override _initCache(): void {
         super._initCache();
         this._cache._target = new Vector3(Number.MAX_VALUE, Number.MAX_VALUE, Number.MAX_VALUE);
         this._cache.alpha = undefined;
@@ -732,7 +734,7 @@ export class ArcRotateCamera extends TargetCamera {
     /**
      * @internal
      */
-    public _updateCache(ignoreParentClass?: boolean): void {
+    public override _updateCache(ignoreParentClass?: boolean): void {
         if (!ignoreParentClass) {
             super._updateCache();
         }
@@ -773,7 +775,7 @@ export class ArcRotateCamera extends TargetCamera {
      * Stores the current state of the camera (alpha, beta, radius and target)
      * @returns the camera itself
      */
-    public storeState(): Camera {
+    public override storeState(): Camera {
         this._storedAlpha = this.alpha;
         this._storedBeta = this.beta;
         this._storedRadius = this.radius;
@@ -787,7 +789,7 @@ export class ArcRotateCamera extends TargetCamera {
      * @internal
      * Restored camera state. You must call storeState() first
      */
-    public _restoreStateValues(): boolean {
+    public override _restoreStateValues(): boolean {
         if (!super._restoreStateValues()) {
             return false;
         }
@@ -809,7 +811,7 @@ export class ArcRotateCamera extends TargetCamera {
 
     // Synchronized
     /** @internal */
-    public _isSynchronizedViewMatrix(): boolean {
+    public override _isSynchronizedViewMatrix(): boolean {
         if (!super._isSynchronizedViewMatrix()) {
             return false;
         }
@@ -827,33 +829,33 @@ export class ArcRotateCamera extends TargetCamera {
      * Attach the input controls to a specific dom element to get the input from.
      * @param noPreventDefault Defines whether event caught by the controls should call preventdefault() (https://developer.mozilla.org/en-US/docs/Web/API/Event/preventDefault)
      */
-    public attachControl(noPreventDefault?: boolean): void;
+    public override attachControl(noPreventDefault?: boolean): void;
     /**
      * Attach the input controls to a specific dom element to get the input from.
      * @param ignored defines an ignored parameter kept for backward compatibility.
      * @param noPreventDefault Defines whether event caught by the controls should call preventdefault() (https://developer.mozilla.org/en-US/docs/Web/API/Event/preventDefault)
      */
-    public attachControl(ignored: any, noPreventDefault?: boolean): void;
+    public override attachControl(ignored: any, noPreventDefault?: boolean): void;
     /**
      * Attached controls to the current camera.
      * @param noPreventDefault Defines whether event caught by the controls should call preventdefault() (https://developer.mozilla.org/en-US/docs/Web/API/Event/preventDefault)
      * @param useCtrlForPanning  Defines whether ctrl is used for panning within the controls
      */
-    public attachControl(noPreventDefault: boolean, useCtrlForPanning: boolean): void;
+    public override attachControl(noPreventDefault: boolean, useCtrlForPanning: boolean): void;
     /**
      * Attached controls to the current camera.
      * @param ignored defines an ignored parameter kept for backward compatibility.
      * @param noPreventDefault Defines whether event caught by the controls should call preventdefault() (https://developer.mozilla.org/en-US/docs/Web/API/Event/preventDefault)
      * @param useCtrlForPanning  Defines whether ctrl is used for panning within the controls
      */
-    public attachControl(ignored: any, noPreventDefault: boolean, useCtrlForPanning: boolean): void;
+    public override attachControl(ignored: any, noPreventDefault: boolean, useCtrlForPanning: boolean): void;
     /**
      * Attached controls to the current camera.
      * @param noPreventDefault Defines whether event caught by the controls should call preventdefault() (https://developer.mozilla.org/en-US/docs/Web/API/Event/preventDefault)
      * @param useCtrlForPanning  Defines whether ctrl is used for panning within the controls
      * @param panningMouseButton Defines whether panning is allowed through mouse click button
      */
-    public attachControl(noPreventDefault: boolean, useCtrlForPanning: boolean, panningMouseButton: number): void;
+    public override attachControl(noPreventDefault: boolean, useCtrlForPanning: boolean, panningMouseButton: number): void;
     /**
      * Attached controls to the current camera.
      * @param ignored defines an ignored parameter kept for backward compatibility.
@@ -861,7 +863,7 @@ export class ArcRotateCamera extends TargetCamera {
      * @param useCtrlForPanning  Defines whether ctrl is used for panning within the controls
      * @param panningMouseButton Defines whether panning is allowed through mouse click button
      */
-    public attachControl(ignored: any, noPreventDefault?: boolean, useCtrlForPanning: boolean | number = true, panningMouseButton: number = 2): void {
+    public override attachControl(ignored: any, noPreventDefault?: boolean, useCtrlForPanning: boolean | number = true, panningMouseButton: number = 2): void {
         // eslint-disable-next-line prefer-rest-params
         const args = arguments;
 
@@ -892,7 +894,7 @@ export class ArcRotateCamera extends TargetCamera {
     /**
      * Detach the current controls from the specified dom element.
      */
-    public detachControl(): void {
+    public override detachControl(): void {
         this.inputs.detachElement();
 
         if (this._reset) {
@@ -901,7 +903,7 @@ export class ArcRotateCamera extends TargetCamera {
     }
 
     /** @internal */
-    public _checkInputs(): void {
+    public override _checkInputs(): void {
         //if (async) collision inspection was triggered, don't update the camera's position - until the collision callback was called.
         if (this._collisionTriggered) {
             return;
@@ -911,18 +913,14 @@ export class ArcRotateCamera extends TargetCamera {
         // Inertia
         if (this.inertialAlphaOffset !== 0 || this.inertialBetaOffset !== 0 || this.inertialRadiusOffset !== 0) {
             const directionModifier = this.invertRotation ? -1 : 1;
-            let inertialAlphaOffset = this.inertialAlphaOffset;
-            if (this.beta <= 0) {
-                inertialAlphaOffset *= -1;
-            }
-            if (this.getScene().useRightHandedSystem) {
-                inertialAlphaOffset *= -1;
-            }
-            if (this.parent && this.parent._getWorldMatrixDeterminant() < 0) {
-                inertialAlphaOffset *= -1;
-            }
-            this.alpha += inertialAlphaOffset * directionModifier;
+            const handednessMultiplier = this._calculateHandednessMultiplier();
+            let inertialAlphaOffset = this.inertialAlphaOffset * handednessMultiplier;
 
+            if (this.beta < 0) {
+                inertialAlphaOffset *= -1;
+            }
+
+            this.alpha += inertialAlphaOffset * directionModifier;
             this.beta += this.inertialBetaOffset * directionModifier;
 
             this.radius -= this.inertialRadiusOffset;
@@ -947,8 +945,14 @@ export class ArcRotateCamera extends TargetCamera {
             this._viewMatrix.invertToRef(this._cameraTransformMatrix);
             localDirection.multiplyInPlace(this.panningAxis);
             Vector3.TransformNormalToRef(localDirection, this._cameraTransformMatrix, this._transformedDirection);
-            // Eliminate y if mapPanning is enabled
-            if (this.mapPanning || !this.panningAxis.y) {
+
+            // If mapPanning is enabled, we need to take the upVector into account and
+            // make sure we're not panning in the y direction
+            if (this.mapPanning) {
+                const up = this.upVector;
+                const right = Vector3.CrossToRef(this._transformedDirection, up, this._transformedDirection);
+                Vector3.CrossToRef(up, right, this._transformedDirection);
+            } else if (!this.panningAxis.y) {
                 this._transformedDirection.y = 0;
             }
 
@@ -960,6 +964,12 @@ export class ArcRotateCamera extends TargetCamera {
                         this._target.copyFrom(this._transformedDirection);
                     }
                 } else {
+                    if (this.parent) {
+                        const m = TmpVectors.Matrix[0];
+                        this.parent.getWorldMatrix().getRotationMatrixToRef(m);
+                        m.transposeToRef(m);
+                        Vector3.TransformCoordinatesToRef(this._transformedDirection, m, this._transformedDirection);
+                    }
                     this._target.addInPlace(this._transformedDirection);
                 }
             }
@@ -1076,22 +1086,22 @@ export class ArcRotateCamera extends TargetCamera {
      * Defines the target the camera should look at.
      * This will automatically adapt alpha beta and radius to fit within the new target.
      * Please note that setting a target as a mesh will disable panning.
-     * @param target Defines the new target as a Vector or a mesh
+     * @param target Defines the new target as a Vector or a transform node
      * @param toBoundingCenter In case of a mesh target, defines whether to target the mesh position or its bounding information center
      * @param allowSamePosition If false, prevents reapplying the new computed position if it is identical to the current one (optim)
      * @param cloneAlphaBetaRadius If true, replicate the current setup (alpha, beta, radius) on the new target
      */
-    public setTarget(target: AbstractMesh | Vector3, toBoundingCenter = false, allowSamePosition = false, cloneAlphaBetaRadius = false): void {
+    public override setTarget(target: TransformNode | Vector3, toBoundingCenter = false, allowSamePosition = false, cloneAlphaBetaRadius = false): void {
         cloneAlphaBetaRadius = this.overrideCloneAlphaBetaRadius ?? cloneAlphaBetaRadius;
 
-        if ((<any>target).getBoundingInfo) {
-            if (toBoundingCenter) {
+        if ((target as TransformNode).computeWorldMatrix) {
+            if (toBoundingCenter && (<any>target).getBoundingInfo) {
                 this._targetBoundingCenter = (<any>target).getBoundingInfo().boundingBox.centerWorld.clone();
             } else {
                 this._targetBoundingCenter = null;
             }
-            (<AbstractMesh>target).computeWorldMatrix();
-            this._targetHost = <AbstractMesh>target;
+            (<TransformNode>target).computeWorldMatrix();
+            this._targetHost = <TransformNode>target;
             this._target = this._getTargetPosition();
 
             this.onMeshTargetChangedObservable.notifyObservers(this._targetHost);
@@ -1113,7 +1123,7 @@ export class ArcRotateCamera extends TargetCamera {
     }
 
     /** @internal */
-    public _getViewMatrix(): Matrix {
+    public override _getViewMatrix(): Matrix {
         // Compute
         const cosa = Math.cos(this.alpha);
         const sina = Math.sin(this.alpha);
@@ -1211,8 +1221,10 @@ export class ArcRotateCamera extends TargetCamera {
         meshes = meshes || this.getScene().meshes;
 
         const minMaxVector = Mesh.MinMax(meshes);
-        const distance = Vector3.Distance(minMaxVector.min, minMaxVector.max);
+        let distance = this._calculateLowerRadiusFromModelBoundingSphere(minMaxVector.min, minMaxVector.max);
 
+        // If there are defined limits, we need to take them into account
+        distance = Math.max(Math.min(distance, this.upperRadiusLimit || Number.MAX_VALUE), this.lowerRadiusLimit || 0);
         this.radius = distance * this.zoomOnFactor;
 
         this.focusOn({ min: minMaxVector.min, max: minMaxVector.max, distance: distance }, doNotUpdateMaxZ);
@@ -1250,8 +1262,10 @@ export class ArcRotateCamera extends TargetCamera {
     /**
      * @override
      * Override Camera.createRigCamera
+     * @param name the name of the camera
+     * @param cameraIndex the index of the camera in the rig cameras array
      */
-    public createRigCamera(name: string, cameraIndex: number): Camera {
+    public override createRigCamera(name: string, cameraIndex: number): Camera {
         let alphaShift: number = 0;
         switch (this.cameraRigMode) {
             case Camera.RIG_MODE_STEREOSCOPIC_ANAGLYPH:
@@ -1285,7 +1299,7 @@ export class ArcRotateCamera extends TargetCamera {
      * @override
      * Override Camera._updateRigCameras
      */
-    public _updateRigCameras() {
+    public override _updateRigCameras() {
         const camLeft = <ArcRotateCamera>this._rigCameras[0];
         const camRight = <ArcRotateCamera>this._rigCameras[1];
 
@@ -1309,9 +1323,32 @@ export class ArcRotateCamera extends TargetCamera {
     }
 
     /**
+     * @internal
+     */
+    public _calculateLowerRadiusFromModelBoundingSphere(minimumWorld: Vector3, maximumWorld: Vector3, radiusScale: number = 1): number {
+        const boxVectorGlobalDiagonal = Vector3.Distance(minimumWorld, maximumWorld);
+
+        // Get aspect ratio in order to calculate frustum slope
+        const engine = this.getScene().getEngine();
+        const aspectRatio = engine.getAspectRatio(this);
+        const frustumSlopeY = Math.tan(this.fov / 2);
+        const frustumSlopeX = frustumSlopeY * aspectRatio;
+
+        // Formula for setting distance
+        // (Good explanation: http://stackoverflow.com/questions/2866350/move-camera-to-fit-3d-scene)
+        const radiusWithoutFraming = boxVectorGlobalDiagonal * 0.5;
+
+        // Horizon distance
+        const radius = radiusWithoutFraming * radiusScale;
+        const distanceForHorizontalFrustum = radius * Math.sqrt(1.0 + 1.0 / (frustumSlopeX * frustumSlopeX));
+        const distanceForVerticalFrustum = radius * Math.sqrt(1.0 + 1.0 / (frustumSlopeY * frustumSlopeY));
+        return Math.max(distanceForHorizontalFrustum, distanceForVerticalFrustum);
+    }
+
+    /**
      * Destroy the camera and release the current resources hold by it.
      */
-    public dispose(): void {
+    public override dispose(): void {
         this.inputs.clear();
         super.dispose();
     }
@@ -1320,7 +1357,10 @@ export class ArcRotateCamera extends TargetCamera {
      * Gets the current object class name.
      * @returns the class name
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "ArcRotateCamera";
     }
 }
+
+// Register Class Name
+RegisterClass("BABYLON.ArcRotateCamera", ArcRotateCamera);

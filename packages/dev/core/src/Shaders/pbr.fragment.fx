@@ -321,7 +321,7 @@ void main(void) {
         #ifdef SHEEN_TEXTURE
             vec4 sheenMapData = texture2D(sheenSampler, vSheenUV + uvOffset);
         #endif
-        #if defined(SHEEN_ROUGHNESS) && defined(SHEEN_TEXTURE_ROUGHNESS) && !defined(SHEEN_TEXTURE_ROUGHNESS_IDENTICAL) && !defined(SHEEN_USE_ROUGHNESS_FROM_MAINTEXTURE)
+        #if defined(SHEEN_ROUGHNESS) && defined(SHEEN_TEXTURE_ROUGHNESS) && !defined(SHEEN_USE_ROUGHNESS_FROM_MAINTEXTURE)
             vec4 sheenMapRoughnessData = texture2D(sheenRoughnessSampler, vSheenRoughnessUV + uvOffset) * vSheenInfos.w;
         #endif
 
@@ -329,7 +329,7 @@ void main(void) {
             vSheenColor,
         #ifdef SHEEN_ROUGHNESS
             vSheenRoughness,
-            #if defined(SHEEN_TEXTURE_ROUGHNESS) && !defined(SHEEN_TEXTURE_ROUGHNESS_IDENTICAL) && !defined(SHEEN_USE_ROUGHNESS_FROM_MAINTEXTURE)
+            #if defined(SHEEN_TEXTURE_ROUGHNESS) && !defined(SHEEN_USE_ROUGHNESS_FROM_MAINTEXTURE)
                 sheenMapRoughnessData,
             #endif
         #endif
@@ -423,7 +423,7 @@ void main(void) {
     clearcoatOutParams clearcoatOut;
 
     #ifdef CLEARCOAT
-        #if defined(CLEARCOAT_TEXTURE_ROUGHNESS) && !defined(CLEARCOAT_TEXTURE_ROUGHNESS_IDENTICAL) && !defined(CLEARCOAT_USE_ROUGHNESS_FROM_MAINTEXTURE)
+        #if defined(CLEARCOAT_TEXTURE_ROUGHNESS) && !defined(CLEARCOAT_USE_ROUGHNESS_FROM_MAINTEXTURE)
             vec4 clearCoatMapRoughnessData = texture2D(clearCoatRoughnessSampler, vClearCoatRoughnessUV + uvOffset) * vClearCoatInfos.w;
         #endif
 
@@ -440,7 +440,7 @@ void main(void) {
             geometricNormalW,
             viewDirectionW,
             vClearCoatParams,
-            #if defined(CLEARCOAT_TEXTURE_ROUGHNESS) && !defined(CLEARCOAT_TEXTURE_ROUGHNESS_IDENTICAL) && !defined(CLEARCOAT_USE_ROUGHNESS_FROM_MAINTEXTURE)
+            #if defined(CLEARCOAT_TEXTURE_ROUGHNESS) && !defined(CLEARCOAT_USE_ROUGHNESS_FROM_MAINTEXTURE)
                 clearCoatMapRoughnessData,
             #endif
             specularEnvironmentR0,
@@ -518,6 +518,10 @@ void main(void) {
             vec4 translucencyIntensityMap = texture2D(translucencyIntensitySampler, vTranslucencyIntensityUV + uvOffset);
         #endif
 
+        #ifdef SS_TRANSLUCENCYCOLOR_TEXTURE
+            vec4 translucencyColorMap = texture2D(translucencyColorSampler, vTranslucencyColorUV + uvOffset);
+        #endif
+
         subSurfaceBlock(
             vSubSurfaceIntensity,
             vThicknessParam,
@@ -586,9 +590,16 @@ void main(void) {
                 vRefractionPosition,
                 vRefractionSize,
             #endif
+            #ifdef SS_DISPERSION
+                dispersion,
+            #endif
         #endif
         #ifdef SS_TRANSLUCENCY
             vDiffusionDistance,
+            vTranslucencyColor,
+            #ifdef SS_TRANSLUCENCYCOLOR_TEXTURE
+                translucencyColorMap,
+            #endif
         #endif
             subSurfaceOut
         );
@@ -671,7 +682,11 @@ void main(void) {
     #endif
 
     #ifdef PREPASS_NORMAL
-        gl_FragData[PREPASS_NORMAL_INDEX] = vec4(normalize((view * vec4(normalW, 0.0)).rgb), writeGeometryInfo); // Normal
+        #ifdef PREPASS_NORMAL_WORLDSPACE
+            gl_FragData[PREPASS_NORMAL_INDEX] = vec4(normalW, writeGeometryInfo); // Normal
+        #else
+            gl_FragData[PREPASS_NORMAL_INDEX] = vec4(normalize((view * vec4(normalW, 0.0)).rgb), writeGeometryInfo); // Normal
+        #endif
     #endif
 
     #ifdef PREPASS_ALBEDO_SQRT

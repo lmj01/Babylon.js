@@ -5,6 +5,7 @@ import { HexColor } from "./hexColor";
 import type { LockObject } from "../tabs/propertyGrids/lockObject";
 
 import "./colorPicker.scss";
+import { Logger } from "core/Misc/logger";
 
 /**
  * Interface used to specify creation options for color picker
@@ -45,7 +46,7 @@ export class ColorPicker extends React.Component<IColorPickerProps, IColorPicker
         this._hueRef = React.createRef();
     }
 
-    shouldComponentUpdate(nextProps: IColorPickerProps, nextState: IColorPickerState) {
+    override shouldComponentUpdate(nextProps: IColorPickerProps, nextState: IColorPickerState) {
         return nextProps.color.toHexString() !== this.props.color.toHexString() || nextState.color.toHexString() !== this.props.color.toHexString();
     }
 
@@ -95,8 +96,8 @@ export class ColorPicker extends React.Component<IColorPickerProps, IColorPicker
         const value = Math.min(1, Math.max(0.0001, 1 - top / this._saturationRef.current!.clientHeight));
 
         if (this.props.debugMode) {
-            console.log("Saturation: " + saturation);
-            console.log("Value: " + value);
+            Logger.Log("Saturation: " + saturation);
+            Logger.Log("Value: " + value);
         }
 
         const hsv = this.state.color.toHSV();
@@ -113,7 +114,7 @@ export class ColorPicker extends React.Component<IColorPickerProps, IColorPicker
         const hue = 360 * Math.min(0.9999, Math.max(0.0001, left / this._hueRef.current!.clientWidth));
 
         if (this.props.debugMode) {
-            console.log("Hue: " + hue);
+            Logger.Log("Hue: " + hue);
         }
 
         const hsv = this.state.color.toHSV();
@@ -121,7 +122,7 @@ export class ColorPicker extends React.Component<IColorPickerProps, IColorPicker
         this.setState({ color: this.state.color });
     }
 
-    componentDidUpdate() {
+    override componentDidUpdate() {
         this.raiseOnColorChanged();
     }
 
@@ -141,7 +142,7 @@ export class ColorPicker extends React.Component<IColorPickerProps, IColorPicker
         this.props.onColorChanged(this.state.color.clone());
     }
 
-    public render() {
+    public override render() {
         const color4 = Color4.FromColor3(this.state.color);
         color4.a = this.state.alpha;
         const colorHex = color4.toHexString();

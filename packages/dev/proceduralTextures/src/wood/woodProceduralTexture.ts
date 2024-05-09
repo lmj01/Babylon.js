@@ -1,4 +1,5 @@
-import { serialize, serializeAsColor3, SerializationHelper } from "core/Misc/decorators";
+import { serialize, serializeAsColor3 } from "core/Misc/decorators";
+import { SerializationHelper } from "core/Misc/decorators.serialization";
 import { Color3 } from "core/Maths/math.color";
 import type { Texture } from "core/Materials/Textures/texture";
 import { ProceduralTexture } from "core/Materials/Textures/Procedurals/proceduralTexture";
@@ -45,7 +46,7 @@ export class WoodProceduralTexture extends ProceduralTexture {
      * Serializes this wood procedural texture
      * @returns a serialized wood procedural texture object
      */
-    public serialize(): any {
+    public override serialize(): any {
         const serializationObject = SerializationHelper.Serialize(this, super.serialize());
         serializationObject.customType = "BABYLON.WoodProceduralTexture";
 
@@ -59,7 +60,7 @@ export class WoodProceduralTexture extends ProceduralTexture {
      * @param rootUrl defines the root URL containing wood procedural texture information
      * @returns a parsed Wood Procedural Texture
      */
-    public static Parse(parsedTexture: any, scene: Scene, rootUrl: string): WoodProceduralTexture {
+    public static override Parse(parsedTexture: any, scene: Scene, rootUrl: string): WoodProceduralTexture {
         const texture = SerializationHelper.Parse(
             () => new WoodProceduralTexture(parsedTexture.name, parsedTexture._size, scene, undefined, parsedTexture._generateMipMaps),
             parsedTexture,

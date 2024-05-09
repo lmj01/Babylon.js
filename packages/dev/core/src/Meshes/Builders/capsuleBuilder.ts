@@ -20,11 +20,11 @@ export function CreateCapsuleVertexData(
         capSubdivisions: 6,
     }
 ): VertexData {
-    const subdivisions = Math.max(options.subdivisions ? options.subdivisions : 2, 1);
-    const tessellation = Math.max(options.tessellation ? options.tessellation : 16, 3);
+    const subdivisions = Math.max(options.subdivisions ? options.subdivisions : 2, 1) | 0;
+    const tessellation = Math.max(options.tessellation ? options.tessellation : 16, 3) | 0;
     const height = Math.max(options.height ? options.height : 1, 0);
     const radius = Math.max(options.radius ? options.radius : 0.25, 0);
-    const capDetail = Math.max(options.capSubdivisions ? options.capSubdivisions : 6, 1);
+    const capDetail = Math.max(options.capSubdivisions ? options.capSubdivisions : 6, 1) | 0;
 
     const radialSegments = tessellation;
     const heightSegments = subdivisions;
@@ -298,7 +298,7 @@ export const CapsuleBuilder = {
  * @returns the capsule mesh
  * @see https://doc.babylonjs.com/how_to/capsule_shape
  */
-(Mesh as any).CreateCapsule = (name: string, options: ICreateCapsuleOptions, scene?: Nullable<Scene>): Mesh => {
+Mesh.CreateCapsule = (name: string, options: ICreateCapsuleOptions, scene?: Nullable<Scene>): Mesh => {
     return CreateCapsule(name, options, scene);
 };
 

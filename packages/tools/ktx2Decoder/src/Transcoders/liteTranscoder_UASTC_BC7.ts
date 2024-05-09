@@ -10,21 +10,26 @@ export class LiteTranscoder_UASTC_BC7 extends LiteTranscoder {
     /**
      * URL to use when loading the wasm module for the transcoder
      */
-    public static WasmModuleURL = "https://preview.babylonjs.com/ktx2Transcoders/1/uastc_bc7.wasm";
+    public static WasmModuleURL = "https://cdn.babylonjs.com/ktx2Transcoders/1/uastc_bc7.wasm";
+
+    /**
+     * Binary data of the wasm module
+     */
+    public static WasmBinary: ArrayBuffer | null = null;
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    public static CanTranscode(src: KTX2.SourceTextureFormat, dst: KTX2.TranscodeTarget, isInGammaSpace: boolean): boolean {
+    public static override CanTranscode(src: KTX2.SourceTextureFormat, dst: KTX2.TranscodeTarget, isInGammaSpace: boolean): boolean {
         return src === KTX2.SourceTextureFormat.UASTC4x4 && dst === KTX2.TranscodeTarget.BC7_RGBA;
     }
 
-    public static Name = "UniversalTranscoder_UASTC_BC7";
+    public static override Name = "UniversalTranscoder_UASTC_BC7";
 
-    public getName(): string {
+    public override getName(): string {
         return LiteTranscoder_UASTC_BC7.Name;
     }
 
-    public initialize(): void {
+    public override initialize(): void {
         super.initialize();
-        this.setModulePath(LiteTranscoder_UASTC_BC7.WasmModuleURL);
+        this.setModulePath(LiteTranscoder_UASTC_BC7.WasmModuleURL, LiteTranscoder_UASTC_BC7.WasmBinary);
     }
 }

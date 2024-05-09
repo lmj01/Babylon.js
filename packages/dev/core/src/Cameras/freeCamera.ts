@@ -9,8 +9,9 @@ import { FreeCameraInputsManager } from "./freeCameraInputsManager";
 import type { FreeCameraMouseInput } from "../Cameras/Inputs/freeCameraMouseInput";
 import type { FreeCameraKeyboardMoveInput } from "../Cameras/Inputs/freeCameraKeyboardMoveInput";
 import { Tools } from "../Misc/tools";
+import { RegisterClass } from "../Misc/typeStore";
 
-declare type Collider = import("../Collisions/collider").Collider;
+import type { Collider } from "../Collisions/collider";
 
 /**
  * This represents a free type of camera. It can be useful in First Person Shooter game for instance.
@@ -49,7 +50,7 @@ export class FreeCamera extends TargetCamera {
     /**
      * Define the input manager associated to the camera.
      */
-    public inputs: FreeCameraInputsManager;
+    public override inputs: FreeCameraInputsManager;
 
     /**
      * Gets the input sensibility for a mouse input. (default is 2000.0)
@@ -301,20 +302,20 @@ export class FreeCamera extends TargetCamera {
      * Attach the input controls to a specific dom element to get the input from.
      * @param noPreventDefault Defines whether event caught by the controls should call preventdefault() (https://developer.mozilla.org/en-US/docs/Web/API/Event/preventDefault)
      */
-    public attachControl(noPreventDefault?: boolean): void;
+    public override attachControl(noPreventDefault?: boolean): void;
     /**
      * Attach the input controls to a specific dom element to get the input from.
      * @param ignored defines an ignored parameter kept for backward compatibility.
      * @param noPreventDefault Defines whether event caught by the controls should call preventdefault() (https://developer.mozilla.org/en-US/docs/Web/API/Event/preventDefault)
      * BACK COMPAT SIGNATURE ONLY.
      */
-    public attachControl(ignored: any, noPreventDefault?: boolean): void;
+    public override attachControl(ignored: any, noPreventDefault?: boolean): void;
     /**
      * Attached controls to the current camera.
      * @param ignored defines an ignored parameter kept for backward compatibility.
      * @param noPreventDefault Defines whether event caught by the controls should call preventdefault() (https://developer.mozilla.org/en-US/docs/Web/API/Event/preventDefault)
      */
-    public attachControl(ignored?: any, noPreventDefault?: boolean): void {
+    public override attachControl(ignored?: any, noPreventDefault?: boolean): void {
         // eslint-disable-next-line prefer-rest-params
         noPreventDefault = Tools.BackCompatCameraNoPreventDefault(arguments);
         this.inputs.attachElement(noPreventDefault);
@@ -323,7 +324,7 @@ export class FreeCamera extends TargetCamera {
     /**
      * Detach the current controls from the specified dom element.
      */
-    public detachControl(): void {
+    public override detachControl(): void {
         this.inputs.detachElement();
 
         this.cameraDirection = new Vector3(0, 0, 0);
@@ -380,24 +381,26 @@ export class FreeCamera extends TargetCamera {
     }
 
     private _onCollisionPositionChange = (collisionId: number, newPosition: Vector3, collidedMesh: Nullable<AbstractMesh> = null) => {
-        const updatePosition = (newPos: Vector3) => {
-            this._newPosition.copyFrom(newPos);
+        this._newPosition.copyFrom(newPosition);
 
-            this._newPosition.subtractToRef(this._oldPosition, this._diffPosition);
+        this._newPosition.subtractToRef(this._oldPosition, this._diffPosition);
 
-            if (this._diffPosition.length() > Engine.CollisionsEpsilon) {
-                this.position.addInPlace(this._diffPosition);
-                if (this.onCollide && collidedMesh) {
-                    this.onCollide(collidedMesh);
-                }
+        if (this._diffPosition.length() > Engine.CollisionsEpsilon) {
+            this.position.addToRef(this._diffPosition, this._deferredPositionUpdate);
+            if (!this._deferOnly) {
+                this.position.copyFrom(this._deferredPositionUpdate);
+            } else {
+                this._deferredUpdated = true;
             }
-        };
-
-        updatePosition(newPosition);
+            // call onCollide, if defined. Note that in case of deferred update, the actual position change might happen in the next frame.
+            if (this.onCollide && collidedMesh) {
+                this.onCollide(collidedMesh);
+            }
+        }
     };
 
     /** @internal */
-    public _checkInputs(): void {
+    public override _checkInputs(): void {
         if (!this._localDirection) {
             this._localDirection = Vector3.Zero();
             this._transformedDirection = Vector3.Zero();
@@ -408,13 +411,27 @@ export class FreeCamera extends TargetCamera {
         super._checkInputs();
     }
 
+    /**
+     * Enable movement without a user input. This allows gravity to always be applied.
+     */
+    public set needMoveForGravity(value: boolean) {
+        this._needMoveForGravity = value;
+    }
+
+    /**
+     * When true, gravity is applied whether there is user input or not.
+     */
+    public get needMoveForGravity(): boolean {
+        return this._needMoveForGravity;
+    }
+
     /** @internal */
-    public _decideIfNeedsToMove(): boolean {
+    public override _decideIfNeedsToMove(): boolean {
         return this._needMoveForGravity || Math.abs(this.cameraDirection.x) > 0 || Math.abs(this.cameraDirection.y) > 0 || Math.abs(this.cameraDirection.z) > 0;
     }
 
     /** @internal */
-    public _updatePosition(): void {
+    public override _updatePosition(): void {
         if (this.checkCollisions && this.getScene().collisionsEnabled) {
             this._collideWithWorld(this.cameraDirection);
         } else {
@@ -425,7 +442,7 @@ export class FreeCamera extends TargetCamera {
     /**
      * Destroy the camera and release the current resources hold by it.
      */
-    public dispose(): void {
+    public override dispose(): void {
         this.inputs.clear();
         super.dispose();
     }
@@ -434,7 +451,10 @@ export class FreeCamera extends TargetCamera {
      * Gets the current object class name.
      * @returns the class name
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "FreeCamera";
     }
 }
+
+// Register Class Name
+RegisterClass("BABYLON.FreeCamera", FreeCamera);

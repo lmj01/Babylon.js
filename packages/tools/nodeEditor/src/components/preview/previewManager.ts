@@ -2,7 +2,7 @@ import type { GlobalState } from "../../globalState";
 import { NodeMaterial } from "core/Materials/Node/nodeMaterial";
 import type { Nullable } from "core/types";
 import type { Observer } from "core/Misc/observable";
-import { Engine } from "core/Engines/engine";
+import { WebGPUEngine } from "core/Engines/webgpuEngine";
 import { Scene } from "core/scene";
 import { Vector3 } from "core/Maths/math.vector";
 import { HemisphericLight } from "core/Lights/hemisphericLight";
@@ -30,17 +30,23 @@ import { ParticleTextureBlock } from "core/Materials/Node/Blocks/Particle/partic
 import { ReadFile } from "core/Misc/fileTools";
 import type { ProceduralTexture } from "core/Materials/Textures/Procedurals/proceduralTexture";
 import type { StandardMaterial } from "core/Materials/standardMaterial";
+import { CubeTexture } from "core/Materials/Textures/cubeTexture";
 import { Layer } from "core/Layers/layer";
 import { DataStorage } from "core/Misc/dataStorage";
 import type { NodeMaterialBlock } from "core/Materials/Node/nodeMaterialBlock";
 import { CreateTorus } from "core/Meshes/Builders/torusBuilder";
 import type { TextureBlock } from "core/Materials/Node/Blocks/Dual/textureBlock";
 import { FilesInput } from "core/Misc/filesInput";
-
+import "core/Helpers/sceneHelpers";
 import "core/Rendering/depthRendererSceneComponent";
+import { ShaderLanguage } from "core/Materials/shaderLanguage";
+import { Engine } from "core/Engines/engine";
 
 const dontSerializeTextureContent = true;
 
+/**
+ *
+ */
 export class PreviewManager {
     private _nodeMaterial: NodeMaterial;
     private _onBuildObserver: Nullable<Observer<NodeMaterial>>;
@@ -52,7 +58,8 @@ export class PreviewManager {
     private _onBackFaceCullingChangedObserver: Nullable<Observer<void>>;
     private _onDepthPrePassChangedObserver: Nullable<Observer<void>>;
     private _onLightUpdatedObserver: Nullable<Observer<void>>;
-    private _engine: Engine;
+    private _onBackgroundHDRUpdatedObserver: Nullable<Observer<void>>;
+    private _engine: Engine | WebGPUEngine;
     private _scene: Scene;
     private _meshes: AbstractMesh[];
     private _camera: ArcRotateCamera;
@@ -64,6 +71,8 @@ export class PreviewManager {
     private _proceduralTexture: Nullable<ProceduralTexture>;
     private _particleSystem: Nullable<IParticleSystem>;
     private _layer: Nullable<Layer>;
+    private _hdrSkyBox: Mesh;
+    private _hdrTexture: CubeTexture;
 
     private _serializeMaterial(): any {
         const nodeMaterial = this._nodeMaterial;
@@ -106,6 +115,11 @@ export class PreviewManager {
         return serializationObject;
     }
 
+    /**
+     * Create a new Preview Manager
+     * @param targetCanvas defines the canvas to render to
+     * @param globalState defines the global state
+     */
     public constructor(targetCanvas: HTMLCanvasElement, globalState: GlobalState) {
         this._nodeMaterial = globalState.nodeMaterial;
         this._globalState = globalState;
@@ -124,6 +138,9 @@ export class PreviewManager {
 
         this._onLightUpdatedObserver = globalState.onLightUpdated.add(() => {
             this._prepareLights();
+        });
+        this._onBackgroundHDRUpdatedObserver = globalState.onBackgroundHDRUpdated.add(() => {
+            this._prepareBackgroundHDR();
         });
 
         this._onUpdateRequiredObserver = globalState.stateManager.onUpdateRequiredObservable.add(() => {
@@ -146,7 +163,16 @@ export class PreviewManager {
             this._material.needDepthPrePass = this._globalState.depthPrePass;
         });
 
-        this._engine = new Engine(targetCanvas, true);
+        this._initAsync(targetCanvas);
+    }
+
+    public async _initAsync(targetCanvas: HTMLCanvasElement) {
+        if (this._nodeMaterial.shaderLanguage === ShaderLanguage.WGSL) {
+            this._engine = new WebGPUEngine(targetCanvas);
+            await (this._engine as WebGPUEngine).initAsync();
+        } else {
+            this._engine = new Engine(targetCanvas);
+        }
         this._scene = new Scene(this._engine);
         this._scene.clearColor = this._globalState.backgroundColor;
         this._scene.ambientColor = new Color3(1, 1, 1);
@@ -193,9 +219,7 @@ export class PreviewManager {
             };
             canvas.addEventListener("drop", onDrop, false);
         }
-
         this._refreshPreviewMesh();
-
         this._engine.runRenderLoop(() => {
             this._engine.resize();
             this._scene.render();
@@ -229,6 +253,7 @@ export class PreviewManager {
     }
 
     private _reset() {
+        this._globalState.envType = PreviewType.Room;
         this._globalState.previewType = PreviewType.Box;
         this._globalState.listOfCustomPreviewFiles = [];
         this._scene.meshes.forEach((m) => m.dispose());
@@ -284,12 +309,28 @@ export class PreviewManager {
         }
     }
 
+    private _prepareBackgroundHDR() {
+        this._scene.environmentTexture = null;
+        if (this._hdrSkyBox) {
+            this._scene.removeMesh(this._hdrSkyBox);
+        }
+
+        if (this._globalState.backgroundHDR) {
+            this._scene.environmentTexture = this._hdrTexture;
+            this._hdrSkyBox = this._scene.createDefaultSkybox(this._hdrTexture) as Mesh;
+        }
+
+        this._updatePreview();
+    }
     private _prepareScene() {
         this._camera.useFramingBehavior = this._globalState.mode === NodeMaterialModes.Material;
-
         switch (this._globalState.mode) {
             case NodeMaterialModes.Material: {
                 this._prepareLights();
+                if (!this._globalState.envFile) {
+                    this._globalState.backgroundHDR = false;
+                }
+                this._prepareBackgroundHDR();
 
                 const framingBehavior = this._camera.getBehaviorByName("Framing") as FramingBehavior;
 
@@ -334,7 +375,31 @@ export class PreviewManager {
         this._updatePreview();
     }
 
+    /**
+     * Default Environment URL
+     */
+    public static DefaultEnvironmentURL = "https://assets.babylonjs.com/environments/environmentSpecular.env";
+
     private _refreshPreviewMesh(force?: boolean) {
+        switch (this._globalState.envType) {
+            case PreviewType.Room:
+                this._hdrTexture = new CubeTexture(PreviewManager.DefaultEnvironmentURL, this._scene);
+                if (this._hdrTexture) {
+                    this._prepareBackgroundHDR();
+                }
+                break;
+            case PreviewType.Custom: {
+                const blob = new Blob([this._globalState.envFile], { type: "octet/stream" });
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    const dataurl = evt.target!.result as string;
+                    this._hdrTexture = new CubeTexture(dataurl, this._scene, undefined, false, undefined, undefined, undefined, undefined, undefined, ".env");
+                    this._prepareBackgroundHDR();
+                };
+                reader.readAsDataURL(blob);
+                break;
+            }
+        }
         if (this._currentType !== this._globalState.previewType || this._currentType === PreviewType.Custom || force) {
             this._currentType = this._globalState.previewType;
             if (this._meshes && this._meshes.length) {
@@ -371,20 +436,21 @@ export class PreviewManager {
             const bakeTransformation = (mesh: Mesh) => {
                 mesh.bakeCurrentTransformIntoVertices();
                 mesh.refreshBoundingInfo();
+                mesh.parent = null;
             };
 
             if (this._globalState.mode === NodeMaterialModes.Material) {
                 switch (this._globalState.previewType) {
                     case PreviewType.Box:
                         SceneLoader.AppendAsync("https://assets.babylonjs.com/meshes/", "roundedCube.glb", this._scene).then(() => {
-                            bakeTransformation(this._scene.meshes[1] as Mesh);
+                            bakeTransformation(this._scene.getMeshByName("__root__")!.getChildMeshes(true)[0] as Mesh);
                             this._meshes.push(...this._scene.meshes);
                             this._prepareScene();
                         });
                         return;
                     case PreviewType.Sphere:
                         SceneLoader.AppendAsync("https://assets.babylonjs.com/meshes/", "previewSphere.glb", this._scene).then(() => {
-                            bakeTransformation(this._scene.meshes[1] as Mesh);
+                            bakeTransformation(this._scene.getMeshByName("__root__")!.getChildMeshes(true)[0] as Mesh);
                             this._meshes.push(...this._scene.meshes);
                             this._prepareScene();
                         });
@@ -410,7 +476,7 @@ export class PreviewManager {
                         return;
                     case PreviewType.Plane: {
                         SceneLoader.AppendAsync("https://assets.babylonjs.com/meshes/", "highPolyPlane.glb", this._scene).then(() => {
-                            bakeTransformation(this._scene.meshes[1] as Mesh);
+                            bakeTransformation(this._scene.getMeshByName("__root__")!.getChildMeshes(true)[0] as Mesh);
                             this._meshes.push(...this._scene.meshes);
                             this._prepareScene();
                         });
@@ -471,6 +537,7 @@ export class PreviewManager {
                             undefined,
                             false,
                             (error) => {
+                                // eslint-disable-next-line no-console
                                 console.log(error);
                             }
                         );
@@ -531,7 +598,7 @@ export class PreviewManager {
 
             const store = NodeMaterial.IgnoreTexturesAtLoadTime;
             NodeMaterial.IgnoreTexturesAtLoadTime = false;
-            const tempMaterial = NodeMaterial.Parse(serializationObject, this._scene);
+            const tempMaterial = NodeMaterial.Parse(serializationObject, this._scene, "", this._nodeMaterial.shaderLanguage);
             NodeMaterial.IgnoreTexturesAtLoadTime = store;
 
             tempMaterial.backFaceCulling = this._globalState.backFaceCulling;
@@ -607,7 +674,10 @@ export class PreviewManager {
 
                 default: {
                     if (this._meshes.length) {
-                        const tasks = this._meshes.map((m) => this._forceCompilationAsync(tempMaterial, m));
+                        const tasks = this._meshes.map((m) => {
+                            m.hasVertexAlpha = false;
+                            return this._forceCompilationAsync(tempMaterial, m);
+                        });
 
                         Promise.all(tasks)
                             .then(() => {
@@ -647,6 +717,7 @@ export class PreviewManager {
         this._globalState.onBackFaceCullingChanged.remove(this._onBackFaceCullingChangedObserver);
         this._globalState.onDepthPrePassChanged.remove(this._onDepthPrePassChangedObserver);
         this._globalState.onLightUpdated.remove(this._onLightUpdatedObserver);
+        this._globalState.onBackgroundHDRUpdated.remove(this._onBackgroundHDRUpdatedObserver);
 
         if (this._material) {
             this._material.dispose(false, true);

@@ -29,7 +29,7 @@ export class FragCoordBlock extends NodeMaterialBlock {
      * Gets the current class name
      * @returns the class name
      */
-    public getClassName() {
+    public override getClassName() {
         return "FragCoordBlock";
     }
 
@@ -88,17 +88,18 @@ export class FragCoordBlock extends NodeMaterialBlock {
 
         for (const output of this._outputs) {
             if (output.hasEndpoints) {
-                code += `${this._declareOutput(output, state)} = gl_FragCoord.${output.name};\r\n`;
+                code += `${state._declareOutput(output)} = gl_FragCoord.${output.name};\n`;
             }
         }
 
         return code;
     }
 
-    protected _buildBlock(state: NodeMaterialBuildState) {
+    protected override _buildBlock(state: NodeMaterialBuildState) {
         super._buildBlock(state);
 
         if (state.target === NodeMaterialBlockTargets.Vertex) {
+            // eslint-disable-next-line no-throw-literal
             throw "FragCoordBlock must only be used in a fragment shader";
         }
 

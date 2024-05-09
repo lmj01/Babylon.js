@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/naming-convention */
 // Type definitions for non-npm package webxr 0.5
 // Project: https://www.w3.org/TR/webxr/
 // Definitions by: Rob Rohan <https://github.com/robrohan>
@@ -66,7 +67,7 @@ type XRHandedness = "none" | "left" | "right";
 /**
  * InputSource target ray modes
  */
-type XRTargetRayMode = "gaze" | "tracked-pointer" | "screen";
+type XRTargetRayMode = "gaze" | "tracked-pointer" | "screen" | "transient-pointer";
 
 /**
  * Eye types
@@ -676,7 +677,7 @@ interface XRJointPose extends XRPose {
 
 declare abstract class XRJointPose implements XRJointPose {}
 
-interface XRHand extends Map<string, XRJointSpace> {
+interface XRHand extends Map<XRHandJoint, XRJointSpace> {
     readonly WRIST: number;
 
     readonly THUMB_METACARPAL: number;
@@ -709,7 +710,7 @@ interface XRHand extends Map<string, XRJointSpace> {
     readonly LITTLE_PHALANX_TIP: number;
 }
 
-declare abstract class XRHand extends Map<string, XRJointSpace> implements XRHand {}
+declare abstract class XRHand extends Map<XRHandJoint, XRJointSpace> implements XRHand {}
 
 // WebXR Layers
 
@@ -807,6 +808,7 @@ interface XRProjectionLayerInit {
     textureType?: XRTextureType | undefined;
     colorFormat?: GLenum | undefined;
     depthFormat?: GLenum | undefined;
+    clearOnAccess?: boolean | undefined;
 }
 
 interface XRProjectionLayer extends XRCompositionLayer {
@@ -828,6 +830,7 @@ interface XRLayerInit {
     depthFormat?: GLenum | undefined;
     space: XRSpace;
     layout?: XRLayerLayout | undefined;
+    clearOnAccess?: boolean | undefined;
 }
 
 interface XRMediaLayerInit {
@@ -926,10 +929,17 @@ declare abstract class XRSubImage implements XRSubImage {}
 
 interface XRWebGLSubImage extends XRSubImage {
     readonly colorTexture: WebGLTexture;
-    readonly depthStencilTexture: WebGLTexture;
+    readonly depthStencilTexture?: WebGLTexture;
+    readonly motionVectorTexture?: WebGLTexture;
     readonly imageIndex: number;
     readonly textureWidth: number;
     readonly textureHeight: number;
+    readonly colorTextureWidth?: number;
+    readonly colorTextureHeight?: number;
+    readonly depthStencilTextureWidth?: number;
+    readonly depthStencilTextureHeight?: number;
+    readonly motionVectorTextureWidth?: number;
+    readonly motionVectorTextureHeight?: number;
 }
 
 declare abstract class XRWebGLSubImage implements XRWebGLSubImage {}
@@ -1056,14 +1066,19 @@ interface XRFrame {
     // Anchors
     trackedAnchors?: XRAnchorSet;
     // World geometries. DEPRECATED
-    worldInformation?: XRWorldInformation;
-    detectedPlanes?: XRPlaneSet;
+    worldInformation?: XRWorldInformation | undefined;
+    detectedPlanes?: XRPlaneSet | undefined;
     // Hand tracking
     getJointPose?(joint: XRJointSpace, baseSpace: XRSpace): XRJointPose;
     fillJointRadii?(jointSpaces: XRJointSpace[], radii: Float32Array): boolean;
     // Image tracking
     getImageTrackingResults?(): Array<XRImageTrackingResult>;
     getLightEstimate(xrLightProbe: XRLightProbe): XRLightEstimate;
+}
+
+// Plane detection
+interface XRSession {
+    initiateRoomCapture?(): Promise<void>;
 }
 
 type XREventType = keyof XRSessionEventMap;
@@ -1188,7 +1203,32 @@ interface XRSession {
     enabledFeatures: string[];
 }
 
-/**
- * END: WebXR Depth Sensing Moudle
- * https://www.w3.org/TR/webxr-depth-sensing-1/
- */
+// Raw camera access
+
+interface XRView {
+    readonly camera: XRCamera | undefined;
+}
+
+interface XRCamera {
+    readonly width: number;
+    readonly height: number;
+}
+
+interface XRWebGLBinding {
+    getCameraImage(camera: XRCamera): WebGLTexture | undefined;
+}
+
+// Mesh Detection
+
+interface XRMesh {
+    meshSpace: XRSpace;
+    vertices: Float32Array;
+    indices: Uint32Array;
+    lastChangedTime: DOMHighResTimeStamp;
+}
+
+type XRMeshSet = Set<XRMesh>;
+
+interface XRFrame {
+    detectedMeshes?: XRMeshSet;
+}

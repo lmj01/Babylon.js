@@ -296,8 +296,6 @@ export class BoundingBoxRenderer implements ISceneComponent {
         const engine = this.scene.getEngine();
         engine.setDepthWrite(false);
 
-        const frontColor = this.frontColor.toColor4();
-        const backColor = this.backColor.toColor4();
         const transformMatrix = this.scene.getTransformMatrix();
 
         for (let boundingBoxIndex = 0; boundingBoxIndex < this.renderList.length; boundingBoxIndex++) {
@@ -314,7 +312,9 @@ export class BoundingBoxRenderer implements ISceneComponent {
             const diff = max.subtract(min);
             const median = min.add(diff.scale(0.5));
 
-            const worldMatrix = Matrix.Scaling(diff.x, diff.y, diff.z).multiply(Matrix.Translation(median.x, median.y, median.z)).multiply(boundingBox.getWorldMatrix());
+            const worldMatrix = Matrix.Scaling(diff.x, diff.y, diff.z)
+                .multiply(Matrix.Translation(median.x, median.y, median.z))
+                .multiply(boundingBox.getWorldMatrix());
 
             const useReverseDepthBuffer = engine.useReverseDepthBuffer;
 
@@ -332,7 +332,7 @@ export class BoundingBoxRenderer implements ISceneComponent {
                     engine.setDepthFunctionToGreaterOrEqual();
                 }
                 this._uniformBufferBack.bindToEffect(drawWrapperBack.effect!, "BoundingBoxRenderer");
-                this._uniformBufferBack.updateDirectColor4("color", backColor);
+                this._uniformBufferBack.updateColor4("color", this.backColor, 1);
                 this._uniformBufferBack.updateMatrix("world", worldMatrix);
                 this._uniformBufferBack.updateMatrix("viewProjection", transformMatrix);
                 this._uniformBufferBack.update();
@@ -354,7 +354,7 @@ export class BoundingBoxRenderer implements ISceneComponent {
                 engine.setDepthFunctionToLess();
             }
             this._uniformBufferFront.bindToEffect(drawWrapperFront.effect!, "BoundingBoxRenderer");
-            this._uniformBufferFront.updateDirectColor4("color", frontColor);
+            this._uniformBufferFront.updateColor4("color", this.frontColor, 1);
             this._uniformBufferFront.updateMatrix("world", worldMatrix);
             this._uniformBufferFront.updateMatrix("viewProjection", transformMatrix);
             this._uniformBufferFront.update();
@@ -420,7 +420,9 @@ export class BoundingBoxRenderer implements ISceneComponent {
         const diff = max.subtract(min);
         const median = min.add(diff.scale(0.5));
 
-        const worldMatrix = Matrix.Scaling(diff.x, diff.y, diff.z).multiply(Matrix.Translation(median.x, median.y, median.z)).multiply(boundingBox.getWorldMatrix());
+        const worldMatrix = Matrix.Scaling(diff.x, diff.y, diff.z)
+            .multiply(Matrix.Translation(median.x, median.y, median.z))
+            .multiply(boundingBox.getWorldMatrix());
 
         const drawWrapper = subMesh._drawWrapper;
 

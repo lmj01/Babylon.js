@@ -3,10 +3,11 @@ import type { Observer } from "../Misc/observable";
 import { Observable } from "../Misc/observable";
 import type { Nullable } from "../types";
 import { Vector3 } from "../Maths/math.vector";
+import type { Quaternion } from "../Maths/math.vector";
 import { Color3 } from "../Maths/math.color";
 import type { AbstractMesh } from "../Meshes/abstractMesh";
 import type { Mesh } from "../Meshes/mesh";
-import type { GizmoAnchorPoint, GizmoAxisCache, IGizmo } from "./gizmo";
+import type { GizmoAnchorPoint, GizmoCoordinatesMode, GizmoAxisCache, IGizmo } from "./gizmo";
 import { Gizmo } from "./gizmo";
 import type { IPlaneRotationGizmo } from "./planeRotationGizmo";
 import { PlaneRotationGizmo } from "./planeRotationGizmo";
@@ -20,6 +21,8 @@ import type { GizmoManager } from "./gizmoManager";
  * Interface for rotation gizmo
  */
 export interface IRotationGizmo extends IGizmo {
+    /** True when the mouse pointer is dragging a gizmo mesh */
+    readonly isDragging: boolean;
     /** Internal gizmo used for interactions on the x axis */
     xGizmo: IPlaneRotationGizmo;
     /** Internal gizmo used for interactions on the y axis */
@@ -28,16 +31,24 @@ export interface IRotationGizmo extends IGizmo {
     zGizmo: IPlaneRotationGizmo;
     /** Fires an event when any of it's sub gizmos are dragged */
     onDragStartObservable: Observable<unknown>;
+    /** Fires an event when any of it's sub gizmos are being dragged */
+    onDragObservable: Observable<unknown>;
     /** Fires an event when any of it's sub gizmos are released from dragging */
     onDragEndObservable: Observable<unknown>;
     /** Drag distance in babylon units that the gizmo will snap to when dragged */
     snapDistance: number;
+    /** Custom sensitivity value for the drag strength */
+    sensitivity: number;
     /**
      * Builds Gizmo Axis Cache to enable features such as hover state preservation and graying out other axis during manipulation
      * @param mesh Axis gizmo mesh
      * @param cache Gizmo axis definition used for reactive gizmo UI
      */
     addToAxisCache(mesh: Mesh, cache: GizmoAxisCache): void;
+    /**
+     * Force release the drag action by code
+     */
+    releaseDrag(): void;
 }
 
 /**
@@ -74,6 +85,12 @@ export interface RotationGizmoOptions {
      * Specific options for zGizmo
      */
     zOptions?: PlaneRotationGizmoOptions;
+
+    /**
+     * Additional transform applied to the gizmo.
+     * @See Gizmo.additionalTransformNode for more detail
+     */
+    additionalTransformNode?: TransformNode;
 }
 
 /**
@@ -95,20 +112,23 @@ export class RotationGizmo extends Gizmo implements IRotationGizmo {
 
     /** Fires an event when any of it's sub gizmos are dragged */
     public onDragStartObservable = new Observable();
+    /** Fires an event when any of it's sub gizmos are being dragged */
+    public onDragObservable = new Observable();
     /** Fires an event when any of it's sub gizmos are released from dragging */
     public onDragEndObservable = new Observable();
 
     protected _meshAttached: Nullable<AbstractMesh>;
     protected _nodeAttached: Nullable<Node>;
     protected _observables: Observer<PointerInfo>[] = [];
+    protected _sensitivity: number = 1;
 
     /** Node Caching for quick lookup */
     protected _gizmoAxisCache: Map<Mesh, GizmoAxisCache> = new Map();
 
-    public get attachedMesh() {
+    public override get attachedMesh() {
         return this._meshAttached;
     }
-    public set attachedMesh(mesh: Nullable<AbstractMesh>) {
+    public override set attachedMesh(mesh: Nullable<AbstractMesh>) {
         this._meshAttached = mesh;
         this._nodeAttached = mesh;
         this._checkBillboardTransform();
@@ -121,10 +141,10 @@ export class RotationGizmo extends Gizmo implements IRotationGizmo {
         });
     }
 
-    public get attachedNode() {
+    public override get attachedNode() {
         return this._nodeAttached;
     }
-    public set attachedNode(node: Nullable<Node>) {
+    public override set attachedNode(node: Nullable<Node>) {
         this._meshAttached = null;
         this._nodeAttached = node;
         this._checkBillboardTransform();
@@ -139,19 +159,47 @@ export class RotationGizmo extends Gizmo implements IRotationGizmo {
 
     protected _checkBillboardTransform() {
         if (this._nodeAttached && (<TransformNode>this._nodeAttached).billboardMode) {
-            console.log("Rotation Gizmo will not work with transforms in billboard mode.");
+            Logger.Log("Rotation Gizmo will not work with transforms in billboard mode.");
         }
+    }
+
+    /**
+     * Sensitivity factor for dragging (Default: 1)
+     */
+    public set sensitivity(value: number) {
+        this._sensitivity = value;
+        [this.xGizmo, this.yGizmo, this.zGizmo].forEach((gizmo) => {
+            if (gizmo) {
+                gizmo.sensitivity = value;
+            }
+        });
+    }
+    public get sensitivity() {
+        return this._sensitivity;
     }
 
     /**
      * True when the mouse pointer is hovering a gizmo mesh
      */
-    public get isHovered() {
-        let hovered = false;
+    public override get isHovered() {
+        return this.xGizmo.isHovered || this.yGizmo.isHovered || this.zGizmo.isHovered;
+    }
+
+    /**
+     * True when the mouse pointer is dragging a gizmo mesh
+     */
+    public get isDragging() {
+        return this.xGizmo.dragBehavior.dragging || this.yGizmo.dragBehavior.dragging || this.zGizmo.dragBehavior.dragging;
+    }
+
+    public override get additionalTransformNode() {
+        return this._additionalTransformNode;
+    }
+
+    public override set additionalTransformNode(transformNode: TransformNode | undefined) {
         [this.xGizmo, this.yGizmo, this.zGizmo].forEach((gizmo) => {
-            hovered = hovered || gizmo.isHovered;
+            gizmo.additionalTransformNode = transformNode;
         });
-        return hovered;
     }
 
     /**
@@ -178,6 +226,9 @@ export class RotationGizmo extends Gizmo implements IRotationGizmo {
         this.xGizmo = new PlaneRotationGizmo(new Vector3(1, 0, 0), xColor, gizmoLayer, tessellation, this, useEulerRotation, thickness);
         this.yGizmo = new PlaneRotationGizmo(new Vector3(0, 1, 0), yColor, gizmoLayer, tessellation, this, useEulerRotation, thickness);
         this.zGizmo = new PlaneRotationGizmo(new Vector3(0, 0, 1), zColor, gizmoLayer, tessellation, this, useEulerRotation, thickness);
+
+        this.additionalTransformNode = options?.additionalTransformNode;
+
         // Relay drag events and set update scale
         [this.xGizmo, this.yGizmo, this.zGizmo].forEach((gizmo) => {
             //must set updateScale on each gizmo, as setting it on root RotationGizmo doesnt prevent individual gizmos from updating
@@ -187,6 +238,9 @@ export class RotationGizmo extends Gizmo implements IRotationGizmo {
             }
             gizmo.dragBehavior.onDragStartObservable.add(() => {
                 this.onDragStartObservable.notifyObservers({});
+            });
+            gizmo.dragBehavior.onDragObservable.add(() => {
+                this.onDragObservable.notifyObservers({});
             });
             gizmo.dragBehavior.onDragEndObservable.add(() => {
                 this.onDragEndObservable.notifyObservers({});
@@ -208,46 +262,57 @@ export class RotationGizmo extends Gizmo implements IRotationGizmo {
      * If set the gizmo's rotation will be updated to match the attached mesh each frame (Default: true)
      * NOTE: This is only possible for meshes with uniform scaling, as otherwise it's not possible to decompose the rotation
      */
-    public set updateGizmoRotationToMatchAttachedMesh(value: boolean) {
+    public override set updateGizmoRotationToMatchAttachedMesh(value: boolean) {
         if (this.xGizmo) {
             this.xGizmo.updateGizmoRotationToMatchAttachedMesh = value;
             this.yGizmo.updateGizmoRotationToMatchAttachedMesh = value;
             this.zGizmo.updateGizmoRotationToMatchAttachedMesh = value;
         }
     }
-    public get updateGizmoRotationToMatchAttachedMesh() {
+    public override get updateGizmoRotationToMatchAttachedMesh() {
         return this.xGizmo.updateGizmoRotationToMatchAttachedMesh;
     }
 
-    public set updateGizmoPositionToMatchAttachedMesh(value: boolean) {
+    public override set updateGizmoPositionToMatchAttachedMesh(value: boolean) {
         if (this.xGizmo) {
             this.xGizmo.updateGizmoPositionToMatchAttachedMesh = value;
             this.yGizmo.updateGizmoPositionToMatchAttachedMesh = value;
             this.zGizmo.updateGizmoPositionToMatchAttachedMesh = value;
         }
     }
-    public get updateGizmoPositionToMatchAttachedMesh() {
+    public override get updateGizmoPositionToMatchAttachedMesh() {
         return this.xGizmo.updateGizmoPositionToMatchAttachedMesh;
     }
 
-    public set anchorPoint(value: GizmoAnchorPoint) {
+    public override set anchorPoint(value: GizmoAnchorPoint) {
         this._anchorPoint = value;
         [this.xGizmo, this.yGizmo, this.zGizmo].forEach((gizmo) => {
             gizmo.anchorPoint = value;
         });
     }
-    public get anchorPoint() {
+    public override get anchorPoint() {
         return this._anchorPoint;
     }
 
-    public set updateScale(value: boolean) {
+    /**
+     * Set the coordinate system to use. By default it's local.
+     * But it's possible for a user to tweak so its local for translation and world for rotation.
+     * In that case, setting the coordinate system will change `updateGizmoRotationToMatchAttachedMesh` and `updateGizmoPositionToMatchAttachedMesh`
+     */
+    public override set coordinatesMode(coordinatesMode: GizmoCoordinatesMode) {
+        [this.xGizmo, this.yGizmo, this.zGizmo].forEach((gizmo) => {
+            gizmo.coordinatesMode = coordinatesMode;
+        });
+    }
+
+    public override set updateScale(value: boolean) {
         if (this.xGizmo) {
             this.xGizmo.updateScale = value;
             this.yGizmo.updateScale = value;
             this.zGizmo.updateScale = value;
         }
     }
-    public get updateScale() {
+    public override get updateScale() {
         return this.xGizmo.updateScale;
     }
     /**
@@ -267,15 +332,32 @@ export class RotationGizmo extends Gizmo implements IRotationGizmo {
     /**
      * Ratio for the scale of the gizmo (Default: 1)
      */
-    public set scaleRatio(value: number) {
+    public override set scaleRatio(value: number) {
         if (this.xGizmo) {
             this.xGizmo.scaleRatio = value;
             this.yGizmo.scaleRatio = value;
             this.zGizmo.scaleRatio = value;
         }
     }
-    public get scaleRatio() {
+    public override get scaleRatio() {
         return this.xGizmo.scaleRatio;
+    }
+
+    /**
+     * posture that the gizmo will be display
+     * When set null, default value will be used (Quaternion(0, 0, 0, 1))
+     */
+    public override get customRotationQuaternion(): Nullable<Quaternion> {
+        return this._customRotationQuaternion;
+    }
+
+    public override set customRotationQuaternion(customRotationQuaternion: Nullable<Quaternion>) {
+        this._customRotationQuaternion = customRotationQuaternion;
+        [this.xGizmo, this.yGizmo, this.zGizmo].forEach((gizmo) => {
+            if (gizmo) {
+                gizmo.customRotationQuaternion = customRotationQuaternion;
+            }
+        });
     }
 
     /**
@@ -288,13 +370,23 @@ export class RotationGizmo extends Gizmo implements IRotationGizmo {
     }
 
     /**
+     * Force release the drag action by code
+     */
+    public releaseDrag() {
+        this.xGizmo.dragBehavior.releaseDrag();
+        this.yGizmo.dragBehavior.releaseDrag();
+        this.zGizmo.dragBehavior.releaseDrag();
+    }
+
+    /**
      * Disposes of the gizmo
      */
-    public dispose() {
+    public override dispose() {
         this.xGizmo.dispose();
         this.yGizmo.dispose();
         this.zGizmo.dispose();
         this.onDragStartObservable.clear();
+        this.onDragObservable.clear();
         this.onDragEndObservable.clear();
         this._observables.forEach((obs) => {
             this.gizmoLayer.utilityLayerScene.onPointerObservable.remove(obs);
@@ -304,7 +396,7 @@ export class RotationGizmo extends Gizmo implements IRotationGizmo {
     /**
      * CustomMeshes are not supported by this gizmo
      */
-    public setCustomMesh() {
+    public override setCustomMesh() {
         Logger.Error(
             "Custom meshes are not supported on this gizmo, please set the custom meshes on the gizmos contained within this one (gizmo.xGizmo, gizmo.yGizmo, gizmo.zGizmo)"
         );

@@ -3,7 +3,6 @@ import { serialize, expandToProperty, serializeAsColor3, serializeAsTexture } fr
 import type { UniformBuffer } from "../../Materials/uniformBuffer";
 import { Color3 } from "../../Maths/math.color";
 import { MaterialFlags } from "../../Materials/materialFlags";
-import { MaterialHelper } from "../../Materials/materialHelper";
 import type { BaseTexture } from "../../Materials/Textures/baseTexture";
 import type { Nullable } from "../../types";
 import type { IAnimatable } from "../../Animations/animatable.interface";
@@ -13,9 +12,10 @@ import { Constants } from "../../Engines/constants";
 import { MaterialPluginBase } from "../materialPluginBase";
 import { MaterialDefines } from "../materialDefines";
 
-declare type Engine = import("../../Engines/engine").Engine;
-declare type Scene = import("../../scene").Scene;
-declare type PBRBaseMaterial = import("./pbrBaseMaterial").PBRBaseMaterial;
+import type { Engine } from "../../Engines/engine";
+import type { Scene } from "../../scene";
+import type { PBRBaseMaterial } from "./pbrBaseMaterial";
+import { BindTextureMatrix, PrepareDefinesForMergedUV } from "../materialHelper.functions";
 
 /**
  * @internal
@@ -31,7 +31,6 @@ export class MaterialSheenDefines extends MaterialDefines {
     public SHEEN_ROUGHNESS = false;
     public SHEEN_ALBEDOSCALING = false;
     public SHEEN_USE_ROUGHNESS_FROM_MAINTEXTURE = false;
-    public SHEEN_TEXTURE_ROUGHNESS_IDENTICAL = false;
 }
 
 /**
@@ -130,7 +129,7 @@ export class PBRSheenConfiguration extends MaterialPluginBase {
         this._internalMarkAllSubMeshesAsTexturesDirty = material._dirtyCallbacks[Constants.MATERIAL_TextureDirtyFlag];
     }
 
-    public isReadyForSubMesh(defines: MaterialSheenDefines, scene: Scene): boolean {
+    public override isReadyForSubMesh(defines: MaterialSheenDefines, scene: Scene): boolean {
         if (!this._isEnabled) {
             return true;
         }
@@ -154,27 +153,25 @@ export class PBRSheenConfiguration extends MaterialPluginBase {
         return true;
     }
 
-    public prepareDefinesBeforeAttributes(defines: MaterialSheenDefines, scene: Scene): void {
+    public override prepareDefinesBeforeAttributes(defines: MaterialSheenDefines, scene: Scene): void {
         if (this._isEnabled) {
             defines.SHEEN = true;
             defines.SHEEN_LINKWITHALBEDO = this._linkSheenWithAlbedo;
             defines.SHEEN_ROUGHNESS = this._roughness !== null;
             defines.SHEEN_ALBEDOSCALING = this._albedoScaling;
             defines.SHEEN_USE_ROUGHNESS_FROM_MAINTEXTURE = this._useRoughnessFromMainTexture;
-            defines.SHEEN_TEXTURE_ROUGHNESS_IDENTICAL =
-                this._texture !== null && this._texture._texture === this._textureRoughness?._texture && this._texture.checkTransformsAreIdentical(this._textureRoughness);
 
             if (defines._areTexturesDirty) {
                 if (scene.texturesEnabled) {
                     if (this._texture && MaterialFlags.SheenTextureEnabled) {
-                        MaterialHelper.PrepareDefinesForMergedUV(this._texture, defines, "SHEEN_TEXTURE");
+                        PrepareDefinesForMergedUV(this._texture, defines, "SHEEN_TEXTURE");
                         defines.SHEEN_GAMMATEXTURE = this._texture.gammaSpace;
                     } else {
                         defines.SHEEN_TEXTURE = false;
                     }
 
                     if (this._textureRoughness && MaterialFlags.SheenTextureEnabled) {
-                        MaterialHelper.PrepareDefinesForMergedUV(this._textureRoughness, defines, "SHEEN_TEXTURE_ROUGHNESS");
+                        PrepareDefinesForMergedUV(this._textureRoughness, defines, "SHEEN_TEXTURE_ROUGHNESS");
                     } else {
                         defines.SHEEN_TEXTURE_ROUGHNESS = false;
                     }
@@ -188,14 +185,13 @@ export class PBRSheenConfiguration extends MaterialPluginBase {
             defines.SHEEN_ROUGHNESS = false;
             defines.SHEEN_ALBEDOSCALING = false;
             defines.SHEEN_USE_ROUGHNESS_FROM_MAINTEXTURE = false;
-            defines.SHEEN_TEXTURE_ROUGHNESS_IDENTICAL = false;
             defines.SHEEN_GAMMATEXTURE = false;
             defines.SHEEN_TEXTUREDIRECTUV = 0;
             defines.SHEEN_TEXTURE_ROUGHNESSDIRECTUV = 0;
         }
     }
 
-    public bindForSubMesh(uniformBuffer: UniformBuffer, scene: Scene, engine: Engine, subMesh: SubMesh): void {
+    public override bindForSubMesh(uniformBuffer: UniformBuffer, scene: Scene, engine: Engine, subMesh: SubMesh): void {
         if (!this._isEnabled) {
             return;
         }
@@ -204,13 +200,8 @@ export class PBRSheenConfiguration extends MaterialPluginBase {
 
         const isFrozen = this._material.isFrozen;
 
-        const identicalTextures = defines.SHEEN_TEXTURE_ROUGHNESS_IDENTICAL;
-
         if (!uniformBuffer.useUbo || !isFrozen || !uniformBuffer.isSync) {
-            if (identicalTextures && MaterialFlags.SheenTextureEnabled) {
-                uniformBuffer.updateFloat4("vSheenInfos", this._texture!.coordinatesIndex, this._texture!.level, -1, -1);
-                MaterialHelper.BindTextureMatrix(this._texture!, uniformBuffer, "sheen");
-            } else if ((this._texture || this._textureRoughness) && MaterialFlags.SheenTextureEnabled) {
+            if ((this._texture || this._textureRoughness) && MaterialFlags.SheenTextureEnabled) {
                 uniformBuffer.updateFloat4(
                     "vSheenInfos",
                     this._texture?.coordinatesIndex ?? 0,
@@ -219,10 +210,10 @@ export class PBRSheenConfiguration extends MaterialPluginBase {
                     this._textureRoughness?.level ?? 0
                 );
                 if (this._texture) {
-                    MaterialHelper.BindTextureMatrix(this._texture, uniformBuffer, "sheen");
+                    BindTextureMatrix(this._texture, uniformBuffer, "sheen");
                 }
-                if (this._textureRoughness && !identicalTextures && !defines.SHEEN_USE_ROUGHNESS_FROM_MAINTEXTURE) {
-                    MaterialHelper.BindTextureMatrix(this._textureRoughness, uniformBuffer, "sheenRoughness");
+                if (this._textureRoughness && !defines.SHEEN_USE_ROUGHNESS_FROM_MAINTEXTURE) {
+                    BindTextureMatrix(this._textureRoughness, uniformBuffer, "sheenRoughness");
                 }
             }
 
@@ -240,13 +231,13 @@ export class PBRSheenConfiguration extends MaterialPluginBase {
                 uniformBuffer.setTexture("sheenSampler", this._texture);
             }
 
-            if (this._textureRoughness && !identicalTextures && !defines.SHEEN_USE_ROUGHNESS_FROM_MAINTEXTURE && MaterialFlags.SheenTextureEnabled) {
+            if (this._textureRoughness && !defines.SHEEN_USE_ROUGHNESS_FROM_MAINTEXTURE && MaterialFlags.SheenTextureEnabled) {
                 uniformBuffer.setTexture("sheenRoughnessSampler", this._textureRoughness);
             }
         }
     }
 
-    public hasTexture(texture: BaseTexture): boolean {
+    public override hasTexture(texture: BaseTexture): boolean {
         if (this._texture === texture) {
             return true;
         }
@@ -258,7 +249,7 @@ export class PBRSheenConfiguration extends MaterialPluginBase {
         return false;
     }
 
-    public getActiveTextures(activeTextures: BaseTexture[]): void {
+    public override getActiveTextures(activeTextures: BaseTexture[]): void {
         if (this._texture) {
             activeTextures.push(this._texture);
         }
@@ -268,7 +259,7 @@ export class PBRSheenConfiguration extends MaterialPluginBase {
         }
     }
 
-    public getAnimatables(animatables: IAnimatable[]): void {
+    public override getAnimatables(animatables: IAnimatable[]): void {
         if (this._texture && this._texture.animations && this._texture.animations.length > 0) {
             animatables.push(this._texture);
         }
@@ -278,29 +269,29 @@ export class PBRSheenConfiguration extends MaterialPluginBase {
         }
     }
 
-    public dispose(forceDisposeTextures?: boolean): void {
+    public override dispose(forceDisposeTextures?: boolean): void {
         if (forceDisposeTextures) {
             this._texture?.dispose();
             this._textureRoughness?.dispose();
         }
     }
 
-    public getClassName(): string {
+    public override getClassName(): string {
         return "PBRSheenConfiguration";
     }
 
-    public addFallbacks(defines: MaterialSheenDefines, fallbacks: EffectFallbacks, currentRank: number): number {
+    public override addFallbacks(defines: MaterialSheenDefines, fallbacks: EffectFallbacks, currentRank: number): number {
         if (defines.SHEEN) {
             fallbacks.addFallback(currentRank++, "SHEEN");
         }
         return currentRank;
     }
 
-    public getSamplers(samplers: string[]): void {
+    public override getSamplers(samplers: string[]): void {
         samplers.push("sheenSampler", "sheenRoughnessSampler");
     }
 
-    public getUniforms(): { ubo?: Array<{ name: string; size: number; type: string }>; vertex?: string; fragment?: string } {
+    public override getUniforms(): { ubo?: Array<{ name: string; size: number; type: string }>; vertex?: string; fragment?: string } {
         return {
             ubo: [
                 { name: "vSheenColor", size: 4, type: "vec4" },

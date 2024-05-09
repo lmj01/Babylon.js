@@ -4,6 +4,18 @@ import { WebGPUEngine } from "../../webgpuEngine";
 import type { WebGPUHardwareTexture } from "../webgpuHardwareTexture";
 import type { ExternalTexture } from "../../../Materials/Textures/externalTexture";
 
+declare module "../../webgpuEngine" {
+    export interface WebGPUEngine {
+        /**
+         * Update a video texture
+         * @param texture defines the texture to update
+         * @param video defines the video element to use
+         * @param invertY defines if data must be stored with Y axis inverted
+         */
+        updateVideoTexture(texture: Nullable<InternalTexture>, video: HTMLVideoElement | Nullable<ExternalTexture>, invertY: boolean): void;
+    }
+}
+
 function IsExternalTexture(texture: Nullable<ExternalTexture> | HTMLVideoElement): texture is ExternalTexture {
     return texture && (texture as ExternalTexture).underlyingResource !== undefined ? true : false;
 }
@@ -26,7 +38,7 @@ WebGPUEngine.prototype.updateVideoTexture = function (texture: Nullable<Internal
     if (IsExternalTexture(video)) {
         this._textureHelper.copyVideoToTexture(video, texture, gpuTextureWrapper.format, !invertY);
         if (texture.generateMipMaps) {
-            this._generateMipmaps(texture, this._uploadEncoder);
+            this._generateMipmaps(texture);
         }
         texture.isReady = true;
     } else if (video) {
@@ -34,7 +46,7 @@ WebGPUEngine.prototype.updateVideoTexture = function (texture: Nullable<Internal
             .then((bitmap) => {
                 this._textureHelper.updateTexture(bitmap, texture, texture.width, texture.height, texture.depth, gpuTextureWrapper.format, 0, 0, !invertY, false, 0, 0);
                 if (texture.generateMipMaps) {
-                    this._generateMipmaps(texture, this._uploadEncoder);
+                    this._generateMipmaps(texture);
                 }
 
                 texture.isReady = true;

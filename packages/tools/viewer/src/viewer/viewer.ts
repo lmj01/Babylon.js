@@ -24,6 +24,7 @@ import type { IObserversConfiguration } from "../configuration/interfaces/observ
 import type { IModelConfiguration } from "../configuration/interfaces/modelConfiguration";
 import type { GLTFFileLoader } from "loaders/glTF/glTFFileLoader";
 import "core/Misc/observable.extensions";
+import { Logger } from "core/Misc/logger";
 
 /**
  * The AbstractViewer is the center of Babylon's viewer.
@@ -183,7 +184,10 @@ export abstract class AbstractViewer {
         return new RenderOnlyConfigurationLoader();
     }
 
-    constructor(public containerElement: Element, initialConfiguration: ViewerConfiguration = {}) {
+    constructor(
+        public containerElement: Element,
+        initialConfiguration: ViewerConfiguration = {}
+    ) {
         // if exists, use the container id. otherwise, generate a random string.
         if (containerElement.id) {
             this.baseId = containerElement.id;
@@ -224,6 +228,7 @@ export abstract class AbstractViewer {
 
     /**
      * get the baseId of this viewer
+     * @returns the baseId of this viewer
      */
     public getBaseId(): string {
         return this.baseId;
@@ -231,6 +236,7 @@ export abstract class AbstractViewer {
 
     /**
      * Do we have a canvas to render on, and is it a part of the scene
+     * @returns true if the canvas is in the DOM
      */
     public isCanvasInDOM(): boolean {
         return !!this._canvas && !!this._canvas.parentElement;
@@ -501,14 +507,14 @@ export abstract class AbstractViewer {
                         const newData = JSON.parse(data.toString()) as ViewerConfiguration;
                         return this.updateConfiguration(newData);
                     } catch (e) {
-                        console.log("Error parsing file " + newConfiguration);
+                        Logger.Log("Error parsing file " + newConfiguration);
                     }
                 },
                 undefined,
                 undefined,
                 undefined,
                 (error) => {
-                    console.log("Error parsing file " + newConfiguration, error);
+                    Logger.Log(["Error parsing file " + newConfiguration, error]);
                 }
             );
         } else {
@@ -602,7 +608,7 @@ export abstract class AbstractViewer {
      * This function will execute when the HTML templates finished initializing.
      * It should initialize the engine and continue execution.
      *
-     * @returns {Promise<AbstractViewer>} The viewer object will be returned after the object was loaded.
+     * @returns The viewer object will be returned after the object was loaded.
      */
     protected _onTemplatesLoaded(): Promise<AbstractViewer> {
         return Promise.resolve(this);
@@ -612,6 +618,7 @@ export abstract class AbstractViewer {
      * This will force the creation of an engine and a scene.
      * It will also load a model if preconfigured.
      * But first - it will load the extendible onTemplateLoaded()!
+     * @returns A promise that will resolve when the template was loaded
      */
     protected _onTemplateLoaded(): Promise<AbstractViewer> {
         // check if viewer was disposed right after created

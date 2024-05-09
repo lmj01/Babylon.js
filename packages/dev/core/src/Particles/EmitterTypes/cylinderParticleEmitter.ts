@@ -207,11 +207,17 @@ export class CylinderDirectedParticleEmitter extends CylinderParticleEmitter {
      * Called by the particle System when the direction is computed for the created particle.
      * @param worldMatrix is the world matrix of the particle system
      * @param directionToUpdate is the direction vector to update with the result
+     * @param _particle is the particle we are computed the direction for
+     * @param isLocal defines if the direction should be set in local space
      */
-    public startDirectionFunction(worldMatrix: Matrix, directionToUpdate: Vector3): void {
+    public override startDirectionFunction(worldMatrix: Matrix, directionToUpdate: Vector3, _particle: Particle, isLocal: boolean): void {
         const randX = Scalar.RandomRange(this.direction1.x, this.direction2.x);
         const randY = Scalar.RandomRange(this.direction1.y, this.direction2.y);
         const randZ = Scalar.RandomRange(this.direction1.z, this.direction2.z);
+        if (isLocal) {
+            directionToUpdate.copyFromFloats(randX, randY, randZ);
+            return;
+        }
         Vector3.TransformNormalFromFloatsToRef(randX, randY, randZ, worldMatrix, directionToUpdate);
     }
 
@@ -219,7 +225,7 @@ export class CylinderDirectedParticleEmitter extends CylinderParticleEmitter {
      * Clones the current emitter and returns a copy of it
      * @returns the new emitter
      */
-    public clone(): CylinderDirectedParticleEmitter {
+    public override clone(): CylinderDirectedParticleEmitter {
         const newOne = new CylinderDirectedParticleEmitter(this.radius, this.height, this.radiusRange, this.direction1, this.direction2);
 
         DeepCopier.DeepCopy(this, newOne);
@@ -231,7 +237,7 @@ export class CylinderDirectedParticleEmitter extends CylinderParticleEmitter {
      * Called by the GPUParticleSystem to setup the update shader
      * @param uboOrEffect defines the update shader
      */
-    public applyToShader(uboOrEffect: UniformBufferEffectCommonAccessor): void {
+    public override applyToShader(uboOrEffect: UniformBufferEffectCommonAccessor): void {
         uboOrEffect.setFloat("radius", this.radius);
         uboOrEffect.setFloat("height", this.height);
         uboOrEffect.setFloat("radiusRange", this.radiusRange);
@@ -243,7 +249,7 @@ export class CylinderDirectedParticleEmitter extends CylinderParticleEmitter {
      * Creates the structure of the ubo for this particle emitter
      * @param ubo ubo to create the structure for
      */
-    public buildUniformLayout(ubo: UniformBuffer): void {
+    public override buildUniformLayout(ubo: UniformBuffer): void {
         ubo.addUniform("radius", 1);
         ubo.addUniform("height", 1);
         ubo.addUniform("radiusRange", 1);
@@ -255,7 +261,7 @@ export class CylinderDirectedParticleEmitter extends CylinderParticleEmitter {
      * Returns a string to use to update the GPU particles update shader
      * @returns a string containing the defines string
      */
-    public getEffectDefines(): string {
+    public override getEffectDefines(): string {
         return "#define CYLINDEREMITTER\n#define DIRECTEDCYLINDEREMITTER";
     }
 
@@ -263,7 +269,7 @@ export class CylinderDirectedParticleEmitter extends CylinderParticleEmitter {
      * Returns the string "CylinderDirectedParticleEmitter"
      * @returns a string containing the class name
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "CylinderDirectedParticleEmitter";
     }
 
@@ -271,7 +277,7 @@ export class CylinderDirectedParticleEmitter extends CylinderParticleEmitter {
      * Serializes the particle system to a JSON object.
      * @returns the JSON object
      */
-    public serialize(): any {
+    public override serialize(): any {
         const serializationObject = super.serialize();
 
         serializationObject.direction1 = this.direction1.asArray();
@@ -284,9 +290,9 @@ export class CylinderDirectedParticleEmitter extends CylinderParticleEmitter {
      * Parse properties from a JSON object
      * @param serializationObject defines the JSON object
      */
-    public parse(serializationObject: any): void {
+    public override parse(serializationObject: any): void {
         super.parse(serializationObject);
-        this.direction1.copyFrom(serializationObject.direction1);
-        this.direction2.copyFrom(serializationObject.direction2);
+        Vector3.FromArrayToRef(serializationObject.direction1, 0, this.direction1);
+        Vector3.FromArrayToRef(serializationObject.direction2, 0, this.direction2);
     }
 }

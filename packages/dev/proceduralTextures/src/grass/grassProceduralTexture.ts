@@ -1,4 +1,5 @@
-import { serializeAsColor3, SerializationHelper } from "core/Misc/decorators";
+import { serializeAsColor3 } from "core/Misc/decorators";
+import { SerializationHelper } from "core/Misc/decorators.serialization";
 import { Color3 } from "core/Maths/math.color";
 import type { Texture } from "core/Materials/Textures/texture";
 import { ProceduralTexture } from "core/Materials/Textures/Procedurals/proceduralTexture";
@@ -50,7 +51,7 @@ export class GrassProceduralTexture extends ProceduralTexture {
      * Serializes this grass procedural texture
      * @returns a serialized grass procedural texture object
      */
-    public serialize(): any {
+    public override serialize(): any {
         const serializationObject = SerializationHelper.Serialize(this, super.serialize());
         serializationObject.customType = "BABYLON.GrassProceduralTexture";
 
@@ -69,7 +70,7 @@ export class GrassProceduralTexture extends ProceduralTexture {
      * @param rootUrl defines the root URL containing grass procedural texture information
      * @returns a parsed Grass Procedural Texture
      */
-    public static Parse(parsedTexture: any, scene: Scene, rootUrl: string): GrassProceduralTexture {
+    public static override Parse(parsedTexture: any, scene: Scene, rootUrl: string): GrassProceduralTexture {
         const texture = SerializationHelper.Parse(
             () => new GrassProceduralTexture(parsedTexture.name, parsedTexture._size, scene, undefined, parsedTexture._generateMipMaps),
             parsedTexture,

@@ -1,10 +1,11 @@
 import type { UniformBuffer } from "../Materials/uniformBuffer";
-import type { ThinEngine } from "../Engines/thinEngine";
+import type { WebGPUEngine } from "../Engines/webgpuEngine";
 import type { Scene } from "../scene";
 import type { Nullable } from "../types";
-import { SerializationHelper, serialize } from "../Misc/decorators";
+import { serialize } from "../Misc/decorators";
+import { SerializationHelper } from "../Misc/decorators.serialization";
 import { RegisterClass } from "../Misc/typeStore";
-import type { ComputeEffect, IComputeEffectCreationOptions } from "./computeEffect";
+import type { ComputeEffect, IComputeEffectCreationOptions, IComputeShaderPath } from "./computeEffect";
 import type { ComputeBindingMapping } from "../Engines/Extensions/engine.computeShader";
 import { ComputeBindingType } from "../Engines/Extensions/engine.computeShader";
 import type { BaseTexture } from "../Materials/Textures/baseTexture";
@@ -15,6 +16,10 @@ import type { StorageBuffer } from "../Buffers/storageBuffer";
 import { Logger } from "../Misc/logger";
 import { TextureSampler } from "../Materials/Textures/textureSampler";
 import type { DataBuffer } from "core/Buffers/dataBuffer";
+import type { ExternalTexture } from "core/Materials/Textures/externalTexture";
+import type { VideoTexture } from "core/Materials/Textures/videoTexture";
+import { WebGPUPerfCounter } from "core/Engines/WebGPU/webgpuPerfCounter";
+import type { AbstractEngine } from "core/Engines/abstractEngine";
 
 /**
  * Defines the options associated with the creation of a compute shader.
@@ -49,8 +54,8 @@ type ComputeBindingListInternal = { [key: string]: { type: ComputeBindingType; o
  * The ComputeShader object lets you execute a compute shader on your GPU (if supported by the engine)
  */
 export class ComputeShader {
-    private _engine: ThinEngine;
-    private _shaderPath: any;
+    private _engine: AbstractEngine;
+    private _shaderPath: IComputeShaderPath | string;
     private _options: IComputeShaderOptions;
     private _effect: ComputeEffect;
     private _cachedDefines: string;
@@ -85,6 +90,13 @@ export class ComputeShader {
     }
 
     /**
+     * When set to true, dispatch won't call isReady anymore and won't check if the underlying GPU resources should be (re)created because of a change in the inputs (texture, uniform buffer, etc.)
+     * If you know that your inputs did not change since last time dispatch was called and that isReady() returns true, set this flag to true to improve performance
+     */
+    @serialize()
+    public fastMode = false;
+
+    /**
      * Callback triggered when the shader is compiled
      */
     public onCompiled: Nullable<(effect: ComputeEffect) => void> = null;
@@ -95,20 +107,29 @@ export class ComputeShader {
     public onError: Nullable<(effect: ComputeEffect, errors: string) => void> = null;
 
     /**
+     * Gets the GPU time spent running the compute shader for the last frame rendered (in nanoseconds).
+     * You have to enable the "timestamp-query" extension in the engine constructor options and set engine.enableGPUTimingMeasurements = true.
+     */
+    public readonly gpuTimeInFrame?: WebGPUPerfCounter;
+
+    /**
      * Instantiates a new compute shader.
      * @param name Defines the name of the compute shader in the scene
      * @param engine Defines the engine the compute shader belongs to
-     * @param shaderPath Defines  the route to the shader code in one of three ways:
+     * @param shaderPath Defines the route to the shader code in one of three ways:
      *  * object: \{ compute: "custom" \}, used with ShaderStore.ShadersStoreWGSL["customComputeShader"]
      *  * object: \{ computeElement: "HTMLElementId" \}, used with shader code in script tags
      *  * object: \{ computeSource: "compute shader code string" \}, where the string contains the shader code
      *  * string: try first to find the code in ShaderStore.ShadersStoreWGSL[shaderPath + "ComputeShader"]. If not, assumes it is a file with name shaderPath.compute.fx in index.html folder.
      * @param options Define the options used to create the shader
      */
-    constructor(name: string, engine: ThinEngine, shaderPath: any, options: Partial<IComputeShaderOptions> = {}) {
+    constructor(name: string, engine: AbstractEngine, shaderPath: IComputeShaderPath | string, options: Partial<IComputeShaderOptions> = {}) {
         this.name = name;
         this._engine = engine;
         this.uniqueId = UniqueIdGenerator.UniqueId;
+        if ((engine as WebGPUEngine).enableGPUTimingMeasurements) {
+            this.gpuTimeInFrame = new WebGPUPerfCounter();
+        }
 
         if (!this._engine.getCaps().supportComputeShaders) {
             Logger.Error("This engine does not support compute shaders!");
@@ -173,17 +194,49 @@ export class ComputeShader {
     }
 
     /**
+     * Binds an external texture to the shader
+     * @param name Binding name of the texture
+     * @param texture Texture to bind
+     */
+    public setExternalTexture(name: string, texture: ExternalTexture): void {
+        const current = this._bindings[name];
+
+        this._contextIsDirty ||= !current || current.object !== texture;
+
+        this._bindings[name] = {
+            type: ComputeBindingType.ExternalTexture,
+            object: texture,
+            indexInGroupEntries: current?.indexInGroupEntries,
+        };
+    }
+
+    /**
+     * Binds a video texture to the shader (by binding the external texture attached to this video)
+     * @param name Binding name of the texture
+     * @param texture Texture to bind
+     * @returns true if the video texture was successfully bound, else false. false will be returned if the current engine does not support external textures
+     */
+    public setVideoTexture(name: string, texture: VideoTexture) {
+        if (texture.externalTexture) {
+            this.setExternalTexture(name, texture.externalTexture);
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * Binds a uniform buffer to the shader
      * @param name Binding name of the buffer
      * @param buffer Buffer to bind
      */
-    public setUniformBuffer(name: string, buffer: UniformBuffer): void {
+    public setUniformBuffer(name: string, buffer: UniformBuffer | DataBuffer): void {
         const current = this._bindings[name];
 
         this._contextIsDirty ||= !current || current.object !== buffer;
 
         this._bindings[name] = {
-            type: ComputeBindingType.UniformBuffer,
+            type: ComputeShader._BufferIsDataBuffer(buffer) ? ComputeBindingType.DataBuffer : ComputeBindingType.UniformBuffer,
             object: buffer,
             indexInGroupEntries: current?.indexInGroupEntries,
         };
@@ -194,13 +247,13 @@ export class ComputeShader {
      * @param name Binding name of the buffer
      * @param buffer Buffer to bind
      */
-    public setStorageBuffer(name: string, buffer: StorageBuffer): void {
+    public setStorageBuffer(name: string, buffer: StorageBuffer | DataBuffer): void {
         const current = this._bindings[name];
 
         this._contextIsDirty ||= !current || current.object !== buffer;
 
         this._bindings[name] = {
-            type: ComputeBindingType.StorageBuffer,
+            type: ComputeShader._BufferIsDataBuffer(buffer) ? ComputeBindingType.DataBuffer : ComputeBindingType.StorageBuffer,
             object: buffer,
             indexInGroupEntries: current?.indexInGroupEntries,
         };
@@ -240,6 +293,13 @@ export class ComputeShader {
                 case ComputeBindingType.TextureWithoutSampler:
                 case ComputeBindingType.StorageTexture: {
                     const texture = object as BaseTexture;
+                    if (!texture.isReady()) {
+                        return false;
+                    }
+                    break;
+                }
+                case ComputeBindingType.ExternalTexture: {
+                    const texture = object as ExternalTexture;
                     if (!texture.isReady()) {
                         return false;
                     }
@@ -288,6 +348,30 @@ export class ComputeShader {
      * @returns True if the dispatch could be done, else false (meaning either the compute effect or at least one of the bound resources was not ready)
      */
     public dispatch(x: number, y?: number, z?: number): boolean {
+        if (!this.fastMode && !this._checkContext()) {
+            return false;
+        }
+        this._engine.computeDispatch(this._effect, this._context, this._bindings, x, y, z, this._options.bindingsMapping, this.gpuTimeInFrame);
+
+        return true;
+    }
+
+    /**
+     * Dispatches (executes) the compute shader.
+     * @param buffer Buffer containing the number of workgroups to execute on the X, Y and Z dimensions
+     * @param offset Offset in the buffer where the workgroup counts are stored (default: 0)
+     * @returns True if the dispatch could be done, else false (meaning either the compute effect or at least one of the bound resources was not ready)
+     */
+    public dispatchIndirect(buffer: StorageBuffer | DataBuffer, offset: number = 0): boolean {
+        if (!this.fastMode && !this._checkContext()) {
+            return false;
+        }
+        const dataBuffer = ComputeShader._BufferIsDataBuffer(buffer) ? buffer : buffer.getBuffer();
+        this._engine.computeDispatchIndirect(this._effect, this._context, this._bindings, dataBuffer, offset, this._options.bindingsMapping, this.gpuTimeInFrame);
+        return true;
+    }
+
+    private _checkContext(): boolean {
         if (!this.isReady()) {
             return false;
         }
@@ -319,6 +403,11 @@ export class ComputeShader {
                     }
                     break;
                 }
+                case ComputeBindingType.ExternalTexture: {
+                    // we must recreate the bind groups each time if there's an external texture, because device.importExternalTexture must be called each frame
+                    this._contextIsDirty = true;
+                    break;
+                }
                 case ComputeBindingType.UniformBuffer: {
                     const ubo = binding.object as UniformBuffer;
                     if (ubo.getBuffer() !== binding.buffer) {
@@ -334,9 +423,6 @@ export class ComputeShader {
             this._contextIsDirty = false;
             this._context.clear();
         }
-
-        this._engine.computeDispatch(this._effect, this._context, this._bindings, x, y, z, this._options.bindingsMapping);
-
         return true;
     }
 
@@ -409,7 +495,12 @@ export class ComputeShader {
      * @returns a new compute shader
      */
     public static Parse(source: any, scene: Scene, rootUrl: string): ComputeShader {
-        const compute = SerializationHelper.Parse(() => new ComputeShader(source.name, scene.getEngine(), source.shaderPath, source.options), source, scene, rootUrl);
+        const compute = SerializationHelper.Parse(
+            () => new ComputeShader(source.name, scene.getEngine() as WebGPUEngine, source.shaderPath, source.options),
+            source,
+            scene,
+            rootUrl
+        );
 
         for (const key in source.textures) {
             const binding = source.bindings[key];
@@ -425,6 +516,10 @@ export class ComputeShader {
         }
 
         return compute;
+    }
+
+    protected static _BufferIsDataBuffer(buffer: UniformBuffer | StorageBuffer | DataBuffer): buffer is DataBuffer {
+        return (buffer as DataBuffer).underlyingResource !== undefined;
     }
 }
 

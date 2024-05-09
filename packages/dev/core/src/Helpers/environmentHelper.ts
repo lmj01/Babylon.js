@@ -185,9 +185,9 @@ interface ISceneSize {
 }
 
 /**
- * The Environment helper class can be used to add a fully featured none expensive background to your scene.
+ * The EnvironmentHelper class can be used to add a fully featured non-expensive background to your scene.
  * It includes by default a skybox and a ground relying on the BackgroundMaterial.
- * It also helps with the default setup of your imageProcessing configuration.
+ * It also helps with the default setup of your ImageProcessingConfiguration.
  */
 export class EnvironmentHelper {
     /**
@@ -208,6 +208,7 @@ export class EnvironmentHelper {
     /**
      * Creates the default options for the helper.
      * @param scene The scene the environment helper belongs to.
+     * @returns default options for the helper.
      */
     private static _GetDefaultOptions(scene: Scene): IEnvironmentHelperOptions {
         return {
@@ -351,8 +352,8 @@ export class EnvironmentHelper {
     }
 
     /**
-     * Updates the background according to the new options
-     * @param options
+     * Updates the environment according to the new options
+     * @param options options to configure the helper (IEnvironmentHelperOptions)
      */
     public updateOptions(options: Partial<IEnvironmentHelperOptions>) {
         const newOptions = {
@@ -492,6 +493,7 @@ export class EnvironmentHelper {
 
     /**
      * Get the scene sizes according to the setup.
+     * @returns the different ground and skybox sizes.
      */
     private _getSceneSize(): ISceneSize {
         let groundSize = this._options.groundSize;

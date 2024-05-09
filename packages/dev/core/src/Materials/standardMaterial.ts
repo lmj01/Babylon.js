@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/naming-convention */
-import { serialize, SerializationHelper, serializeAsColor3, expandToProperty, serializeAsFresnelParameters, serializeAsTexture } from "../Misc/decorators";
+import { serialize, serializeAsColor3, expandToProperty, serializeAsFresnelParameters, serializeAsTexture } from "../Misc/decorators";
 import type { Observer } from "../Misc/observable";
 import { SmartArray } from "../Misc/smartArray";
 import type { IAnimatable } from "../Animations/animatable.interface";
@@ -14,7 +14,7 @@ import type { AbstractMesh } from "../Meshes/abstractMesh";
 import type { Mesh } from "../Meshes/mesh";
 import { PrePassConfiguration } from "./prePassConfiguration";
 
-import type { IImageProcessingConfigurationDefines } from "./imageProcessingConfiguration";
+import type { IImageProcessingConfigurationDefines } from "./imageProcessingConfiguration.defines";
 import { ImageProcessingConfiguration } from "./imageProcessingConfiguration";
 import type { ColorCurves } from "./colorCurves";
 import type { FresnelParameters } from "./fresnelParameters";
@@ -23,7 +23,6 @@ import { Material } from "../Materials/material";
 import { MaterialPluginEvent } from "./materialPluginEvent";
 import { MaterialDefines } from "../Materials/materialDefines";
 import { PushMaterial } from "./pushMaterial";
-import { MaterialHelper } from "./materialHelper";
 
 import type { BaseTexture } from "../Materials/Textures/baseTexture";
 import { Texture } from "../Materials/Textures/texture";
@@ -39,6 +38,29 @@ import { EffectFallbacks } from "./effectFallbacks";
 import type { Effect, IEffectCreationOptions } from "./effect";
 import { DetailMapConfiguration } from "./material.detailMapConfiguration";
 import { addClipPlaneUniforms, bindClipPlane } from "./clipPlaneMaterialHelper";
+import {
+    BindBonesParameters,
+    BindFogParameters,
+    BindLights,
+    BindLogDepth,
+    BindMorphTargetParameters,
+    BindTextureMatrix,
+    HandleFallbacksForShadows,
+    PrepareAttributesForBakedVertexAnimation,
+    PrepareAttributesForBones,
+    PrepareAttributesForInstances,
+    PrepareAttributesForMorphTargets,
+    PrepareDefinesForAttributes,
+    PrepareDefinesForFrameBoundValues,
+    PrepareDefinesForLights,
+    PrepareDefinesForMergedUV,
+    PrepareDefinesForMisc,
+    PrepareDefinesForMultiview,
+    PrepareDefinesForOIT,
+    PrepareDefinesForPrePass,
+    PrepareUniformsAndSamplersList,
+} from "./materialHelper.functions";
+import { SerializationHelper } from "../Misc/decorators.serialization";
 
 const onCreatedEffectParameters = { effect: null as unknown as Effect, subMesh: null as unknown as Nullable<SubMesh> };
 
@@ -66,6 +88,7 @@ export class StandardMaterialDefines extends MaterialDefines implements IImagePr
     public BUMP = false;
     public BUMPDIRECTUV = 0;
     public PARALLAX = false;
+    public PARALLAX_RHS = false;
     public PARALLAXOCCLUSION = false;
     public SPECULAROVERALPHA = false;
     public CLIPPLANE = false;
@@ -152,6 +175,7 @@ export class StandardMaterialDefines extends MaterialDefines implements IImagePr
     public PREPASS_DEPTH_INDEX = -1;
     public PREPASS_NORMAL = false;
     public PREPASS_NORMAL_INDEX = -1;
+    public PREPASS_NORMAL_WORLDSPACE = false;
     public PREPASS_POSITION = false;
     public PREPASS_POSITION_INDEX = -1;
     public PREPASS_VELOCITY = false;
@@ -168,8 +192,7 @@ export class StandardMaterialDefines extends MaterialDefines implements IImagePr
     public VIGNETTE = false;
     public VIGNETTEBLENDMODEMULTIPLY = false;
     public VIGNETTEBLENDMODEOPAQUE = false;
-    public TONEMAPPING = false;
-    public TONEMAPPING_ACES = false;
+    public TONEMAPPING = 0;
     public CONTRAST = false;
     public COLORCURVES = false;
     public COLORGRADING = false;
@@ -196,6 +219,8 @@ export class StandardMaterialDefines extends MaterialDefines implements IImagePr
      */
     public IS_REFRACTION_LINEAR = false;
     public EXPOSURE = false;
+
+    public DECAL_AFTER_DETAIL = false;
 
     /**
      * Initializes the Standard Material defines.
@@ -564,6 +589,14 @@ export class StandardMaterial extends PushMaterial {
     @expandToProperty("_markAllSubMeshesAsTexturesDirty")
     public twoSidedLighting: boolean;
 
+    @serialize("applyDecalMapAfterDetailMap")
+    private _applyDecalMapAfterDetailMap = false;
+    /**
+     * If sets to true, the decal map will be applied after the detail map. Else, it is applied before (default: false)
+     */
+    @expandToProperty("_markAllSubMeshesAsMiscDirty")
+    public applyDecalMapAfterDetailMap: boolean;
+
     /**
      * Default configuration related to image processing available in the standard Material.
      */
@@ -630,7 +663,7 @@ export class StandardMaterial extends PushMaterial {
     /**
      * Can this material render to prepass
      */
-    public get isPrePassCapable(): boolean {
+    public override get isPrePassCapable(): boolean {
         return !this.disableDepthWrite;
     }
 
@@ -739,7 +772,7 @@ export class StandardMaterial extends PushMaterial {
     /**
      * Can this material render to several textures at once
      */
-    public get canRenderToMRT() {
+    public override get canRenderToMRT() {
         return true;
     }
 
@@ -751,7 +784,6 @@ export class StandardMaterial extends PushMaterial {
     protected _renderTargets = new SmartArray<RenderTargetTexture>(16);
     protected _worldViewProjectionMatrix = Matrix.Zero();
     protected _globalAmbientColor = new Color3(0, 0, 0);
-    protected _useLogarithmicDepth: boolean;
     protected _cacheHasRenderTargetTextures = false;
 
     /**
@@ -792,7 +824,7 @@ export class StandardMaterial extends PushMaterial {
     /**
      * Gets a boolean indicating that current material needs to register RTT
      */
-    public get hasRenderTargetTextures(): boolean {
+    public override get hasRenderTargetTextures(): boolean {
         if (StandardMaterial.ReflectionTextureEnabled && this._reflectionTexture && this._reflectionTexture.isRenderTarget) {
             return true;
         }
@@ -809,31 +841,15 @@ export class StandardMaterial extends PushMaterial {
      * Mainly use in serialization.
      * @returns the class name
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "StandardMaterial";
-    }
-
-    /**
-     * In case the depth buffer does not allow enough depth precision for your scene (might be the case in large scenes)
-     * You can try switching to logarithmic depth.
-     * @see https://doc.babylonjs.com/features/featuresDeepDive/materials/advanced/logarithmicDepthBuffer
-     */
-    @serialize()
-    public get useLogarithmicDepth(): boolean {
-        return this._useLogarithmicDepth;
-    }
-
-    public set useLogarithmicDepth(value: boolean) {
-        this._useLogarithmicDepth = value && this.getScene().getEngine().getCaps().fragmentDepthSupported;
-
-        this._markAllSubMeshesAsMiscDirty();
     }
 
     /**
      * Specifies if the material will require alpha blending
      * @returns a boolean specifying if alpha blending is needed
      */
-    public needAlphaBlending(): boolean {
+    public override needAlphaBlending(): boolean {
         if (this._disableAlphaBlending) {
             return false;
         }
@@ -850,7 +866,7 @@ export class StandardMaterial extends PushMaterial {
      * Specifies if this material should be rendered in alpha test mode
      * @returns a boolean specifying if an alpha test is needed.
      */
-    public needAlphaTesting(): boolean {
+    public override needAlphaTesting(): boolean {
         if (this._forceAlphaTest) {
             return true;
         }
@@ -859,14 +875,14 @@ export class StandardMaterial extends PushMaterial {
     }
 
     /**
-     * Specifies whether or not the alpha value of the diffuse texture should be used for alpha blending.
+     * @returns whether or not the alpha value of the diffuse texture should be used for alpha blending.
      */
     protected _shouldUseAlphaFromDiffuseTexture(): boolean {
         return this._diffuseTexture != null && this._diffuseTexture.hasAlpha && this._useAlphaFromDiffuseTexture && this._transparencyMode !== Material.MATERIAL_OPAQUE;
     }
 
     /**
-     * Specifies whether or not there is a usable alpha channel for transparency.
+     * @returns whether or not there is a usable alpha channel for transparency.
      */
     protected _hasAlphaChannel(): boolean {
         return (this._diffuseTexture != null && this._diffuseTexture.hasAlpha) || this._opacityTexture != null;
@@ -876,7 +892,7 @@ export class StandardMaterial extends PushMaterial {
      * Get the texture used for alpha test purpose.
      * @returns the diffuse texture in case of the standard material.
      */
-    public getAlphaTestTexture(): Nullable<BaseTexture> {
+    public override getAlphaTestTexture(): Nullable<BaseTexture> {
         return this._diffuseTexture;
     }
 
@@ -888,13 +904,15 @@ export class StandardMaterial extends PushMaterial {
      * @param useInstances specifies that instances should be used
      * @returns a boolean indicating that the submesh is ready or not
      */
-    public isReadyForSubMesh(mesh: AbstractMesh, subMesh: SubMesh, useInstances: boolean = false): boolean {
+    public override isReadyForSubMesh(mesh: AbstractMesh, subMesh: SubMesh, useInstances: boolean = false): boolean {
         if (!this._uniformBufferLayoutBuilt) {
             this.buildUniformLayout();
         }
 
-        if (subMesh.effect && this.isFrozen) {
-            if (subMesh.effect._wasPreviouslyReady && subMesh.effect._wasPreviouslyUsingInstances === useInstances) {
+        const drawWrapper = subMesh._drawWrapper;
+
+        if (drawWrapper.effect && this.isFrozen) {
+            if (drawWrapper._wasPreviouslyReady && drawWrapper._wasPreviouslyUsingInstances === useInstances) {
                 return true;
             }
         }
@@ -913,17 +931,17 @@ export class StandardMaterial extends PushMaterial {
         const engine = scene.getEngine();
 
         // Lights
-        defines._needNormals = MaterialHelper.PrepareDefinesForLights(scene, mesh, defines, true, this._maxSimultaneousLights, this._disableLighting);
+        defines._needNormals = PrepareDefinesForLights(scene, mesh, defines, true, this._maxSimultaneousLights, this._disableLighting);
 
         // Multiview
-        MaterialHelper.PrepareDefinesForMultiview(scene, defines);
+        PrepareDefinesForMultiview(scene, defines);
 
         // PrePass
         const oit = this.needAlphaBlendingForMesh(mesh) && this.getScene().useOrderIndependentTransparency;
-        MaterialHelper.PrepareDefinesForPrePass(scene, defines, this.canRenderToMRT && !oit);
+        PrepareDefinesForPrePass(scene, defines, this.canRenderToMRT && !oit);
 
         // Order independant transparency
-        MaterialHelper.PrepareDefinesForOIT(scene, defines, oit);
+        PrepareDefinesForOIT(scene, defines, oit);
 
         // Textures
         if (defines._areTexturesDirty) {
@@ -947,7 +965,7 @@ export class StandardMaterial extends PushMaterial {
                     if (!this._diffuseTexture.isReadyOrNotBlocking()) {
                         return false;
                     } else {
-                        MaterialHelper.PrepareDefinesForMergedUV(this._diffuseTexture, defines, "DIFFUSE");
+                        PrepareDefinesForMergedUV(this._diffuseTexture, defines, "DIFFUSE");
                     }
                 } else {
                     defines.DIFFUSE = false;
@@ -957,7 +975,7 @@ export class StandardMaterial extends PushMaterial {
                     if (!this._ambientTexture.isReadyOrNotBlocking()) {
                         return false;
                     } else {
-                        MaterialHelper.PrepareDefinesForMergedUV(this._ambientTexture, defines, "AMBIENT");
+                        PrepareDefinesForMergedUV(this._ambientTexture, defines, "AMBIENT");
                     }
                 } else {
                     defines.AMBIENT = false;
@@ -967,7 +985,7 @@ export class StandardMaterial extends PushMaterial {
                     if (!this._opacityTexture.isReadyOrNotBlocking()) {
                         return false;
                     } else {
-                        MaterialHelper.PrepareDefinesForMergedUV(this._opacityTexture, defines, "OPACITY");
+                        PrepareDefinesForMergedUV(this._opacityTexture, defines, "OPACITY");
                         defines.OPACITYRGB = this._opacityTexture.getAlphaFromRGB;
                     }
                 } else {
@@ -1032,7 +1050,7 @@ export class StandardMaterial extends PushMaterial {
                     if (!this._emissiveTexture.isReadyOrNotBlocking()) {
                         return false;
                     } else {
-                        MaterialHelper.PrepareDefinesForMergedUV(this._emissiveTexture, defines, "EMISSIVE");
+                        PrepareDefinesForMergedUV(this._emissiveTexture, defines, "EMISSIVE");
                     }
                 } else {
                     defines.EMISSIVE = false;
@@ -1042,7 +1060,7 @@ export class StandardMaterial extends PushMaterial {
                     if (!this._lightmapTexture.isReadyOrNotBlocking()) {
                         return false;
                     } else {
-                        MaterialHelper.PrepareDefinesForMergedUV(this._lightmapTexture, defines, "LIGHTMAP");
+                        PrepareDefinesForMergedUV(this._lightmapTexture, defines, "LIGHTMAP");
                         defines.USELIGHTMAPASSHADOWMAP = this._useLightmapAsShadowmap;
                         defines.RGBDLIGHTMAP = this._lightmapTexture.isRGBD;
                     }
@@ -1054,7 +1072,7 @@ export class StandardMaterial extends PushMaterial {
                     if (!this._specularTexture.isReadyOrNotBlocking()) {
                         return false;
                     } else {
-                        MaterialHelper.PrepareDefinesForMergedUV(this._specularTexture, defines, "SPECULAR");
+                        PrepareDefinesForMergedUV(this._specularTexture, defines, "SPECULAR");
                         defines.GLOSSINESS = this._useGlossinessFromSpecularMapAlpha;
                     }
                 } else {
@@ -1066,9 +1084,10 @@ export class StandardMaterial extends PushMaterial {
                     if (!this._bumpTexture.isReady()) {
                         return false;
                     } else {
-                        MaterialHelper.PrepareDefinesForMergedUV(this._bumpTexture, defines, "BUMP");
+                        PrepareDefinesForMergedUV(this._bumpTexture, defines, "BUMP");
 
                         defines.PARALLAX = this._useParallax;
+                        defines.PARALLAX_RHS = scene.useRightHandedSystem;
                         defines.PARALLAXOCCLUSION = this._useParallaxOcclusion;
                     }
 
@@ -1076,6 +1095,7 @@ export class StandardMaterial extends PushMaterial {
                 } else {
                     defines.BUMP = false;
                     defines.PARALLAX = false;
+                    defines.PARALLAX_RHS = false;
                     defines.PARALLAXOCCLUSION = false;
                 }
 
@@ -1172,18 +1192,19 @@ export class StandardMaterial extends PushMaterial {
         }
 
         // Misc.
-        MaterialHelper.PrepareDefinesForMisc(
+        PrepareDefinesForMisc(
             mesh,
             scene,
             this._useLogarithmicDepth,
             this.pointsCloud,
             this.fogEnabled,
             this._shouldTurnAlphaTestOn(mesh) || this._forceAlphaTest,
-            defines
+            defines,
+            this._applyDecalMapAfterDetailMap
         );
 
         // Values that need to be evaluated on every frame
-        MaterialHelper.PrepareDefinesForFrameBoundValues(scene, engine, this, defines, useInstances, null, subMesh.getRenderingMesh().hasThinInstances);
+        PrepareDefinesForFrameBoundValues(scene, engine, this, defines, useInstances, null, subMesh.getRenderingMesh().hasThinInstances);
 
         // External config
         this._eventInfo.defines = defines;
@@ -1191,7 +1212,7 @@ export class StandardMaterial extends PushMaterial {
         this._callbackPluginEventPrepareDefinesBeforeAttributes(this._eventInfo);
 
         // Attribs
-        MaterialHelper.PrepareDefinesForAttributes(mesh, defines, true, true, true);
+        PrepareDefinesForAttributes(mesh, defines, true, true, true);
 
         // External config
         this._callbackPluginEventPrepareDefines(this._eventInfo);
@@ -1221,6 +1242,10 @@ export class StandardMaterial extends PushMaterial {
                 fallbacks.addFallback(1, "PARALLAX");
             }
 
+            if (defines.PARALLAX_RHS) {
+                fallbacks.addFallback(1, "PARALLAX_RHS");
+            }
+
             if (defines.PARALLAXOCCLUSION) {
                 fallbacks.addFallback(0, "PARALLAXOCCLUSION");
             }
@@ -1241,7 +1266,7 @@ export class StandardMaterial extends PushMaterial {
                 fallbacks.addFallback(0, "LOGARITHMICDEPTH");
             }
 
-            MaterialHelper.HandleFallbacksForShadows(defines, fallbacks, this._maxSimultaneousLights);
+            HandleFallbacksForShadows(defines, fallbacks, this._maxSimultaneousLights);
 
             if (defines.SPECULARTERM) {
                 fallbacks.addFallback(0, "SPECULARTERM");
@@ -1292,10 +1317,10 @@ export class StandardMaterial extends PushMaterial {
                 attribs.push(VertexBuffer.ColorKind);
             }
 
-            MaterialHelper.PrepareAttributesForBones(attribs, mesh, defines, fallbacks);
-            MaterialHelper.PrepareAttributesForInstances(attribs, defines);
-            MaterialHelper.PrepareAttributesForMorphTargets(attribs, mesh, defines);
-            MaterialHelper.PrepareAttributesForBakedVertexAnimation(attribs, mesh, defines);
+            PrepareAttributesForBones(attribs, mesh, defines, fallbacks);
+            PrepareAttributesForInstances(attribs, defines);
+            PrepareAttributesForMorphTargets(attribs, mesh, defines);
+            PrepareAttributesForBakedVertexAnimation(attribs, mesh, defines);
 
             let shaderName = "default";
 
@@ -1374,6 +1399,8 @@ export class StandardMaterial extends PushMaterial {
 
             const uniformBuffers = ["Material", "Scene", "Mesh"];
 
+            const indexParameters = { maxSimultaneousLights: this._maxSimultaneousLights, maxSimultaneousMorphTargets: defines.NUM_MORPH_INFLUENCERS };
+
             this._eventInfo.fallbacks = fallbacks;
             this._eventInfo.fallbackRank = 0;
             this._eventInfo.defines = defines;
@@ -1383,6 +1410,7 @@ export class StandardMaterial extends PushMaterial {
             this._eventInfo.uniformBuffersNames = uniformBuffers;
             this._eventInfo.customCode = undefined;
             this._eventInfo.mesh = mesh;
+            this._eventInfo.indexParameters = indexParameters;
             this._callbackPluginEventGeneric(MaterialPluginEvent.PrepareEffect, this._eventInfo);
 
             PrePassConfiguration.AddUniforms(uniforms);
@@ -1393,7 +1421,7 @@ export class StandardMaterial extends PushMaterial {
                 ImageProcessingConfiguration.PrepareSamplers(samplers, defines);
             }
 
-            MaterialHelper.PrepareUniformsAndSamplersList(<IEffectCreationOptions>{
+            PrepareUniformsAndSamplersList(<IEffectCreationOptions>{
                 uniformsNames: uniforms,
                 uniformBuffersNames: uniformBuffers,
                 samplers: samplers,
@@ -1423,7 +1451,7 @@ export class StandardMaterial extends PushMaterial {
                     fallbacks: fallbacks,
                     onCompiled: this.onCompiled,
                     onError: this.onError,
-                    indexParameters: { maxSimultaneousLights: this._maxSimultaneousLights, maxSimultaneousMorphTargets: defines.NUM_MORPH_INFLUENCERS },
+                    indexParameters,
                     processFinalCode: csnrOptions.processFinalCode,
                     processCodeAfterIncludes: this._eventInfo.customCode,
                     multiTarget: defines.PREPASS,
@@ -1464,8 +1492,8 @@ export class StandardMaterial extends PushMaterial {
         }
 
         defines._renderId = scene.getRenderId();
-        subMesh.effect._wasPreviouslyReady = forceWasNotReadyPreviously ? false : true;
-        subMesh.effect._wasPreviouslyUsingInstances = useInstances;
+        drawWrapper._wasPreviouslyReady = forceWasNotReadyPreviously ? false : true;
+        drawWrapper._wasPreviouslyUsingInstances = useInstances;
 
         this._checkScenePerformancePriority();
 
@@ -1476,7 +1504,7 @@ export class StandardMaterial extends PushMaterial {
      * Builds the material UBO layouts.
      * Used internally during the effect preparation.
      */
-    public buildUniformLayout(): void {
+    public override buildUniformLayout(): void {
         // Order is important !
         const ubo = this._uniformBuffer;
         ubo.addUniform("diffuseLeftColor", 4);
@@ -1529,7 +1557,7 @@ export class StandardMaterial extends PushMaterial {
      * @param mesh defines the mesh containing the submesh
      * @param subMesh defines the submesh to bind the material to
      */
-    public bindForSubMesh(world: Matrix, mesh: Mesh, subMesh: SubMesh): void {
+    public override bindForSubMesh(world: Matrix, mesh: Mesh, subMesh: SubMesh): void {
         const scene = this.getScene();
 
         const defines = <StandardMaterialDefines>subMesh.materialDefines;
@@ -1561,14 +1589,14 @@ export class StandardMaterial extends PushMaterial {
             this.bindOnlyNormalMatrix(this._normalMatrix);
         }
 
-        const mustRebind = effect._forceRebindOnNextCall || this._mustRebind(scene, effect, mesh.visibility);
+        const mustRebind = this._mustRebind(scene, effect, subMesh, mesh.visibility);
 
         // Bones
-        MaterialHelper.BindBonesParameters(mesh, effect);
+        BindBonesParameters(mesh, effect);
         const ubo = this._uniformBuffer;
         if (mustRebind) {
             this.bindViewProjection(effect);
-            if (!ubo.useUbo || !this.isFrozen || !ubo.isSync || effect._forceRebindOnNextCall) {
+            if (!ubo.useUbo || !this.isFrozen || !ubo.isSync || subMesh._drawWrapper._forceRebindOnNextCall) {
                 if (StandardMaterial.FresnelEnabled && defines.FRESNEL) {
                     // Fresnel
                     if (this.diffuseFresnelParameters && this.diffuseFresnelParameters.isEnabled) {
@@ -1608,17 +1636,17 @@ export class StandardMaterial extends PushMaterial {
                 if (scene.texturesEnabled) {
                     if (this._diffuseTexture && StandardMaterial.DiffuseTextureEnabled) {
                         ubo.updateFloat2("vDiffuseInfos", this._diffuseTexture.coordinatesIndex, this._diffuseTexture.level);
-                        MaterialHelper.BindTextureMatrix(this._diffuseTexture, ubo, "diffuse");
+                        BindTextureMatrix(this._diffuseTexture, ubo, "diffuse");
                     }
 
                     if (this._ambientTexture && StandardMaterial.AmbientTextureEnabled) {
                         ubo.updateFloat2("vAmbientInfos", this._ambientTexture.coordinatesIndex, this._ambientTexture.level);
-                        MaterialHelper.BindTextureMatrix(this._ambientTexture, ubo, "ambient");
+                        BindTextureMatrix(this._ambientTexture, ubo, "ambient");
                     }
 
                     if (this._opacityTexture && StandardMaterial.OpacityTextureEnabled) {
                         ubo.updateFloat2("vOpacityInfos", this._opacityTexture.coordinatesIndex, this._opacityTexture.level);
-                        MaterialHelper.BindTextureMatrix(this._opacityTexture, ubo, "opacity");
+                        BindTextureMatrix(this._opacityTexture, ubo, "opacity");
                     }
 
                     if (this._hasAlphaChannel()) {
@@ -1639,22 +1667,22 @@ export class StandardMaterial extends PushMaterial {
 
                     if (this._emissiveTexture && StandardMaterial.EmissiveTextureEnabled) {
                         ubo.updateFloat2("vEmissiveInfos", this._emissiveTexture.coordinatesIndex, this._emissiveTexture.level);
-                        MaterialHelper.BindTextureMatrix(this._emissiveTexture, ubo, "emissive");
+                        BindTextureMatrix(this._emissiveTexture, ubo, "emissive");
                     }
 
                     if (this._lightmapTexture && StandardMaterial.LightmapTextureEnabled) {
                         ubo.updateFloat2("vLightmapInfos", this._lightmapTexture.coordinatesIndex, this._lightmapTexture.level);
-                        MaterialHelper.BindTextureMatrix(this._lightmapTexture, ubo, "lightmap");
+                        BindTextureMatrix(this._lightmapTexture, ubo, "lightmap");
                     }
 
                     if (this._specularTexture && StandardMaterial.SpecularTextureEnabled) {
                         ubo.updateFloat2("vSpecularInfos", this._specularTexture.coordinatesIndex, this._specularTexture.level);
-                        MaterialHelper.BindTextureMatrix(this._specularTexture, ubo, "specular");
+                        BindTextureMatrix(this._specularTexture, ubo, "specular");
                     }
 
                     if (this._bumpTexture && scene.getEngine().getCaps().standardDerivatives && StandardMaterial.BumpTextureEnabled) {
                         ubo.updateFloat3("vBumpInfos", this._bumpTexture.coordinatesIndex, 1.0 / this._bumpTexture.level, this.parallaxScaleBias);
-                        MaterialHelper.BindTextureMatrix(this._bumpTexture, ubo, "bump");
+                        BindTextureMatrix(this._bumpTexture, ubo, "bump");
 
                         if (scene._mirroredCameraPosition) {
                             ubo.updateFloat2("vTangentSpaceParams", this._invertNormalMapX ? 1.0 : -1.0, this._invertNormalMapY ? 1.0 : -1.0);
@@ -1766,7 +1794,7 @@ export class StandardMaterial extends PushMaterial {
         if (mustRebind || !this.isFrozen) {
             // Lights
             if (scene.lightsEnabled && !this._disableLighting) {
-                MaterialHelper.BindLights(scene, mesh, effect, defines, this._maxSimultaneousLights);
+                BindLights(scene, mesh, effect, defines, this._maxSimultaneousLights);
             }
 
             // View
@@ -1781,11 +1809,11 @@ export class StandardMaterial extends PushMaterial {
             }
 
             // Fog
-            MaterialHelper.BindFogParameters(scene, mesh, effect);
+            BindFogParameters(scene, mesh, effect);
 
             // Morph targets
             if (defines.NUM_MORPH_INFLUENCERS) {
-                MaterialHelper.BindMorphTargetParameters(mesh, effect);
+                BindMorphTargetParameters(mesh, effect);
             }
 
             if (defines.BAKED_VERTEX_ANIMATION_TEXTURE) {
@@ -1794,7 +1822,7 @@ export class StandardMaterial extends PushMaterial {
 
             // Log. depth
             if (this.useLogarithmicDepth) {
-                MaterialHelper.BindLogDepth(defines, effect, scene);
+                BindLogDepth(defines, effect, scene);
             }
 
             // image processing
@@ -1803,7 +1831,7 @@ export class StandardMaterial extends PushMaterial {
             }
         }
 
-        this._afterBind(mesh, this._activeEffect);
+        this._afterBind(mesh, this._activeEffect, subMesh);
         ubo.update();
     }
 
@@ -1811,7 +1839,7 @@ export class StandardMaterial extends PushMaterial {
      * Get the list of animatables in the material.
      * @returns the list of animatables object used in the material
      */
-    public getAnimatables(): IAnimatable[] {
+    public override getAnimatables(): IAnimatable[] {
         const results = super.getAnimatables();
 
         if (this._diffuseTexture && this._diffuseTexture.animations && this._diffuseTexture.animations.length > 0) {
@@ -1857,7 +1885,7 @@ export class StandardMaterial extends PushMaterial {
      * Gets the active textures from the material
      * @returns an array of textures
      */
-    public getActiveTextures(): BaseTexture[] {
+    public override getActiveTextures(): BaseTexture[] {
         const activeTextures = super.getActiveTextures();
 
         if (this._diffuseTexture) {
@@ -1904,7 +1932,7 @@ export class StandardMaterial extends PushMaterial {
      * @param texture defines the texture to check against the material
      * @returns a boolean specifying if the material uses the texture
      */
-    public hasTexture(texture: BaseTexture): boolean {
+    public override hasTexture(texture: BaseTexture): boolean {
         if (super.hasTexture(texture)) {
             return true;
         }
@@ -1953,7 +1981,7 @@ export class StandardMaterial extends PushMaterial {
      * @param forceDisposeEffect specifies if effects should be forcefully disposed
      * @param forceDisposeTextures specifies if textures should be forcefully disposed
      */
-    public dispose(forceDisposeEffect?: boolean, forceDisposeTextures?: boolean): void {
+    public override dispose(forceDisposeEffect?: boolean, forceDisposeTextures?: boolean): void {
         if (forceDisposeTextures) {
             this._diffuseTexture?.dispose();
             this._ambientTexture?.dispose();
@@ -1977,15 +2005,18 @@ export class StandardMaterial extends PushMaterial {
      * Makes a duplicate of the material, and gives it a new name
      * @param name defines the new name for the duplicated material
      * @param cloneTexturesOnlyOnce - if a texture is used in more than one channel (e.g diffuse and opacity), only clone it once and reuse it on the other channels. Default false.
+     * @param rootUrl defines the root URL to use to load textures
      * @returns the cloned material
      */
-    public clone(name: string, cloneTexturesOnlyOnce: boolean = true): StandardMaterial {
+    public override clone(name: string, cloneTexturesOnlyOnce: boolean = true, rootUrl = ""): StandardMaterial {
         const result = SerializationHelper.Clone(() => new StandardMaterial(name, this.getScene()), this, { cloneTexturesOnlyOnce });
 
         result.name = name;
         result.id = name;
 
         this.stencil.copyTo(result.stencil);
+
+        this._clonePlugins(result, rootUrl);
 
         return result;
     }
@@ -1997,12 +2028,14 @@ export class StandardMaterial extends PushMaterial {
      * @param rootUrl defines the root URL to use to load textures and relative dependencies
      * @returns a new standard material
      */
-    public static Parse(source: any, scene: Scene, rootUrl: string): StandardMaterial {
+    public static override Parse(source: any, scene: Scene, rootUrl: string): StandardMaterial {
         const material = SerializationHelper.Parse(() => new StandardMaterial(source.name, scene), source, scene, rootUrl);
 
         if (source.stencil) {
             material.stencil.parse(source.stencil, scene, rootUrl);
         }
+
+        Material._ParsePlugins(source, material, scene, rootUrl);
 
         return material;
     }

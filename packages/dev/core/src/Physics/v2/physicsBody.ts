@@ -1,4 +1,5 @@
-import type { IPhysicsCollisionEvent, IPhysicsEnginePluginV2, PhysicsMassProperties, PhysicsMotionType } from "./IPhysicsEnginePlugin";
+import type { IBasePhysicsCollisionEvent, IPhysicsCollisionEvent, IPhysicsEnginePluginV2, PhysicsMassProperties } from "./IPhysicsEnginePlugin";
+import { PhysicsMotionType } from "./IPhysicsEnginePlugin";
 import type { PhysicsShape } from "./physicsShape";
 import { Vector3, Quaternion, TmpVectors } from "../../Maths/math.vector";
 import type { Scene } from "../../scene";
@@ -40,6 +41,10 @@ export class PhysicsBody {
      */
     private _collisionCBEnabled: boolean = false;
     /**
+     * If the collision ended callback is enabled
+     */
+    private _collisionEndedCBEnabled: boolean = false;
+    /**
      * The transform node associated with this Physics Body
      */
     transformNode: TransformNode;
@@ -50,11 +55,22 @@ export class PhysicsBody {
     disablePreStep: boolean = true;
 
     /**
+     * Disable sync from physics to transformNode. This value is set to true at body creation or at motionType setting when the body is not dynamic.
+     */
+    disableSync: boolean = false;
+
+    /**
      * Physics engine will try to make this body sleeping and not active
      */
     public startAsleep: boolean;
 
     private _nodeDisposeObserver: Nullable<Observer<Node>>;
+
+    private _isDisposed = false;
+
+    private _shape: Nullable<PhysicsShape> = null;
+
+    private _motionType: PhysicsMotionType;
 
     /**
      * Constructs a new physics body for the given node.
@@ -94,6 +110,11 @@ export class PhysicsBody {
 
         this.startAsleep = startsAsleep;
 
+        this._motionType = motionType;
+
+        // only dynamic and animated body needs sync from physics to transformNode
+        this.disableSync = motionType == PhysicsMotionType.STATIC;
+
         // instances?
         const m = transformNode as Mesh;
         if (m.hasThinInstances) {
@@ -131,6 +152,9 @@ export class PhysicsBody {
     public clone(transformNode: TransformNode): PhysicsBody {
         const clonedBody = new PhysicsBody(transformNode, this.getMotionType(), this.startAsleep, this.transformNode.getScene());
         clonedBody.shape = this.shape;
+        clonedBody.setMassProperties(this.getMassProperties());
+        clonedBody.setLinearDamping(this.getLinearDamping());
+        clonedBody.setAngularDamping(this.getAngularDamping());
         return clonedBody;
     }
 
@@ -152,6 +176,13 @@ export class PhysicsBody {
     }
 
     /**
+     * Get the motion type of the physics body. Can be STATIC, DYNAMIC, or ANIMATED.
+     */
+    public get motionType(): PhysicsMotionType {
+        return this._motionType;
+    }
+
+    /**
      * Sets the shape of the physics body.
      * @param shape - The shape of the physics body.
      *
@@ -159,7 +190,10 @@ export class PhysicsBody {
      * The shape is used to calculate the body's mass, inertia, and other properties.
      */
     public set shape(shape: Nullable<PhysicsShape>) {
-        this._physicsPlugin.setShape(this, shape);
+        this._shape = shape;
+        if (shape) {
+            this._physicsPlugin.setShape(this, shape);
+        }
     }
 
     /**
@@ -172,13 +206,14 @@ export class PhysicsBody {
      * which can be used to apply physical forces to the object or to detect collisions.
      */
     public get shape(): Nullable<PhysicsShape> {
-        return this._physicsPlugin.getShape(this);
+        return this._shape;
     }
 
     /**
      * Sets the event mask for the physics engine.
      *
      * @param eventMask - A bitmask that determines which events will be sent to the physics engine.
+     * @param instanceIndex - If this body is instanced, the index of the instance to set the event mask for.
      *
      * This method is useful for setting the event mask for the physics engine, which determines which events
      * will be sent to the physics engine. This allows the user to control which events the physics engine will respond to.
@@ -189,7 +224,7 @@ export class PhysicsBody {
 
     /**
      * Gets the event mask of the physics engine.
-     *
+     * @param instanceIndex - If this body is instanced, the index of the instance to get the event mask for.
      * @returns The event mask of the physics engine.
      *
      * This method is useful for getting the event mask of the physics engine,
@@ -203,13 +238,18 @@ export class PhysicsBody {
 
     /**
      * Sets the motion type of the physics body. Can be STATIC, DYNAMIC, or ANIMATED.
+     * @param motionType - The motion type to set.
+     * @param instanceIndex - If this body is instanced, the index of the instance to set the motion type for.
      */
     public setMotionType(motionType: PhysicsMotionType, instanceIndex?: number) {
+        this.disableSync = motionType == PhysicsMotionType.STATIC;
         this._physicsPlugin.setMotionType(this, motionType, instanceIndex);
     }
 
     /**
      * Gets the motion type of the physics body. Can be STATIC, DYNAMIC, or ANIMATED.
+     * @param instanceIndex - If this body is instanced, the index of the instance to get the motion type for.
+     * @returns The motion type of the physics body.
      */
     public getMotionType(instanceIndex?: number): PhysicsMotionType {
         return this._physicsPlugin.getMotionType(this, instanceIndex);
@@ -220,7 +260,9 @@ export class PhysicsBody {
      * This method is useful for computing the initial mass properties of a physics object, such as its mass,
      * inertia, and center of mass; these values are important for accurately simulating the physics of the
      * object in the physics engine, and computing values based on the shape will provide you with reasonable
-     * intial values, which you can then customize.
+     * initial values, which you can then customize.
+     * @param instanceIndex - The index of the instance to compute the mass properties for.
+     * @returns The mass properties of the object.
      */
     public computeMassProperties(instanceIndex?: number): PhysicsMassProperties {
         return this._physicsPlugin.computeMassProperties(this, instanceIndex);
@@ -241,7 +283,7 @@ export class PhysicsBody {
 
     /**
      * Retrieves the mass properties of the object.
-     *
+     * @param instanceIndex - If this body is instanced, the index of the instance to get the mass properties for.
      * @returns The mass properties of the object.
      *
      * This method is useful for physics simulations, as it allows the user to
@@ -257,6 +299,7 @@ export class PhysicsBody {
      * Sets the linear damping of the physics body.
      *
      * @param damping - The linear damping value.
+     * @param instanceIndex - If this body is instanced, the index of the instance to set the linear damping for.
      *
      * This method is useful for controlling the linear damping of the physics body,
      * which is the rate at which the body's velocity decreases over time. This is useful for simulating
@@ -268,6 +311,7 @@ export class PhysicsBody {
 
     /**
      * Gets the linear damping of the physics body.
+     * @param instanceIndex - If this body is instanced, the index of the instance to get the linear damping for.
      * @returns The linear damping of the physics body.
      *
      * This method is useful for retrieving the linear damping of the physics body, which is the amount of
@@ -281,6 +325,7 @@ export class PhysicsBody {
     /**
      * Sets the angular damping of the physics body.
      * @param damping The angular damping of the body.
+     * @param instanceIndex - If this body is instanced, the index of the instance to set the angular damping for.
      *
      * This method is useful for controlling the angular velocity of a physics body.
      * By setting the damping, the body's angular velocity will be reduced over time, simulating the effect of friction.
@@ -292,6 +337,7 @@ export class PhysicsBody {
 
     /**
      * Gets the angular damping of the physics body.
+     * @param instanceIndex - If this body is instanced, the index of the instance to get the angular damping for.
      *
      * @returns The angular damping of the physics body.
      *
@@ -306,6 +352,7 @@ export class PhysicsBody {
     /**
      * Sets the linear velocity of the physics object.
      * @param linVel - The linear velocity to set.
+     * @param instanceIndex - If this body is instanced, the index of the instance to set the linear velocity for.
      *
      * This method is useful for setting the linear velocity of a physics object,
      * which is necessary for simulating realistic physics in a game engine.
@@ -319,16 +366,33 @@ export class PhysicsBody {
     /**
      * Gets the linear velocity of the physics body and stores it in the given vector3.
      * @param linVel - The vector3 to store the linear velocity in.
+     * @param instanceIndex - If this body is instanced, the index of the instance to get the linear velocity for.
      *
      * This method is useful for getting the linear velocity of a physics body in a physics engine.
-     * This can be used to determine the speed and direction of the body, which can be used to calculate the motion of the body.*/
+     * This can be used to determine the speed and direction of the body, which can be used to calculate the motion of the body.
+     */
     public getLinearVelocityToRef(linVel: Vector3, instanceIndex?: number): void {
-        return this._physicsPlugin.getLinearVelocityToRef(this, linVel, instanceIndex);
+        this._physicsPlugin.getLinearVelocityToRef(this, linVel, instanceIndex);
+    }
+
+    /**
+     * Gets the linear velocity of the physics body as a new vector3.
+     * @param instanceIndex - If this body is instanced, the index of the instance to get the linear velocity for.
+     * @returns The linear velocity of the physics body.
+     *
+     * This method is useful for getting the linear velocity of a physics body in a physics engine.
+     * This can be used to determine the speed and direction of the body, which can be used to calculate the motion of the body.
+     */
+    public getLinearVelocity(instanceIndex?: number): Vector3 {
+        const ref = new Vector3();
+        this.getLinearVelocityToRef(ref, instanceIndex);
+        return ref;
     }
 
     /**
      * Sets the angular velocity of the physics object.
      * @param angVel - The angular velocity to set.
+     * @param instanceIndex - If this body is instanced, the index of the instance to set the angular velocity for.
      *
      * This method is useful for setting the angular velocity of a physics object, which is necessary for
      * simulating realistic physics behavior. The angular velocity is used to determine the rate of rotation of the object,
@@ -341,12 +405,27 @@ export class PhysicsBody {
     /**
      * Gets the angular velocity of the physics body and stores it in the given vector3.
      * @param angVel - The vector3 to store the angular velocity in.
+     * @param instanceIndex - If this body is instanced, the index of the instance to get the angular velocity for.
      *
      * This method is useful for getting the angular velocity of a physics body, which can be used to determine the body's
      * rotational speed. This information can be used to create realistic physics simulations.
      */
     public getAngularVelocityToRef(angVel: Vector3, instanceIndex?: number): void {
-        return this._physicsPlugin.getAngularVelocityToRef(this, angVel, instanceIndex);
+        this._physicsPlugin.getAngularVelocityToRef(this, angVel, instanceIndex);
+    }
+
+    /**
+     * Gets the angular velocity of the physics body as a new vector3.
+     * @param instanceIndex - If this body is instanced, the index of the instance to get the angular velocity for.
+     * @returns The angular velocity of the physics body.
+     *
+     * This method is useful for getting the angular velocity of a physics body, which can be used to determine the body's
+     * rotational speed. This information can be used to create realistic physics simulations.
+     */
+    public getAngularVelocity(instanceIndex?: number): Vector3 {
+        const ref = new Vector3();
+        this.getAngularVelocityToRef(ref, instanceIndex);
+        return ref;
     }
 
     /**
@@ -361,6 +440,15 @@ export class PhysicsBody {
      */
     public applyImpulse(impulse: Vector3, location: Vector3, instanceIndex?: number): void {
         this._physicsPlugin.applyImpulse(this, impulse, location, instanceIndex);
+    }
+
+    /**
+     * Add torque to a physics body
+     * @param angularImpulse The angular impulse vector.
+     * @param instanceIndex For a instanced body, the instance to where the impulse should be applied. If not specified, the impulse is applied to all instances.
+     */
+    public applyAngularImpulse(angularImpulse: Vector3, instanceIndex?: number): void {
+        this._physicsPlugin.applyAngularImpulse(this, angularImpulse, instanceIndex);
     }
 
     /**
@@ -389,11 +477,19 @@ export class PhysicsBody {
     }
 
     /**
-     * Returns an observable that will be notified for all collisions happening for event-enabled bodies
+     * Returns an observable that will be notified for when a collision starts or continues for this PhysicsBody
      * @returns Observable
      */
     public getCollisionObservable(): Observable<IPhysicsCollisionEvent> {
         return this._physicsPlugin.getCollisionObservable(this);
+    }
+
+    /**
+     * Returns an observable that will be notified when the body has finished colliding with another body
+     * @returns
+     */
+    public getCollisionEndedObservable(): Observable<IBasePhysicsCollisionEvent> {
+        return this._physicsPlugin.getCollisionEndedObservable(this);
     }
 
     /**
@@ -405,7 +501,16 @@ export class PhysicsBody {
         this._physicsPlugin.setCollisionCallbackEnabled(this, enabled);
     }
 
-    /*
+    /**
+     * Enable or disable collision ended callback for this PhysicsBody.
+     * @param enabled true if PhysicsBody's collision ended will rise a collision event and notifies the observable
+     */
+    public setCollisionEndedCallbackEnabled(enabled: boolean): void {
+        this._collisionEndedCBEnabled = enabled;
+        this._physicsPlugin.setCollisionEndedCallbackEnabled(this, enabled);
+    }
+
+    /**
      * Get the center of the object in world space.
      * @param instanceIndex - If this body is instanced, the index of the instance to get the center for.
      * @returns geometric center of the associated mesh
@@ -415,7 +520,7 @@ export class PhysicsBody {
         return this.getObjectCenterWorldToRef(ref, instanceIndex);
     }
 
-    /*
+    /**
      * Get the center of the object in world space.
      * @param ref - The vector3 to store the result in.
      * @param instanceIndex - If this body is instanced, the index of the instance to get the center for.
@@ -528,14 +633,38 @@ export class PhysicsBody {
     }
 
     /**
+     * Set the target transformation (position and rotation) of the body, such that the body will set its velocity to reach that target
+     * @param position The target position
+     * @param rotation The target rotation
+     * @param instanceIndex The index of the instance in an instanced body
+     */
+    public setTargetTransform(position: Vector3, rotation: Quaternion, instanceIndex?: number) {
+        this._physicsPlugin.setTargetTransform(this, position, rotation, instanceIndex);
+    }
+
+    /**
+     * Returns if the body has been disposed.
+     * @returns true if disposed, false otherwise.
+     */
+    public get isDisposed() {
+        return this._isDisposed;
+    }
+
+    /**
      * Disposes the body from the physics engine.
      *
      * This method is useful for cleaning up the physics engine when a body is no longer needed. Disposing the body will free up resources and prevent memory leaks.
      */
     public dispose() {
+        if (this._isDisposed) {
+            return;
+        }
         // Disable collisions CB so it doesn't fire when the body is disposed
         if (this._collisionCBEnabled) {
             this.setCollisionCallbackEnabled(false);
+        }
+        if (this._collisionEndedCBEnabled) {
+            this.setCollisionEndedCallbackEnabled(false);
         }
         if (this._nodeDisposeObserver) {
             this.transformNode.onDisposeObservable.remove(this._nodeDisposeObserver);
@@ -544,7 +673,10 @@ export class PhysicsBody {
         this._physicsEngine.removeBody(this);
         this._physicsPlugin.removeBody(this);
         this._physicsPlugin.disposeBody(this);
+        this.transformNode.physicsBody = null;
         this._pluginData = null;
         this._pluginDataInstances.length = 0;
+        this._isDisposed = true;
+        this.shape = null;
     }
 }

@@ -19,8 +19,7 @@ import type {
 import { AccessorType, ImageMimeType, MeshPrimitiveMode, AccessorComponentType, CameraType } from "babylonjs-gltf2interface";
 
 import type { FloatArray, IndicesArray, Nullable } from "core/types";
-import { Matrix, TmpVectors } from "core/Maths/math.vector";
-import { Vector2, Vector3, Vector4, Quaternion } from "core/Maths/math.vector";
+import { Matrix, TmpVectors, Vector2, Vector3, Vector4, Quaternion } from "core/Maths/math.vector";
 import { Color3, Color4 } from "core/Maths/math.color";
 import { Tools } from "core/Misc/tools";
 import { VertexBuffer } from "core/Buffers/buffer";
@@ -51,6 +50,9 @@ import { MultiMaterial } from "core/Materials/multiMaterial";
 
 // Matrix that converts handedness on the X-axis.
 const convertHandednessMatrix = Matrix.Compose(new Vector3(-1, 1, 1), Quaternion.Identity(), Vector3.Zero());
+
+// 180 degrees rotation in Y.
+const rotation180Y = new Quaternion(0, 1, 0, 0);
 
 function isNoopNode(node: Node, useRightHandedSystem: boolean): boolean {
     if (!(node instanceof TransformNode)) {
@@ -868,9 +870,8 @@ export class _Exporter {
      * Writes mesh attribute data to a data buffer
      * Returns the bytelength of the data
      * @param vertexBufferKind Indicates what kind of vertex data is being passed in
-     * @param attributeComponentKind
-     * @param meshPrimitive
-     * @param morphTarget
+     * @param attributeComponentKind attribute component type
+     * @param meshPrimitive the mesh primitive
      * @param meshAttributeArray Array containing the attribute data
      * @param morphTargetAttributeArray
      * @param stride Specifies the space between data
@@ -1244,7 +1245,7 @@ export class _Exporter {
             node.scale = babylonTransformNode.scaling.asArray();
         }
 
-        const rotationQuaternion = Quaternion.RotationYawPitchRoll(babylonTransformNode.rotation.y, babylonTransformNode.rotation.x, babylonTransformNode.rotation.z);
+        const rotationQuaternion = Quaternion.FromEulerAngles(babylonTransformNode.rotation.x, babylonTransformNode.rotation.y, babylonTransformNode.rotation.z);
         if (babylonTransformNode.rotationQuaternion) {
             rotationQuaternion.multiplyInPlace(babylonTransformNode.rotationQuaternion);
         }
@@ -1254,14 +1255,19 @@ export class _Exporter {
     }
 
     private _setCameraTransformation(node: INode, babylonCamera: Camera): void {
-        if (!babylonCamera.position.equalsToFloats(0, 0, 0)) {
-            node.translation = babylonCamera.position.asArray();
+        const translation = TmpVectors.Vector3[0];
+        const rotation = TmpVectors.Quaternion[0];
+        babylonCamera.getWorldMatrix().decompose(undefined, rotation, translation);
+
+        if (!translation.equalsToFloats(0, 0, 0)) {
+            node.translation = translation.asArray();
         }
 
-        const rotationQuaternion = (<any>babylonCamera).rotationQuaternion; // we target the local transformation if one.
+        // // Rotation by 180 as glTF has a different convention than Babylon.
+        rotation.multiplyInPlace(rotation180Y);
 
-        if (rotationQuaternion && !Quaternion.IsIdentity(rotationQuaternion)) {
-            node.rotation = rotationQuaternion.normalize().asArray();
+        if (!Quaternion.IsIdentity(rotation)) {
+            node.rotation = rotation.asArray();
         }
     }
 
@@ -1294,8 +1300,8 @@ export class _Exporter {
             babylonTransformNode instanceof Mesh
                 ? (babylonTransformNode as Mesh)
                 : babylonTransformNode instanceof InstancedMesh
-                ? (babylonTransformNode as InstancedMesh).sourceMesh
-                : null;
+                  ? (babylonTransformNode as InstancedMesh).sourceMesh
+                  : null;
 
         if (bufferMesh) {
             const vertexBuffer = bufferMesh.getVertexBuffer(kind, true);
@@ -1428,6 +1434,7 @@ export class _Exporter {
     /**
      * The primitive mode of the Babylon mesh
      * @param babylonMesh The BabylonJS mesh
+     * @returns Unsigned integer of the primitive mode or null
      */
     private _getMeshPrimitiveMode(babylonMesh: AbstractMesh): number {
         if (babylonMesh instanceof LinesMesh) {
@@ -1488,7 +1495,6 @@ export class _Exporter {
      * Sets the vertex attribute accessor based of the glTF mesh primitive
      * @param meshPrimitive glTF mesh primitive
      * @param attributeKind vertex attribute
-     * @returns boolean specifying if uv coordinates are present
      */
     private _setAttributeKind(meshPrimitive: IMeshPrimitive, attributeKind: string): void {
         switch (attributeKind) {
@@ -1543,6 +1549,7 @@ export class _Exporter {
      * @param mesh glTF Mesh object to store the primitive attribute information
      * @param babylonTransformNode Babylon mesh to get the primitive attribute data from
      * @param binaryWriter Buffer to write the attribute data to
+     * @returns promise that resolves when done setting the primitive attributes
      */
     private _setPrimitiveAttributesAsync(mesh: IMesh, babylonTransformNode: TransformNode, binaryWriter: _BinaryWriter): Promise<void> {
         const promises: Promise<IMeshPrimitive>[] = [];
@@ -1694,7 +1701,7 @@ export class _Exporter {
                         meshPrimitive.indices = this._accessors.length - 1;
                     }
 
-                    if (materialIndex != null && Object.keys(meshPrimitive.attributes).length > 0) {
+                    if (Object.keys(meshPrimitive.attributes).length > 0) {
                         const sideOrientation = bufferMesh.overrideMaterialSideOrientation !== null ? bufferMesh.overrideMaterialSideOrientation : babylonMaterial.sideOrientation;
 
                         if (sideOrientation === (this._babylonScene.useRightHandedSystem ? Material.ClockWiseSideOrientation : Material.CounterClockWiseSideOrientation)) {
@@ -1719,13 +1726,21 @@ export class _Exporter {
                             }
                         }
 
-                        meshPrimitive.material = materialIndex;
+                        if (materialIndex != null) {
+                            meshPrimitive.material = materialIndex;
+                        }
                     }
                     if (morphTargetManager) {
-                        let target;
+                        // By convention, morph target names are stored in the mesh extras.
+                        if (!mesh.extras) {
+                            mesh.extras = {};
+                        }
+                        mesh.extras.targetNames = [];
+
                         for (let i = 0; i < morphTargetManager.numTargets; ++i) {
-                            target = morphTargetManager.getTarget(i);
+                            const target = morphTargetManager.getTarget(i);
                             this._setMorphTargetAttributes(submesh, meshPrimitive, target, binaryWriter);
+                            mesh.extras.targetNames.push(target.name);
                         }
                     }
 
@@ -1743,9 +1758,9 @@ export class _Exporter {
 
     /**
      * Creates a glTF scene based on the array of meshes
-     * Returns the the total byte offset
-     * @param babylonScene Babylon scene to get the mesh data from
+     * Returns the total byte offset
      * @param binaryWriter Buffer to write binary data to
+     * @returns a promise that resolves when done
      */
     private _createSceneAsync(binaryWriter: _BinaryWriter): Promise<void> {
         const scene: IScene = { nodes: [] };
@@ -1779,36 +1794,38 @@ export class _Exporter {
         // Export babylon cameras to glTFCamera
         const cameraMap = new Map<Camera, number>();
         this._babylonScene.cameras.forEach((camera) => {
-            if (!this._options.shouldExportNode || this._options.shouldExportNode(camera)) {
-                const glTFCamera: ICamera = {
-                    type: camera.mode === Camera.PERSPECTIVE_CAMERA ? CameraType.PERSPECTIVE : CameraType.ORTHOGRAPHIC,
-                };
-
-                if (camera.name) {
-                    glTFCamera.name = camera.name;
-                }
-
-                if (glTFCamera.type === CameraType.PERSPECTIVE) {
-                    glTFCamera.perspective = {
-                        aspectRatio: camera.getEngine().getAspectRatio(camera),
-                        yfov: camera.fovMode === Camera.FOVMODE_VERTICAL_FIXED ? camera.fov : camera.fov * camera.getEngine().getAspectRatio(camera),
-                        znear: camera.minZ,
-                        zfar: camera.maxZ,
-                    };
-                } else if (glTFCamera.type === CameraType.ORTHOGRAPHIC) {
-                    const halfWidth = camera.orthoLeft && camera.orthoRight ? 0.5 * (camera.orthoRight - camera.orthoLeft) : camera.getEngine().getRenderWidth() * 0.5;
-                    const halfHeight = camera.orthoBottom && camera.orthoTop ? 0.5 * (camera.orthoTop - camera.orthoBottom) : camera.getEngine().getRenderHeight() * 0.5;
-                    glTFCamera.orthographic = {
-                        xmag: halfWidth,
-                        ymag: halfHeight,
-                        znear: camera.minZ,
-                        zfar: camera.maxZ,
-                    };
-                }
-
-                cameraMap.set(camera, this._cameras.length);
-                this._cameras.push(glTFCamera);
+            if (this._options.shouldExportNode && !this._options.shouldExportNode(camera)) {
+                return;
             }
+
+            const glTFCamera: ICamera = {
+                type: camera.mode === Camera.PERSPECTIVE_CAMERA ? CameraType.PERSPECTIVE : CameraType.ORTHOGRAPHIC,
+            };
+
+            if (camera.name) {
+                glTFCamera.name = camera.name;
+            }
+
+            if (glTFCamera.type === CameraType.PERSPECTIVE) {
+                glTFCamera.perspective = {
+                    aspectRatio: camera.getEngine().getAspectRatio(camera),
+                    yfov: camera.fovMode === Camera.FOVMODE_VERTICAL_FIXED ? camera.fov : camera.fov * camera.getEngine().getAspectRatio(camera),
+                    znear: camera.minZ,
+                    zfar: camera.maxZ,
+                };
+            } else if (glTFCamera.type === CameraType.ORTHOGRAPHIC) {
+                const halfWidth = camera.orthoLeft && camera.orthoRight ? 0.5 * (camera.orthoRight - camera.orthoLeft) : camera.getEngine().getRenderWidth() * 0.5;
+                const halfHeight = camera.orthoBottom && camera.orthoTop ? 0.5 * (camera.orthoTop - camera.orthoBottom) : camera.getEngine().getRenderHeight() * 0.5;
+                glTFCamera.orthographic = {
+                    xmag: halfWidth,
+                    ymag: halfHeight,
+                    znear: camera.minZ,
+                    zfar: camera.maxZ,
+                };
+            }
+
+            cameraMap.set(camera, this._cameras.length);
+            this._cameras.push(glTFCamera);
         });
 
         const [exportNodes, exportMaterials] = this._getExportNodes(nodes);
@@ -1883,7 +1900,6 @@ export class _Exporter {
     /**
      * Getting the nodes and materials that would be exported.
      * @param nodes Babylon transform nodes
-     * @returns Array of nodes which would be exported.
      * @returns Set of materials which would be exported.
      */
     private _getExportNodes(nodes: Node[]): [Node[], Set<Material>] {
@@ -2056,7 +2072,6 @@ export class _Exporter {
 
     /**
      * Creates a glTF skin from a Babylon skeleton
-     * @param babylonScene Babylon Scene
      * @param nodeMap Babylon transform nodes
      * @param binaryWriter Buffer to write binary data to
      * @returns Node mapping of unique id to index
@@ -2162,7 +2177,8 @@ export class _BinaryWriter {
     }
     /**
      * Resize the array buffer to the specified byte length
-     * @param byteLength
+     * @param byteLength The new byte length
+     * @returns The resized array buffer
      */
     private _resizeBuffer(byteLength: number): ArrayBuffer {
         const newBuffer = new ArrayBuffer(byteLength);
@@ -2237,6 +2253,7 @@ export class _BinaryWriter {
     /**
      * Gets an UInt32 in the array buffer
      * @param byteOffset If defined, specifies where to set the value as an offset.
+     * @returns entry
      */
     public getUInt32(byteOffset: number): number {
         if (byteOffset < this._byteOffset) {

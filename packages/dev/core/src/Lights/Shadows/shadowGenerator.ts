@@ -11,7 +11,6 @@ import type { Mesh } from "../../Meshes/mesh";
 import type { IShadowLight } from "../../Lights/shadowLight";
 import { Light } from "../../Lights/light";
 import type { MaterialDefines } from "../../Materials/materialDefines";
-import { MaterialHelper } from "../../Materials/materialHelper";
 import type { Effect, IEffectCreationOptions } from "../../Materials/effect";
 import { Texture } from "../../Materials/Textures/texture";
 import { RenderTargetTexture } from "../../Materials/Textures/renderTargetTexture";
@@ -33,6 +32,12 @@ import "../../Shaders/depthBoxBlur.fragment";
 import "../../Shaders/ShadersInclude/shadowMapFragmentSoftTransparentShadow";
 import { addClipPlaneUniforms, bindClipPlane, prepareStringDefinesForClipPlanes } from "../../Materials/clipPlaneMaterialHelper";
 import type { BaseTexture } from "../../Materials/Textures/baseTexture";
+import {
+    BindMorphTargetParameters,
+    BindSceneUniformBuffer,
+    PrepareAttributesForMorphTargetsInfluencers,
+    PushAttributesForInstances,
+} from "../../Materials/materialHelper.functions";
 
 /**
  * Defines the options associated with the creation of a custom shader for a shadow generator.
@@ -804,6 +809,7 @@ export class ShadowGenerator implements IShadowGenerator {
     }
 
     protected _scene: Scene;
+    protected _useRedTextureType: boolean;
     protected _lightDirection = Vector3.Zero();
 
     protected _viewMatrix = Matrix.Zero();
@@ -857,12 +863,14 @@ export class ShadowGenerator implements IShadowGenerator {
      * @param light The light object generating the shadows.
      * @param usefullFloatFirst By default the generator will try to use half float textures but if you need precision (for self shadowing for instance), you can use this option to enforce full float texture.
      * @param camera Camera associated with this shadow generator (default: null). If null, takes the scene active camera at the time we need to access it
+     * @param useRedTextureType Forces the generator to use a Red instead of a RGBA type for the shadow map texture format (default: false)
      */
-    constructor(mapSize: number, light: IShadowLight, usefullFloatFirst?: boolean, camera?: Nullable<Camera>) {
+    constructor(mapSize: number, light: IShadowLight, usefullFloatFirst?: boolean, camera?: Nullable<Camera>, useRedTextureType?: boolean) {
         this._mapSize = mapSize;
         this._light = light;
         this._scene = light.getScene();
         this._camera = camera ?? null;
+        this._useRedTextureType = !!useRedTextureType;
 
         let shadowGenerators = light._shadowGenerators;
         if (!shadowGenerators) {
@@ -922,9 +930,18 @@ export class ShadowGenerator implements IShadowGenerator {
                 this._light.needCube(),
                 undefined,
                 false,
-                false
+                false,
+                undefined,
+                this._useRedTextureType ? Constants.TEXTUREFORMAT_RED : Constants.TEXTUREFORMAT_RGBA
             );
-            this._shadowMap.createDepthStencilTexture(engine.useReverseDepthBuffer ? Constants.GREATER : Constants.LESS, true);
+            this._shadowMap.createDepthStencilTexture(
+                engine.useReverseDepthBuffer ? Constants.GREATER : Constants.LESS,
+                true,
+                undefined,
+                undefined,
+                undefined,
+                `DepthStencilForShadowGenerator-${this._light.name}`
+            );
         } else {
             this._shadowMap = new RenderTargetTexture(this._light.name + "_shadowMap", this._mapSize, this._scene, false, true, this._textureType, this._light.needCube());
         }
@@ -949,7 +966,12 @@ export class ShadowGenerator implements IShadowGenerator {
         }
 
         // Custom render function.
-        this._shadowMap.customRenderFunction = this._renderForShadowMap.bind(this);
+        this._shadowMap.customRenderFunction = (
+            opaqueSubMeshes: SmartArray<SubMesh>,
+            alphaTestSubMeshes: SmartArray<SubMesh>,
+            transparentSubMeshes: SmartArray<SubMesh>,
+            depthOnlySubMeshes: SmartArray<SubMesh>
+        ) => this._renderForShadowMap(opaqueSubMeshes, alphaTestSubMeshes, transparentSubMeshes, depthOnlySubMeshes);
 
         // Force the mesh is ready function to true as we are double checking it
         // in the custom render function. Also it prevents side effects and useless
@@ -1253,10 +1275,16 @@ export class ShadowGenerator implements IShadowGenerator {
                 }
 
                 // Morph targets
-                MaterialHelper.BindMorphTargetParameters(renderingMesh, effect);
+                BindMorphTargetParameters(renderingMesh, effect);
 
                 if (renderingMesh.morphTargetManager && renderingMesh.morphTargetManager.isUsingTextureForTargets) {
                     renderingMesh.morphTargetManager._bind(effect);
+                }
+
+                // Baked vertex animations
+                const bvaManager = (<Mesh>subMesh.getMesh()).bakedVertexAnimationManager;
+                if (hardwareInstancedRendering && bvaManager && bvaManager.isEnabled) {
+                    bvaManager.bind(effect, true);
                 }
 
                 // Clip planes
@@ -1267,7 +1295,7 @@ export class ShadowGenerator implements IShadowGenerator {
                 this._bindCustomEffectForRenderSubMeshForShadowMap(subMesh, effect, effectiveMesh);
             }
 
-            MaterialHelper.BindSceneUniformBuffer(effect, this._scene.getSceneUniformBuffer());
+            BindSceneUniformBuffer(effect, this._scene.getSceneUniformBuffer());
             this._scene.getSceneUniformBuffer().bindUniformBuffer();
 
             const world = effectiveMesh.getWorldMatrix();
@@ -1351,7 +1379,7 @@ export class ShadowGenerator implements IShadowGenerator {
             return;
         }
 
-        const subMeshes = new Array<SubMesh>();
+        const subMeshes: SubMesh[] = [];
         for (const mesh of renderList) {
             subMeshes.push(...mesh.subMeshes);
         }
@@ -1537,14 +1565,14 @@ export class ShadowGenerator implements IShadowGenerator {
             const manager = (<Mesh>mesh).morphTargetManager;
             let morphInfluencers = 0;
             if (manager) {
-                if (manager.numInfluencers > 0) {
+                morphInfluencers = manager.numMaxInfluencers || manager.numInfluencers;
+                if (morphInfluencers > 0) {
                     defines.push("#define MORPHTARGETS");
-                    morphInfluencers = manager.numInfluencers;
                     defines.push("#define NUM_MORPH_INFLUENCERS " + morphInfluencers);
                     if (manager.isUsingTextureForTargets) {
                         defines.push("#define MORPHTARGETS_TEXTURE");
                     }
-                    MaterialHelper.PrepareAttributesForMorphTargetsInfluencers(attribs, mesh, morphInfluencers);
+                    PrepareAttributesForMorphTargetsInfluencers(attribs, mesh, morphInfluencers);
                 }
             }
 
@@ -1554,7 +1582,7 @@ export class ShadowGenerator implements IShadowGenerator {
             // Instances
             if (useInstances) {
                 defines.push("#define INSTANCES");
-                MaterialHelper.PushAttributesForInstances(attribs);
+                PushAttributesForInstances(attribs);
                 if (subMesh.getRenderingMesh().hasThinInstances) {
                     defines.push("#define THIN_INSTANCES");
                 }
@@ -1568,6 +1596,13 @@ export class ShadowGenerator implements IShadowGenerator {
                         }
                     }
                 }
+            }
+
+            // Baked vertex animations
+            const bvaManager = (<Mesh>mesh).bakedVertexAnimationManager;
+            if (useInstances && bvaManager && bvaManager.isEnabled) {
+                defines.push("#define BAKED_VERTEX_ANIMATION_TEXTURE");
+                attribs.push("bakedVertexAnimationSettingsInstanced");
             }
 
             // Get correct effect
@@ -1585,12 +1620,17 @@ export class ShadowGenerator implements IShadowGenerator {
                     "depthValuesSM",
                     "biasAndScaleSM",
                     "morphTargetInfluences",
+                    "morphTargetCount",
                     "boneTextureWidth",
                     "softTransparentShadowSM",
                     "morphTargetTextureInfo",
                     "morphTargetTextureIndices",
+                    "bakedVertexAnimationSettings",
+                    "bakedVertexAnimationTextureSizeInverted",
+                    "bakedVertexAnimationTime",
+                    "bakedVertexAnimationTexture",
                 ];
-                const samplers = ["diffuseSampler", "boneSampler", "morphTargets"];
+                const samplers = ["diffuseSampler", "boneSampler", "morphTargets", "bakedVertexAnimationTexture"];
                 const uniformBuffers = ["Scene", "Mesh"];
 
                 addClipPlaneUniforms(uniforms);
@@ -1768,6 +1808,20 @@ export class ShadowGenerator implements IShadowGenerator {
             this.getLight().getDepthMinZ(camera) + this.getLight().getDepthMaxZ(camera),
             lightIndex
         );
+    }
+
+    /**
+     * Gets the view matrix used to render the shadow map.
+     */
+    public get viewMatrix() {
+        return this._viewMatrix;
+    }
+
+    /**
+     * Gets the projection matrix used to render the shadow map.
+     */
+    public get projectionMatrix() {
+        return this._projectionMatrix;
     }
 
     /**

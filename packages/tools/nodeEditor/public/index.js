@@ -6,6 +6,8 @@ let nodeMaterial;
 
 const fallbackUrl = "https://babylonsnapshots.z22.web.core.windows.net/refs/heads/master";
 
+const useWebGPU = window.location.search.indexOf("webgpu") !== -1;
+
 let loadScriptAsync = function (url, instantResolve) {
     return new Promise((resolve) => {
         // eslint-disable-next-line no-undef
@@ -36,11 +38,7 @@ let loadScriptAsync = function (url, instantResolve) {
 };
 
 const Versions = {
-    dist: [
-        "https://preview.babylonjs.com/timestamp.js?t=" + Date.now(),
-        "https://preview.babylonjs.com/babylon.js",
-        "https://preview.babylonjs.com/loaders/babylonjs.loaders.min.js",
-    ],
+    dist: ["https://cdn.babylonjs.com/timestamp.js?t=" + Date.now(), "https://preview.babylonjs.com/babylon.js", "https://preview.babylonjs.com/loaders/babylonjs.loaders.min.js"],
     local: [`//${window.location.hostname}:1337/babylon.js`, `//${window.location.hostname}:1337/loaders/babylonjs.loaders.min.js`],
 };
 
@@ -69,13 +67,23 @@ let checkBabylonVersionAsync = function () {
         activeVersion = "dist";
     }
 
-    let versions = Versions[activeVersion] || Versions["dist"];
-    if (snapshot && activeVersion === "dist") {
-        versions = versions.map((v) => v.replace("https://preview.babylonjs.com", "https://babylonsnapshots.z22.web.core.windows.net/" + snapshot));
+    let version = "";
+    if (window.location.search.indexOf("version=") !== -1) {
+        version = window.location.search.split("version=")[1];
+        // cleanup, just in case
+        version = version.split("&")[0];
+        activeVersion = "dist";
+    }
+
+    let frameworkScripts = Versions[activeVersion] || Versions["dist"];
+    if (snapshot) {
+        frameworkScripts = frameworkScripts.map((v) => v.replace("https://preview.babylonjs.com", "https://babylonsnapshots.z22.web.core.windows.net/" + snapshot));
+    } else if (version) {
+        frameworkScripts = frameworkScripts.map((v) => v.replace("https://preview.babylonjs.com", "https://cdn.babylonjs.com/v" + version));
     }
 
     return new Promise((resolve) => {
-        loadInSequence(versions, 0, resolve);
+        loadInSequence(frameworkScripts, 0, resolve);
     });
 };
 
@@ -135,6 +143,56 @@ checkBabylonVersionAsync().then(() => {
             setTimeout(checkHash, 200);
         };
 
+        let startAsync = async function () {
+            // Let's start
+            if (BABYLON.Engine.isSupported()) {
+                let canvas = document.createElement("canvas");
+                let engine;
+
+                if (useWebGPU) {
+                    engine = new BABYLON.WebGPUEngine(canvas);
+                    await engine.initAsync();
+                } else {
+                    engine = new BABYLON.Engine(canvas, false, { disableWebGL2Support: false });
+                }
+
+                let scene = new BABYLON.Scene(engine);
+                new BABYLON.HemisphericLight("light #0", new BABYLON.Vector3(0, 1, 0), scene);
+                new BABYLON.HemisphericLight("light #1", new BABYLON.Vector3(0, 1, 0), scene);
+                new BABYLON.HemisphericLight("light #2", new BABYLON.Vector3(0, 1, 0), scene);
+
+                nodeMaterial = new BABYLON.NodeMaterial("node", scene, {
+                    shaderLanguage: useWebGPU ? BABYLON.ShaderLanguage.WGSL : BABYLON.ShaderLanguage.GLSL,
+                });
+
+                // Set to default
+                if (!location.hash) {
+                    const mode = BABYLON.DataStorage.ReadNumber("Mode", BABYLON.NodeMaterialModes.Material);
+
+                    switch (mode) {
+                        case BABYLON.NodeMaterialModes.Material:
+                            nodeMaterial.setToDefault();
+                            break;
+                        case BABYLON.NodeMaterialModes.PostProcess:
+                            nodeMaterial.setToDefaultPostProcess();
+                            break;
+                        case BABYLON.NodeMaterialModes.Particle:
+                            nodeMaterial.setToDefaultParticle();
+                            break;
+                        case BABYLON.NodeMaterialModes.ProceduralTexture:
+                            nodeMaterial.setToDefaultProceduralTexture();
+                            break;
+                    }
+                    nodeMaterial.build(true);
+                    showEditor();
+                }
+            } else {
+                alert("Babylon.js is not supported.");
+            }
+
+            checkHash();
+        };
+
         let showEditor = function () {
             editorDisplayed = true;
             let hostElement = document.getElementById("host-element");
@@ -188,42 +246,6 @@ checkBabylonVersionAsync().then(() => {
                 },
             });
         };
-        // Let's start
-        if (BABYLON.Engine.isSupported()) {
-            let canvas = document.createElement("canvas");
-            let engine = new BABYLON.Engine(canvas, false, { disableWebGL2Support: false });
-            let scene = new BABYLON.Scene(engine);
-            new BABYLON.HemisphericLight("light #0", new BABYLON.Vector3(0, 1, 0), scene);
-            new BABYLON.HemisphericLight("light #1", new BABYLON.Vector3(0, 1, 0), scene);
-            new BABYLON.HemisphericLight("light #2", new BABYLON.Vector3(0, 1, 0), scene);
-
-            nodeMaterial = new BABYLON.NodeMaterial("node");
-
-            // Set to default
-            if (!location.hash) {
-                const mode = BABYLON.DataStorage.ReadNumber("Mode", BABYLON.NodeMaterialModes.Material);
-
-                switch (mode) {
-                    case BABYLON.NodeMaterialModes.Material:
-                        nodeMaterial.setToDefault();
-                        break;
-                    case BABYLON.NodeMaterialModes.PostProcess:
-                        nodeMaterial.setToDefaultPostProcess();
-                        break;
-                    case BABYLON.NodeMaterialModes.Particle:
-                        nodeMaterial.setToDefaultParticle();
-                        break;
-                    case BABYLON.NodeMaterialModes.ProceduralTexture:
-                        nodeMaterial.setToDefaultProceduralTexture();
-                        break;
-                }
-                nodeMaterial.build(true);
-                showEditor();
-            }
-        } else {
-            alert("Babylon.js is not supported.");
-        }
-
-        checkHash();
+        startAsync();
     });
 });

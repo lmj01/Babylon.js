@@ -1,6 +1,7 @@
 import type { Nullable } from "../types";
 import type { Effect } from "../Materials/effect";
 import type { IMatrixLike, IVector2Like, IVector3Like, IVector4Like, IColor3Like, IColor4Like, IQuaternionLike } from "../Maths/math.like";
+import type { AbstractEngine } from "./abstractEngine";
 
 /**
  * Class used to store and describe the pipeline context associated with an effect
@@ -9,11 +10,11 @@ export interface IPipelineContext {
     /**
      * Gets a boolean indicating that this pipeline context is supporting asynchronous creating
      */
-    isAsync: boolean;
+    readonly isAsync: boolean;
     /**
      * Gets a boolean indicating that the context is ready to be used (like shaders / pipelines are compiled and ready for instance)
      */
-    isReady: boolean;
+    readonly isReady: boolean;
 
     /** @internal */
     _name?: string;
@@ -25,7 +26,7 @@ export interface IPipelineContext {
     _getFragmentShaderCode(): string | null;
 
     /** @internal */
-    _handlesSpectorRebuildCallback(onCompiled: (compiledObject: any) => void): void;
+    _handlesSpectorRebuildCallback?(onCompiled: (compiledObject: any) => void): void;
 
     /** @internal */
     _fillEffectInformation(
@@ -41,6 +42,9 @@ export interface IPipelineContext {
 
     /** Releases the resources associated with the pipeline. */
     dispose(): void;
+
+    /** set the engine, in case it is not a part of the constructor */
+    setEngine<T extends AbstractEngine>(engine: T): void;
 
     /**
      * Sets an integer value on a uniform variable.

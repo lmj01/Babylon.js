@@ -1,10 +1,7 @@
-const path = require("path");
 const webpackTools = require("@dev/build-tools").webpackTools;
 
 module.exports = (env) => {
-    const production = env.mode === "production" || process.env.NODE_ENV === "production";
     const commonConfig = {
-        mode: production ? "production" : "development",
         entry: {
             engineOnly: "./src/engineOnly.ts",
             minGridMaterial: "./src/minGridMaterial.ts",
@@ -12,14 +9,12 @@ module.exports = (env) => {
             sceneOnly: "./src/sceneOnly.ts",
             thinEngineOnly: "./src/thinEngineOnly.ts",
             sceneWithInspector: "./src/sceneWithInspector.ts",
-            umdCOmpile: "./src/umdCompile.ts",
         },
-        devtool: production ? false : "eval-cheap-module-source-map",
-        output: {
-            path: path.resolve(__dirname, "dist"),
-            filename: "[name].js",
-            devtoolModuleFilenameTemplate: production ? undefined : "file:///[absolute-resource-path]",
-        },
+        ...webpackTools.commonDevWebpackConfiguration({
+            mode: env.mode,
+            outputFilename: "[name].js",
+            dirName: __dirname,
+        }),
         resolve: {
             extensions: [".js", ".ts", ".tsx"],
         },

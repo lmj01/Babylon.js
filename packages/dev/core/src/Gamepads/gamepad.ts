@@ -149,7 +149,7 @@ export class Gamepad {
 
     /**
      * Callback triggered when the left joystick has changed
-     * @param callback
+     * @param callback callback to trigger
      */
     public onleftstickchanged(callback: (values: StickValues) => void) {
         this._onleftstickchanged = callback;
@@ -157,7 +157,7 @@ export class Gamepad {
 
     /**
      * Callback triggered when the right joystick has changed
-     * @param callback
+     * @param callback callback to trigger
      */
     public onrightstickchanged(callback: (values: StickValues) => void) {
         this._onrightstickchanged = callback;
@@ -283,7 +283,7 @@ export class GenericPad extends Gamepad {
     /**
      * Updates the generic gamepad
      */
-    public update() {
+    public override update() {
         super.update();
         for (let index = 0; index < this._buttons.length; index++) {
             this._buttons[index] = this._setButtonValue(this.browserGamepad.buttons[index].value, this._buttons[index], index);
@@ -293,7 +293,7 @@ export class GenericPad extends Gamepad {
     /**
      * Disposes the generic gamepad
      */
-    public dispose() {
+    public override dispose() {
         super.dispose();
         this.onButtonDownObservable.clear();
         this.onButtonUpObservable.clear();

@@ -61,7 +61,7 @@ export class SkeletonPropertyGridComponent extends React.Component<ISkeletonProp
                         continue;
                     }
 
-                    const viewer = new SkeletonViewer(mesh.skeleton, mesh, scene, false, 3, {
+                    const viewer = new SkeletonViewer(mesh.skeleton, mesh, scene, true, 3, {
                         displayMode: this._skeletonViewerDisplayOptions.displayMode,
                         displayOptions: {
                             sphereBaseSize: this._skeletonViewerDisplayOptions.sphereBaseSize,
@@ -82,8 +82,11 @@ export class SkeletonPropertyGridComponent extends React.Component<ISkeletonProp
             }
         } else {
             for (let index = 0; index < this._skeletonViewers.length; index++) {
-                this._skeletonViewers[index].mesh.reservedDataStore.skeletonViewer = null;
-                this._skeletonViewers[index].dispose();
+                const skeletonViewer = this._skeletonViewers[index];
+                if (skeletonViewer.mesh) {
+                    skeletonViewer.mesh.reservedDataStore.skeletonViewer = null;
+                }
+                skeletonViewer.dispose();
             }
             this._skeletonViewers = [];
         }
@@ -137,7 +140,7 @@ export class SkeletonPropertyGridComponent extends React.Component<ISkeletonProp
         }
     }
 
-    shouldComponentUpdate(nextProps: ISkeletonPropertyGridComponentProps) {
+    override shouldComponentUpdate(nextProps: ISkeletonPropertyGridComponentProps) {
         if (nextProps.skeleton !== this.props.skeleton) {
             this.checkSkeletonViewerState(nextProps);
         }
@@ -145,7 +148,7 @@ export class SkeletonPropertyGridComponent extends React.Component<ISkeletonProp
         return true;
     }
 
-    render() {
+    override render() {
         const skeleton = this.props.skeleton;
 
         const debugModeOptions = [

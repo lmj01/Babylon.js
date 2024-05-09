@@ -29,6 +29,7 @@ import { SpriteManager } from "core/Sprites/spriteManager";
 import type { TargetCamera } from "core/Cameras/targetCamera";
 import type { Camera } from "core/Cameras/camera";
 import type { PostProcessRenderPipeline } from "core/PostProcesses";
+import { NodeGeometry } from "core/Meshes/Node/nodeGeometry";
 
 // side effects
 import "core/Sprites/spriteSceneComponent";
@@ -46,7 +47,7 @@ export class SceneExplorerFilterComponent extends React.Component<ISceneExplorer
         super(props);
     }
 
-    render() {
+    override render() {
         return (
             <div className="filter">
                 <input type="text" placeholder="Filter" onChange={(evt) => this.props.onFilter(evt.target.value)} />
@@ -116,7 +117,7 @@ export class SceneExplorerComponent extends React.Component<ISceneExplorerCompon
         }, 32);
     }
 
-    componentDidMount() {
+    override componentDidMount() {
         this._onSelectionChangeObserver = this.props.globalState.onSelectionChangedObservable.add((entity) => {
             if (this.state.selectedEntity !== entity) {
                 this.setState({ selectedEntity: entity });
@@ -128,7 +129,7 @@ export class SceneExplorerComponent extends React.Component<ISceneExplorerCompon
         });
     }
 
-    componentWillUnmount() {
+    override componentWillUnmount() {
         if (this._onSelectionChangeObserver) {
             this.props.globalState.onSelectionChangedObservable.remove(this._onSelectionChangeObserver);
         }
@@ -207,7 +208,7 @@ export class SceneExplorerComponent extends React.Component<ISceneExplorerCompon
         return false;
     }
 
-    processKeys(keyEvent: React.KeyboardEvent<HTMLDivElement>) {
+    processKeys(keyEvent: React.KeyboardEvent<HTMLDivElement>, allNodes: any[]) {
         if (!this.state.selectedEntity) {
             return;
         }
@@ -252,9 +253,9 @@ export class SceneExplorerComponent extends React.Component<ISceneExplorerCompon
         keyEvent.preventDefault();
 
         const data = {};
-        if (!this.findSiblings(null, scene.rootNodes, this.state.selectedEntity, goNext, data)) {
-            if (!this.findSiblings(null, scene.materials, this.state.selectedEntity, goNext, data)) {
-                this.findSiblings(null, scene.textures, this.state.selectedEntity, goNext, data);
+        for (const nodeGroup of allNodes) {
+            if (this.findSiblings(null, nodeGroup, this.state.selectedEntity, goNext, data)) {
+                break;
             }
         }
     }
@@ -343,6 +344,17 @@ export class SceneExplorerComponent extends React.Component<ISceneExplorerCompon
                 this.props.globalState.onSelectionChangedObservable.notifyObservers(newFreeCamera);
             },
         });
+        defaultMenuItems.push({
+            label: "Add new mesh from Node Geometry",
+            action: () => {
+                const ng = new NodeGeometry("Node Geometry");
+                ng.setToDefault();
+                ng.build();
+                const newMesh = ng.createMesh("Node geometry mesh", scene);
+
+                this.props.globalState.onSelectionChangedObservable.notifyObservers(newMesh);
+            },
+        });
 
         const customMenuItems = this.props.contextMenu?.node || [];
         const useDefaults = !this.props.contextMenuOverride?.includes("node");
@@ -380,7 +392,7 @@ export class SceneExplorerComponent extends React.Component<ISceneExplorerCompon
             action: () => {
                 const newNodeMaterial = new NodeMaterial(getUniqueName("node material"), scene);
                 newNodeMaterial.setToDefault();
-                newNodeMaterial.build();
+                newNodeMaterial.build(false, false, true);
                 this.props.globalState.onSelectionChangedObservable.notifyObservers(newNodeMaterial);
             },
         });
@@ -439,7 +451,7 @@ export class SceneExplorerComponent extends React.Component<ISceneExplorerCompon
         return useDefaults ? [...defaultMenuItems, ...customMenuItems] : customMenuItems;
     }
 
-    renderContent() {
+    renderContent(allNodes: any[]) {
         const scene = this.state.scene;
 
         if (!scene) {
@@ -495,6 +507,23 @@ export class SceneExplorerComponent extends React.Component<ISceneExplorerCompon
             }
         }
 
+        allNodes.push(
+            rootNodes,
+            scene.skeletons,
+            materials,
+            textures,
+            postProcesses,
+            pipelines,
+            scene.effectLayers,
+            scene.particleSystems,
+            scene.spriteManagers,
+            guiElements,
+            scene.animationGroups
+        );
+        if (scene.mainSoundTrack) {
+            allNodes.push(scene.mainSoundTrack.soundCollection);
+        }
+
         return (
             <div id="tree" onContextMenu={(e) => e.preventDefault()}>
                 <SceneExplorerFilterComponent onFilter={(filter) => this.filterContent(filter)} />
@@ -509,6 +538,7 @@ export class SceneExplorerComponent extends React.Component<ISceneExplorerCompon
                 />
                 <TreeItemComponent
                     globalState={this.props.globalState}
+                    gizmoCamera={this.props.gizmoCamera}
                     contextMenuItems={nodeContextMenus}
                     extensibilityGroups={this.props.extensibilityGroups}
                     selectedEntity={this.state.selectedEntity}
@@ -668,10 +698,12 @@ export class SceneExplorerComponent extends React.Component<ISceneExplorerCompon
         this.props.onPopup();
     }
 
-    render() {
+    override render() {
+        const allNodes: any[] = [];
+
         if (this.props.popupMode) {
             return (
-                <div id="sceneExplorer" tabIndex={0} onKeyDown={(keyEvent) => this.processKeys(keyEvent)}>
+                <div id="sceneExplorer" tabIndex={0} onKeyDown={(keyEvent) => this.processKeys(keyEvent, allNodes)}>
                     {!this.props.noHeader && (
                         <HeaderComponent
                             title="SCENE EXPLORER"
@@ -682,7 +714,7 @@ export class SceneExplorerComponent extends React.Component<ISceneExplorerCompon
                             onPopup={() => this.onPopup()}
                         />
                     )}
-                    {this.renderContent()}
+                    {this.renderContent(allNodes)}
                 </div>
             );
         }
@@ -709,7 +741,7 @@ export class SceneExplorerComponent extends React.Component<ISceneExplorerCompon
                 maxWidth={600}
                 minHeight="100%"
                 enable={{ top: false, right: true, bottom: false, left: false, topRight: false, bottomRight: false, bottomLeft: false, topLeft: false }}
-                onKeyDown={(keyEvent) => this.processKeys(keyEvent)}
+                onKeyDown={(keyEvent) => this.processKeys(keyEvent, allNodes)}
             >
                 {!this.props.noHeader && (
                     <HeaderComponent
@@ -721,7 +753,7 @@ export class SceneExplorerComponent extends React.Component<ISceneExplorerCompon
                         onPopup={() => this.onPopup()}
                     />
                 )}
-                {this.renderContent()}
+                {this.renderContent(allNodes)}
             </Resizable>
         );
     }

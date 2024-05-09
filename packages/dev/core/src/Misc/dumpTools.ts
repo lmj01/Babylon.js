@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { _WarnImport } from "./devTools";
-import type { Engine } from "../Engines/engine";
 
 import { ThinEngine } from "../Engines/thinEngine";
 import { Constants } from "../Engines/constants";
@@ -10,6 +9,8 @@ import type { Nullable } from "../types";
 
 import { passPixelShader } from "../Shaders/pass.fragment";
 import { Scalar } from "../Maths/math.scalar";
+import type { AbstractEngine } from "../Engines/abstractEngine";
+import { EngineStore } from "../Engines/engineStore";
 
 type DumpToolsEngine = {
     canvas: HTMLCanvasElement | OffscreenCanvas;
@@ -26,8 +27,9 @@ export class DumpTools {
 
     private static _CreateDumpRenderer(): DumpToolsEngine {
         if (!DumpTools._DumpToolsEngine) {
-            const canvas = new OffscreenCanvas(100, 100); // will be resized later
-            const engine = new ThinEngine(canvas, false, {
+            let canvas: HTMLCanvasElement | OffscreenCanvas;
+            let engine: Nullable<ThinEngine> = null;
+            const options = {
                 preserveDrawingBuffer: true,
                 depth: false,
                 stencil: false,
@@ -35,6 +37,24 @@ export class DumpTools {
                 premultipliedAlpha: false,
                 antialias: false,
                 failIfMajorPerformanceCaveat: false,
+            };
+            try {
+                canvas = new OffscreenCanvas(100, 100); // will be resized later
+                engine = new ThinEngine(canvas, false, options);
+            } catch (e) {
+                // The browser either does not support OffscreenCanvas or WebGL context in OffscreenCanvas, fallback on a regular canvas
+                canvas = document.createElement("canvas");
+                engine = new ThinEngine(canvas, false, options);
+            }
+            // remove this engine from the list of instances to avoid using it for other purposes
+            EngineStore.Instances.pop();
+            // However, make sure to dispose it when no other engines are left
+            EngineStore.OnEnginesDisposedObservable.add((e) => {
+                // guaranteed to run when no other instances are left
+                // only dispose if it's not the current engine
+                if (engine && e !== engine && !engine.isDisposed) {
+                    engine.dispose();
+                }
             });
             engine.getCaps().parallelShaderCompile = undefined;
             const renderer = new EffectRenderer(engine);
@@ -51,7 +71,7 @@ export class DumpTools {
                 wrapper,
             };
         }
-        return DumpTools._DumpToolsEngine!;
+        return DumpTools._DumpToolsEngine;
     }
 
     /**
@@ -62,22 +82,24 @@ export class DumpTools {
      * @param successCallback defines the callback triggered once the data are available
      * @param mimeType defines the mime type of the result
      * @param fileName defines the filename to download. If present, the result will automatically be downloaded
+     * @param quality The quality of the image if lossy mimeType is used (e.g. image/jpeg, image/webp). See {@link https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob | HTMLCanvasElement.toBlob()}'s `quality` parameter.
      * @returns a void promise
      */
     public static async DumpFramebuffer(
         width: number,
         height: number,
-        engine: Engine,
+        engine: AbstractEngine,
         successCallback?: (data: string) => void,
-        mimeType: string = "image/png",
-        fileName?: string
+        mimeType = "image/png",
+        fileName?: string,
+        quality?: number
     ) {
         // Read the contents of the framebuffer
         const bufferView = await engine.readPixels(0, 0, width, height);
 
         const data = new Uint8Array(bufferView.buffer);
 
-        DumpTools.DumpData(width, height, data, successCallback as (data: string | ArrayBuffer) => void, mimeType, fileName, true);
+        DumpTools.DumpData(width, height, data, successCallback as (data: string | ArrayBuffer) => void, mimeType, fileName, true, undefined, quality);
     }
 
     /**
@@ -89,14 +111,14 @@ export class DumpTools {
      * @param fileName defines the filename to download. If present, the result will automatically be downloaded
      * @param invertY true to invert the picture in the Y dimension
      * @param toArrayBuffer true to convert the data to an ArrayBuffer (encoded as `mimeType`) instead of a base64 string
-     * @param quality defines the quality of the result
+     * @param quality The quality of the image if lossy mimeType is used (e.g. image/jpeg, image/webp). See {@link https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob | HTMLCanvasElement.toBlob()}'s `quality` parameter.
      * @returns a promise that resolve to the final data
      */
     public static DumpDataAsync(
         width: number,
         height: number,
         data: ArrayBufferView,
-        mimeType: string = "image/png",
+        mimeType = "image/png",
         fileName?: string,
         invertY = false,
         toArrayBuffer = false,
@@ -117,14 +139,14 @@ export class DumpTools {
      * @param fileName defines the filename to download. If present, the result will automatically be downloaded
      * @param invertY true to invert the picture in the Y dimension
      * @param toArrayBuffer true to convert the data to an ArrayBuffer (encoded as `mimeType`) instead of a base64 string
-     * @param quality defines the quality of the result
+     * @param quality The quality of the image if lossy mimeType is used (e.g. image/jpeg, image/webp). See {@link https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob | HTMLCanvasElement.toBlob()}'s `quality` parameter.
      */
     public static DumpData(
         width: number,
         height: number,
         data: ArrayBufferView,
         successCallback?: (data: string | ArrayBuffer) => void,
-        mimeType: string = "image/png",
+        mimeType = "image/png",
         fileName?: string,
         invertY = false,
         toArrayBuffer = false,

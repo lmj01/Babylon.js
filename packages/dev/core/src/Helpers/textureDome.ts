@@ -10,7 +10,7 @@ import { Observable } from "../Misc/observable";
 import { Vector3 } from "../Maths/math.vector";
 import { Axis } from "../Maths/math";
 
-declare type Camera = import("../Cameras/camera").Camera;
+import type { Camera } from "../Cameras/camera";
 
 /**
  * Display a 360/180 degree texture on an approximately spherical surface, useful for VR applications or skyboxes.
@@ -348,7 +348,7 @@ export abstract class TextureDome<T extends Texture> extends TransformNode {
      * @param doNotRecurse Set to true to not recurse into each children (recurse into each children by default)
      * @param disposeMaterialAndTextures Set to true to also dispose referenced materials and textures (false by default)
      */
-    public dispose(doNotRecurse?: boolean, disposeMaterialAndTextures = false): void {
+    public override dispose(doNotRecurse?: boolean, disposeMaterialAndTextures = false): void {
         this._texture.dispose();
         this._mesh.dispose();
         this._material.dispose();

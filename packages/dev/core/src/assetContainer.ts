@@ -5,7 +5,7 @@ import { TransformNode } from "./Meshes/transformNode";
 import type { Skeleton } from "./Bones/skeleton";
 import type { AnimationGroup } from "./Animations/animationGroup";
 import type { Animatable } from "./Animations/animatable";
-import type { AbstractMesh } from "./Meshes/abstractMesh";
+import { AbstractMesh } from "./Meshes/abstractMesh";
 import type { MultiMaterial } from "./Materials/multiMaterial";
 import type { Material } from "./Materials/material";
 import { Logger } from "./Misc/logger";
@@ -13,7 +13,7 @@ import { EngineStore } from "./Engines/engineStore";
 import type { Nullable } from "./types";
 import type { Node } from "./node";
 import type { Observer } from "./Misc/observable";
-import type { ThinEngine } from "./Engines/thinEngine";
+import type { AbstractEngine } from "./Engines/abstractEngine";
 import { InstancedMesh } from "./Meshes/instancedMesh";
 import { Light } from "./Lights/light";
 import { Camera } from "./Cameras/camera";
@@ -69,7 +69,7 @@ export class InstantiatedEntries {
  */
 export class AssetContainer extends AbstractScene {
     private _wasAddedToScene = false;
-    private _onContextRestoredObserver: Nullable<Observer<ThinEngine>>;
+    private _onContextRestoredObserver: Nullable<Observer<AbstractEngine>>;
 
     /**
      * The scene the AssetContainer belongs to.
@@ -122,6 +122,7 @@ export class AssetContainer extends AbstractScene {
     /**
      * Given a list of nodes, return a topological sorting of them.
      * @param nodes
+     * @returns a sorted array of nodes
      */
     private _topologicalSort(nodes: Node[]): Node[] {
         const nodesUidMap = new Map<number, Node>();
@@ -208,8 +209,8 @@ export class AssetContainer extends AbstractScene {
         }
 
         if (nodesUidMap.size > 0) {
-            console.error("SceneSerializer._topologicalSort: There were unvisited nodes:");
-            nodesUidMap.forEach((node) => console.error(node.name));
+            Logger.Error("SceneSerializer._topologicalSort: There were unvisited nodes:");
+            nodesUidMap.forEach((node) => Logger.Error(node.name));
         }
 
         return sortedNodes;
@@ -230,10 +231,11 @@ export class AssetContainer extends AbstractScene {
 
     /**
      * Check if a specific node is contained in this asset container.
-     * @param node
+     * @param node the node to check
+     * @returns true if the node is contained in this container, otherwise false.
      */
     private _isNodeInContainer(node: Node) {
-        if (node instanceof Mesh && this.meshes.indexOf(node) !== -1) {
+        if (node instanceof AbstractMesh && this.meshes.indexOf(node) !== -1) {
             return true;
         }
         if (node instanceof TransformNode && this.transformNodes.indexOf(node) !== -1) {
@@ -250,6 +252,7 @@ export class AssetContainer extends AbstractScene {
 
     /**
      * For every node in the scene, check if its parent node is also in the scene.
+     * @returns true if every node's parent is also in the scene, otherwise false.
      */
     private _isValidHierarchy() {
         for (const node of this.meshes) {
@@ -549,23 +552,27 @@ export class AssetContainer extends AbstractScene {
      * @param predicate defines a predicate used to select which entity will be added (can be null)
      */
     public addToScene(predicate: Nullable<(entity: any) => boolean> = null) {
+        const addedNodes: Node[] = [];
         this.cameras.forEach((o) => {
             if (predicate && !predicate(o)) {
                 return;
             }
             this.scene.addCamera(o);
+            addedNodes.push(o);
         });
         this.lights.forEach((o) => {
             if (predicate && !predicate(o)) {
                 return;
             }
             this.scene.addLight(o);
+            addedNodes.push(o);
         });
         this.meshes.forEach((o) => {
             if (predicate && !predicate(o)) {
                 return;
             }
             this.scene.addMesh(o);
+            addedNodes.push(o);
         });
         this.skeletons.forEach((o) => {
             if (predicate && !predicate(o)) {
@@ -614,6 +621,7 @@ export class AssetContainer extends AbstractScene {
                 return;
             }
             this.scene.addTransformNode(o);
+            addedNodes.push(o);
         });
         this.actionManagers.forEach((o) => {
             if (predicate && !predicate(o)) {
@@ -633,6 +641,18 @@ export class AssetContainer extends AbstractScene {
             }
             this.scene.addReflectionProbe(o);
         });
+
+        for (const addedNode of addedNodes) {
+            // If node was added to the scene, but parent is not in the scene, break the relationship
+            if (addedNode.parent && this.scene.getNodes().indexOf(addedNode.parent) === -1) {
+                // Use setParent to keep transform if possible
+                if ((addedNode as TransformNode).setParent) {
+                    (addedNode as TransformNode).setParent(null);
+                } else {
+                    addedNode.parent = null;
+                }
+            }
+        }
     }
 
     /**
@@ -677,7 +697,7 @@ export class AssetContainer extends AbstractScene {
             if (predicate && !predicate(o)) {
                 return;
             }
-            this.scene.removeMesh(o);
+            this.scene.removeMesh(o, true);
         });
         this.skeletons.forEach((o) => {
             if (predicate && !predicate(o)) {
@@ -964,7 +984,7 @@ export class AssetContainer extends AbstractScene {
             }
         });
 
-        const newAnimationGroups = new Array<AnimationGroup>();
+        const newAnimationGroups: AnimationGroup[] = [];
 
         // Copy new animation groups
         this.animationGroups.slice().forEach((animationGroupInAC) => {
@@ -1002,5 +1022,97 @@ export class AssetContainer extends AbstractScene {
         });
 
         return newAnimationGroups;
+    }
+
+    /**
+     * @since 6.15.0
+     * This method checks for any node that has no parent
+     * and is not in the rootNodes array, and adds the node
+     * there, if so.
+     */
+    public populateRootNodes() {
+        this.rootNodes.length = 0;
+        this.meshes.forEach((m) => {
+            if (!m.parent && this.rootNodes.indexOf(m) === -1) {
+                this.rootNodes.push(m);
+            }
+        });
+        this.transformNodes.forEach((t) => {
+            if (!t.parent && this.rootNodes.indexOf(t) === -1) {
+                this.rootNodes.push(t);
+            }
+        });
+        this.lights.forEach((l) => {
+            if (!l.parent && this.rootNodes.indexOf(l) === -1) {
+                this.rootNodes.push(l);
+            }
+        });
+        this.cameras.forEach((c) => {
+            if (!c.parent && this.rootNodes.indexOf(c) === -1) {
+                this.rootNodes.push(c);
+            }
+        });
+    }
+
+    /**
+     * @since 6.26.0
+     * Given a root asset, this method will traverse its hierarchy and add it, its children and any materials/skeletons/animation groups to the container.
+     * @param root root node
+     */
+    public addAllAssetsToContainer(root: Node) {
+        if (!root) {
+            return;
+        }
+
+        const nodesToVisit: Node[] = [];
+        const visitedNodes = new Set<Node>();
+
+        nodesToVisit.push(root);
+
+        while (nodesToVisit.length > 0) {
+            const nodeToVisit = nodesToVisit.pop()!;
+
+            if (nodeToVisit instanceof Mesh) {
+                if (nodeToVisit.geometry && this.geometries.indexOf(nodeToVisit.geometry) === -1) {
+                    this.geometries.push(nodeToVisit.geometry);
+                }
+                this.meshes.push(nodeToVisit);
+            } else if (nodeToVisit instanceof TransformNode) {
+                this.transformNodes.push(nodeToVisit);
+            } else if (nodeToVisit instanceof Light) {
+                this.lights.push(nodeToVisit);
+            } else if (nodeToVisit instanceof Camera) {
+                this.cameras.push(nodeToVisit);
+            }
+
+            if (nodeToVisit instanceof AbstractMesh) {
+                if (nodeToVisit.material && this.materials.indexOf(nodeToVisit.material) === -1) {
+                    this.materials.push(nodeToVisit.material);
+                    for (const texture of nodeToVisit.material.getActiveTextures()) {
+                        if (this.textures.indexOf(texture) === -1) {
+                            this.textures.push(texture);
+                        }
+                    }
+                }
+
+                if (nodeToVisit.skeleton && this.skeletons.indexOf(nodeToVisit.skeleton) === -1) {
+                    this.skeletons.push(nodeToVisit.skeleton);
+                }
+
+                if (nodeToVisit.morphTargetManager && this.morphTargetManagers.indexOf(nodeToVisit.morphTargetManager) === -1) {
+                    this.morphTargetManagers.push(nodeToVisit.morphTargetManager);
+                }
+            }
+
+            for (const child of nodeToVisit.getChildren()) {
+                if (!visitedNodes.has(child)) {
+                    nodesToVisit.push(child);
+                }
+            }
+
+            visitedNodes.add(nodeToVisit);
+        }
+
+        this.populateRootNodes();
     }
 }

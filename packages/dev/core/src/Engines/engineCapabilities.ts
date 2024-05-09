@@ -77,6 +77,8 @@ export interface EngineCapabilities {
     depthTextureExtension: boolean;
     /** Defines if float color buffer are supported */
     colorBufferFloat: boolean;
+    /** Defines if half float color buffer are supported */
+    colorBufferHalfFloat?: boolean;
     /** Gets disjoint timer query extension (null if not supported) */
     timerQuery?: EXT_disjoint_timer_query;
     /** Defines if timestamp can be used with timer query */
@@ -113,4 +115,8 @@ export interface EngineCapabilities {
     texture2DArrayMaxLayerCount: number;
     /** Defines if the morph target texture is supported. */
     disableMorphTargetTexture: boolean;
+    /** Defines if float textures like r32f, rg32f or rgba32f support being used as a resolve target */
+    supportFloatTexturesResolve: boolean;
+    /** Defines if RG11B10UFloat texture format is color renderable */
+    rg11b10ufColorRenderable: boolean;
 }

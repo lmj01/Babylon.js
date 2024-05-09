@@ -29,7 +29,7 @@ export class InputPropertyTabComponent extends React.Component<IPropertyComponen
         super(props);
     }
 
-    componentDidMount() {
+    override componentDidMount() {
         const inputBlock = this.props.nodeData.data as InputBlock;
         this._onValueChangedObserver = inputBlock.onValueChangedObservable.add(() => {
             this.forceUpdate();
@@ -37,7 +37,7 @@ export class InputPropertyTabComponent extends React.Component<IPropertyComponen
         });
     }
 
-    componentWillUnmount() {
+    override componentWillUnmount() {
         const inputBlock = this.props.nodeData.data as InputBlock;
         if (this._onValueChangedObserver) {
             inputBlock.onValueChangedObservable.remove(this._onValueChangedObserver);
@@ -62,7 +62,7 @@ export class InputPropertyTabComponent extends React.Component<IPropertyComponen
                                 onSelect={(value) => {
                                     inputBlock.value = value ? 1 : 0;
                                     if (inputBlock.isConstant) {
-                                        this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+                                        this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
                                     }
                                     this.props.stateManager.onUpdateRequiredObservable.notifyObservers(inputBlock);
                                 }}
@@ -78,7 +78,7 @@ export class InputPropertyTabComponent extends React.Component<IPropertyComponen
                                     if (inputBlock.value < inputBlock.min) {
                                         inputBlock.value = inputBlock.min;
                                         if (inputBlock.isConstant) {
-                                            this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+                                            this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
                                         }
                                     }
                                     this.forceUpdate();
@@ -95,7 +95,7 @@ export class InputPropertyTabComponent extends React.Component<IPropertyComponen
                                     if (inputBlock.value > inputBlock.max) {
                                         inputBlock.value = inputBlock.max;
                                         if (inputBlock.isConstant) {
-                                            this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+                                            this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
                                         }
                                     }
                                     this.forceUpdate();
@@ -114,7 +114,7 @@ export class InputPropertyTabComponent extends React.Component<IPropertyComponen
                                 maximum={inputBlock.max}
                                 onChange={() => {
                                     if (inputBlock.isConstant) {
-                                        this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+                                        this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
                                     }
                                     this.props.stateManager.onUpdateRequiredObservable.notifyObservers(inputBlock);
                                 }}
@@ -185,7 +185,7 @@ export class InputPropertyTabComponent extends React.Component<IPropertyComponen
         inputBlock.setDefaultValue();
     }
 
-    render() {
+    override render() {
         const inputBlock = this.props.nodeData.data as InputBlock;
 
         let systemValuesOptions: { label: string; value: NodeMaterialSystemValues }[] = [];
@@ -241,6 +241,10 @@ export class InputPropertyTabComponent extends React.Component<IPropertyComponen
                 ];
                 break;
             case NodeMaterialBlockConnectionPointTypes.Vector4:
+                animationOptions = [
+                    { label: "None", value: AnimatedInputBlockTypes.None },
+                    { label: "MouseInfo", value: AnimatedInputBlockTypes.MouseInfo },
+                ];
                 attributeOptions = [
                     { label: "matricesIndices", value: "matricesIndices" },
                     { label: "matricesWeights", value: "matricesWeights" },
@@ -306,7 +310,7 @@ export class InputPropertyTabComponent extends React.Component<IPropertyComponen
                                 }
                                 this.forceUpdate();
                                 this.props.stateManager.onUpdateRequiredObservable.notifyObservers(inputBlock);
-                                this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+                                this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
                             }}
                             propertyName={""}
                         />
@@ -320,7 +324,7 @@ export class InputPropertyTabComponent extends React.Component<IPropertyComponen
                             onChange={() => {
                                 this.forceUpdate();
                                 this.props.stateManager.onUpdateRequiredObservable.notifyObservers(inputBlock);
-                                this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+                                this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
                             }}
                             throttlePropertyChangedNotification={true}
                         />
@@ -357,7 +361,7 @@ export class InputPropertyTabComponent extends React.Component<IPropertyComponen
                             }
                             this.forceUpdate();
                             this.props.stateManager.onUpdateRequiredObservable.notifyObservers(inputBlock);
-                            this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+                            this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
                         }}
                         propertyName={""}
                     />
@@ -373,7 +377,7 @@ export class InputPropertyTabComponent extends React.Component<IPropertyComponen
                                 this.forceUpdate();
 
                                 this.props.stateManager.onUpdateRequiredObservable.notifyObservers(inputBlock);
-                                this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+                                this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
                             }}
                         />
                     )}
@@ -387,7 +391,7 @@ export class InputPropertyTabComponent extends React.Component<IPropertyComponen
                                 this.forceUpdate();
 
                                 this.props.stateManager.onUpdateRequiredObservable.notifyObservers(inputBlock);
-                                this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+                                this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
                             }}
                         />
                     )}
@@ -406,7 +410,7 @@ export class InputPropertyTabComponent extends React.Component<IPropertyComponen
                                 this.forceUpdate();
 
                                 this.props.stateManager.onUpdateRequiredObservable.notifyObservers(inputBlock);
-                                this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+                                this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
                             }}
                         />
                     )}

@@ -21,18 +21,6 @@ import type { Nullable } from "../../types";
  * * The mesh can be set to updatable with the boolean parameter `updatable` (default false) if its internal geometry is supposed to change once created
  * @param name defines the name of the mesh
  * @param options defines the options used to create the mesh
- * @param options.shape
- * @param options.radius
- * @param options.tessellation
- * @param options.clip
- * @param options.arc
- * @param options.closed
- * @param options.updatable
- * @param options.sideOrientation
- * @param options.frontUVs
- * @param options.backUVs
- * @param options.cap
- * @param options.invertUV
  * @param scene defines the hosting scene
  * @returns the lathe mesh
  * @see https://doc.babylonjs.com/features/featuresDeepDive/mesh/creation/param#lathe
@@ -65,7 +53,7 @@ export function CreateLathe(
     const sideOrientation = Mesh._GetDefaultSideOrientation(options.sideOrientation);
     const cap = options.cap || Mesh.NO_CAP;
     const pi2 = Math.PI * 2;
-    const paths = new Array();
+    const paths = [];
     const invertUV = options.invertUV || false;
 
     let i = 0;
@@ -108,7 +96,7 @@ export const LatheBuilder = {
     CreateLathe,
 };
 
-(Mesh as any).CreateLathe = (name: string, shape: Vector3[], radius: number, tessellation: number, scene: Scene, updatable?: boolean, sideOrientation?: number): Mesh => {
+Mesh.CreateLathe = (name: string, shape: Vector3[], radius: number, tessellation: number, scene: Scene, updatable?: boolean, sideOrientation?: number): Mesh => {
     const options = {
         shape: shape,
         radius: radius,

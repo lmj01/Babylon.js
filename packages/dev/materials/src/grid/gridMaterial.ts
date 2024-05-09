@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/naming-convention */
-import { serializeAsTexture, serialize, expandToProperty, serializeAsColor3, SerializationHelper, serializeAsVector3 } from "core/Misc/decorators";
+import { serializeAsTexture, serialize, expandToProperty, serializeAsColor3, serializeAsVector3 } from "core/Misc/decorators";
+import { SerializationHelper } from "core/Misc/decorators.serialization";
 import type { Matrix } from "core/Maths/math.vector";
 import { Vector4, Vector3 } from "core/Maths/math.vector";
 import { Color3 } from "core/Maths/math.color";
 import type { BaseTexture } from "core/Materials/Textures/baseTexture";
 import { MaterialDefines } from "core/Materials/materialDefines";
-import { MaterialHelper } from "core/Materials/materialHelper";
 import { PushMaterial } from "core/Materials/pushMaterial";
 import { MaterialFlags } from "core/Materials/materialFlags";
 import { VertexBuffer } from "core/Buffers/buffer";
@@ -17,9 +17,18 @@ import { RegisterClass } from "core/Misc/typeStore";
 
 import "./grid.fragment";
 import "./grid.vertex";
+import {
+    BindFogParameters,
+    BindLogDepth,
+    PrepareAttributesForInstances,
+    PrepareDefinesForAttributes,
+    PrepareDefinesForFrameBoundValues,
+    PrepareDefinesForMisc,
+} from "core/Materials/materialHelper.functions";
 
 class GridMaterialDefines extends MaterialDefines {
     public OPACITY = false;
+    public ANTIALIAS = false;
     public TRANSPARENT = false;
     public FOG = false;
     public PREMULTIPLYALPHA = false;
@@ -30,6 +39,7 @@ class GridMaterialDefines extends MaterialDefines {
     public THIN_INSTANCES = false;
     public IMAGEPROCESSINGPOSTPROCESS = false;
     public SKIPFINALCOLORCLAMP = false;
+    public LOGARITHMICDEPTH = false;
 
     constructor() {
         super();
@@ -85,6 +95,12 @@ export class GridMaterial extends PushMaterial {
     public opacity = 1.0;
 
     /**
+     * Whether to antialias the grid
+     */
+    @serialize()
+    public antialias = true;
+
+    /**
      * Determine RBG output is premultiplied by alpha value.
      */
     @serialize()
@@ -98,6 +114,9 @@ export class GridMaterial extends PushMaterial {
 
     @serializeAsTexture("opacityTexture")
     private _opacityTexture: BaseTexture;
+    /**
+     * Texture to define opacity of the grid
+     */
     @expandToProperty("_markAllSubMeshesAsTexturesDirty")
     public opacityTexture: BaseTexture;
 
@@ -113,19 +132,21 @@ export class GridMaterial extends PushMaterial {
     }
 
     /**
-     * Returns whether or not the grid requires alpha blending.
+     * @returns whether or not the grid requires alpha blending.
      */
-    public needAlphaBlending(): boolean {
+    public override needAlphaBlending(): boolean {
         return this.opacity < 1.0 || (this._opacityTexture && this._opacityTexture.isReady());
     }
 
-    public needAlphaBlendingForMesh(mesh: AbstractMesh): boolean {
+    public override needAlphaBlendingForMesh(mesh: AbstractMesh): boolean {
         return mesh.visibility < 1.0 || this.needAlphaBlending();
     }
 
-    public isReadyForSubMesh(mesh: AbstractMesh, subMesh: SubMesh, useInstances?: boolean): boolean {
+    public override isReadyForSubMesh(mesh: AbstractMesh, subMesh: SubMesh, useInstances?: boolean): boolean {
+        const drawWrapper = subMesh._drawWrapper;
+
         if (this.isFrozen) {
-            if (subMesh.effect && subMesh.effect._wasPreviouslyReady && subMesh.effect._wasPreviouslyUsingInstances === useInstances) {
+            if (drawWrapper.effect && drawWrapper._wasPreviouslyReady && drawWrapper._wasPreviouslyUsingInstances === useInstances) {
                 return true;
             }
         }
@@ -156,6 +177,11 @@ export class GridMaterial extends PushMaterial {
             defines.markAsUnprocessed();
         }
 
+        if (defines.ANTIALIAS !== this.antialias) {
+            defines.ANTIALIAS = !defines.ANTIALIAS;
+            defines.markAsUnprocessed();
+        }
+
         // Textures
         if (defines._areTexturesDirty) {
             defines._needUVs = false;
@@ -171,10 +197,10 @@ export class GridMaterial extends PushMaterial {
             }
         }
 
-        MaterialHelper.PrepareDefinesForMisc(mesh, scene, false, false, this.fogEnabled, false, defines);
+        PrepareDefinesForMisc(mesh, scene, this._useLogarithmicDepth, false, this.fogEnabled, false, defines);
 
         // Values that need to be evaluated on every frame
-        MaterialHelper.PrepareDefinesForFrameBoundValues(scene, scene.getEngine(), this, defines, !!useInstances);
+        PrepareDefinesForFrameBoundValues(scene, scene.getEngine(), this, defines, !!useInstances);
 
         // Get correct effect
         if (defines.isDirty) {
@@ -182,7 +208,7 @@ export class GridMaterial extends PushMaterial {
             scene.resetCachedMaterial();
 
             // Attributes
-            MaterialHelper.PrepareDefinesForAttributes(mesh, defines, false, false);
+            PrepareDefinesForAttributes(mesh, defines, false, false);
             const attribs = [VertexBuffer.PositionKind, VertexBuffer.NormalKind];
 
             if (defines.UV1) {
@@ -194,7 +220,7 @@ export class GridMaterial extends PushMaterial {
 
             defines.IMAGEPROCESSINGPOSTPROCESS = scene.imageProcessingConfiguration.applyByPostProcess;
 
-            MaterialHelper.PrepareAttributesForInstances(attribs, defines);
+            PrepareAttributesForInstances(attribs, defines);
 
             // Defines
             const join = defines.toString();
@@ -217,6 +243,7 @@ export class GridMaterial extends PushMaterial {
                             "opacityMatrix",
                             "vOpacityInfos",
                             "visibility",
+                            "logarithmicDepthConstant",
                         ],
                         ["opacitySampler"],
                         join,
@@ -234,13 +261,13 @@ export class GridMaterial extends PushMaterial {
         }
 
         defines._renderId = scene.getRenderId();
-        subMesh.effect._wasPreviouslyReady = true;
-        subMesh.effect._wasPreviouslyUsingInstances = !!useInstances;
+        drawWrapper._wasPreviouslyReady = true;
+        drawWrapper._wasPreviouslyUsingInstances = !!useInstances;
 
         return true;
     }
 
-    public bindForSubMesh(world: Matrix, mesh: Mesh, subMesh: SubMesh): void {
+    public override bindForSubMesh(world: Matrix, mesh: Mesh, subMesh: SubMesh): void {
         const scene = this.getScene();
 
         const defines = <GridMaterialDefines>subMesh.materialDefines;
@@ -264,7 +291,7 @@ export class GridMaterial extends PushMaterial {
         this._activeEffect.setMatrix("projection", scene.getProjectionMatrix());
 
         // Uniforms
-        if (this._mustRebind(scene, effect)) {
+        if (this._mustRebind(scene, effect, subMesh)) {
             this._activeEffect.setColor3("mainColor", this.mainColor);
             this._activeEffect.setColor3("lineColor", this.lineColor);
 
@@ -281,36 +308,41 @@ export class GridMaterial extends PushMaterial {
                 this._activeEffect.setFloat2("vOpacityInfos", this._opacityTexture.coordinatesIndex, this._opacityTexture.level);
                 this._activeEffect.setMatrix("opacityMatrix", this._opacityTexture.getTextureMatrix());
             }
+
+            // Log. depth
+            if (this._useLogarithmicDepth) {
+                BindLogDepth(defines, effect, scene);
+            }
         }
         // Fog
-        MaterialHelper.BindFogParameters(scene, mesh, this._activeEffect);
+        BindFogParameters(scene, mesh, this._activeEffect);
 
-        this._afterBind(mesh, this._activeEffect);
+        this._afterBind(mesh, this._activeEffect, subMesh);
     }
 
     /**
      * Dispose the material and its associated resources.
      * @param forceDisposeEffect will also dispose the used effect when true
      */
-    public dispose(forceDisposeEffect?: boolean): void {
+    public override dispose(forceDisposeEffect?: boolean): void {
         super.dispose(forceDisposeEffect);
     }
 
-    public clone(name: string): GridMaterial {
+    public override clone(name: string): GridMaterial {
         return SerializationHelper.Clone(() => new GridMaterial(name, this.getScene()), this);
     }
 
-    public serialize(): any {
+    public override serialize(): any {
         const serializationObject = super.serialize();
         serializationObject.customType = "BABYLON.GridMaterial";
         return serializationObject;
     }
 
-    public getClassName(): string {
+    public override getClassName(): string {
         return "GridMaterial";
     }
 
-    public static Parse(source: any, scene: Scene, rootUrl: string): GridMaterial {
+    public static override Parse(source: any, scene: Scene, rootUrl: string): GridMaterial {
         return SerializationHelper.Parse(() => new GridMaterial(source.name, scene), source, scene, rootUrl);
     }
 }

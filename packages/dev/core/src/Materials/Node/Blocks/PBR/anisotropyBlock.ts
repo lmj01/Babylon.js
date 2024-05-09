@@ -1,7 +1,6 @@
 import type { NodeMaterial, NodeMaterialDefines } from "../../nodeMaterial";
 import { NodeMaterialBlock } from "../../nodeMaterialBlock";
 import { NodeMaterialBlockConnectionPointTypes } from "../../Enums/nodeMaterialBlockConnectionPointTypes";
-import type { NodeMaterialBuildState } from "../../nodeMaterialBuildState";
 import type { NodeMaterialConnectionPoint } from "../../nodeMaterialBlockConnectionPoint";
 import { NodeMaterialConnectionPointDirection } from "../../nodeMaterialBlockConnectionPoint";
 import { NodeMaterialBlockTargets } from "../../Enums/nodeMaterialBlockTargets";
@@ -11,6 +10,8 @@ import { NodeMaterialConnectionPointCustomObject } from "../../nodeMaterialConne
 import { TBNBlock } from "../Fragment/TBNBlock";
 import type { Mesh } from "../../../../Meshes/mesh";
 import type { Effect } from "../../../effect";
+import { Logger } from "core/Misc/logger";
+import type { NodeMaterialBuildState } from "../../nodeMaterialBuildState";
 
 /**
  * Block used to implement the anisotropy module of the PBR material
@@ -63,7 +64,7 @@ export class AnisotropyBlock extends NodeMaterialBlock {
      * Initialize the block and prepare the context for build
      * @param state defines the state that will be used for the build
      */
-    public initialize(state: NodeMaterialBuildState) {
+    public override initialize(state: NodeMaterialBuildState) {
         state._excludeVariableName("anisotropicOut");
         state._excludeVariableName("TBN");
     }
@@ -72,7 +73,7 @@ export class AnisotropyBlock extends NodeMaterialBlock {
      * Gets the current class name
      * @returns the class name
      */
-    public getClassName() {
+    public override getClassName() {
         return "AnisotropyBlock";
     }
 
@@ -139,7 +140,7 @@ export class AnisotropyBlock extends NodeMaterialBlock {
             // we must set the uv input as optional because we may not end up in this method (in case a PerturbNormal block is linked to the PBR material)
             // in which case uv is not required. But if we do come here, we do need the uv, so we have to raise an error but not with throw, else
             // it will stop the building of the node material and will lead to errors in the editor!
-            console.error("You must connect the 'uv' input of the Anisotropy block!");
+            Logger.Error("You must connect the 'uv' input of the Anisotropy block!");
         }
 
         state._emitExtension("derivatives", "#extension GL_OES_standard_derivatives : enable");
@@ -154,10 +155,10 @@ export class AnisotropyBlock extends NodeMaterialBlock {
             #endif
             `;
         } else if (worldTangent.isConnected) {
-            code += `vec3 tbnNormal = normalize(${worldNormal.associatedVariableName}.xyz);\r\n`;
-            code += `vec3 tbnTangent = normalize(${worldTangent.associatedVariableName}.xyz);\r\n`;
-            code += `vec3 tbnBitangent = cross(tbnNormal, tbnTangent) * ${this._tangentCorrectionFactorName};\r\n`;
-            code += `mat3 vTBN = mat3(tbnTangent, tbnBitangent, tbnNormal);\r\n`;
+            code += `vec3 tbnNormal = normalize(${worldNormal.associatedVariableName}.xyz);\n`;
+            code += `vec3 tbnTangent = normalize(${worldTangent.associatedVariableName}.xyz);\n`;
+            code += `vec3 tbnBitangent = cross(tbnNormal, tbnTangent) * ${this._tangentCorrectionFactorName};\n`;
+            code += `mat3 vTBN = mat3(tbnTangent, tbnBitangent, tbnNormal);\n`;
         }
 
         code += `
@@ -165,9 +166,9 @@ export class AnisotropyBlock extends NodeMaterialBlock {
                 mat3 TBN = vTBN;
             #else
                 mat3 TBN = cotangent_frame(${worldNormal.associatedVariableName + ".xyz"}, ${"v_" + worldPosition.associatedVariableName + ".xyz"}, ${
-            uv.isConnected ? uv.associatedVariableName : "vec2(0.)"
-        }, vec2(1., 1.));
-            #endif\r\n`;
+                    uv.isConnected ? uv.associatedVariableName : "vec2(0.)"
+                }, vec2(1., 1.));
+            #endif\n`;
 
         state._emitFunctionFromInclude("bumpFragmentMainFunctions", comments, {
             replaceStrings: [tangentReplaceString],
@@ -204,12 +205,12 @@ export class AnisotropyBlock extends NodeMaterialBlock {
                 normalW,
                 viewDirectionW,
                 anisotropicOut
-            );\r\n`;
+            );\n`;
 
         return code;
     }
 
-    public prepareDefines(mesh: AbstractMesh, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines) {
+    public override prepareDefines(mesh: AbstractMesh, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines) {
         super.prepareDefines(mesh, nodeMaterial, defines);
 
         defines.setValue("ANISOTROPIC", true);
@@ -217,7 +218,7 @@ export class AnisotropyBlock extends NodeMaterialBlock {
         defines.setValue("ANISOTROPIC_LEGACY", !this.roughness.isConnected);
     }
 
-    public bind(effect: Effect, nodeMaterial: NodeMaterial, mesh?: Mesh) {
+    public override bind(effect: Effect, nodeMaterial: NodeMaterial, mesh?: Mesh) {
         super.bind(effect, nodeMaterial, mesh);
 
         if (mesh) {
@@ -225,13 +226,13 @@ export class AnisotropyBlock extends NodeMaterialBlock {
         }
     }
 
-    protected _buildBlock(state: NodeMaterialBuildState) {
+    protected override _buildBlock(state: NodeMaterialBuildState) {
         if (state.target === NodeMaterialBlockTargets.Fragment) {
             state.sharedData.blocksWithDefines.push(this);
             state.sharedData.bindableBlocks.push(this);
 
             this._tangentCorrectionFactorName = state._getFreeDefineName("tangentCorrectionFactor");
-            state._emitUniformFromString(this._tangentCorrectionFactorName, "float");
+            state._emitUniformFromString(this._tangentCorrectionFactorName, NodeMaterialBlockConnectionPointTypes.Float);
         }
 
         return this;

@@ -2,8 +2,8 @@ import * as React from "react";
 import { LineContainerComponent } from "../../sharedComponents/lineContainerComponent";
 import { CheckBoxLineComponent } from "../../sharedComponents/checkBoxLineComponent";
 import type { InputBlock } from "core/Materials/Node/Blocks/Input/inputBlock";
-import type { IPropertyDescriptionForEdition, IEditablePropertyListOption, IEditablePropertyOption } from "core/Materials/Node/nodeMaterialDecorator";
-import { PropertyTypeForEdition } from "core/Materials/Node/nodeMaterialDecorator";
+import type { IPropertyDescriptionForEdition, IEditablePropertyListOption, IEditablePropertyOption } from "core/Decorators/nodeDecorator";
+import { PropertyTypeForEdition } from "core/Decorators/nodeDecorator";
 import { NodeMaterialBlockTargets } from "core/Materials/Node/Enums/nodeMaterialBlockTargets";
 import type { NodeMaterialBlock } from "core/Materials/Node/nodeMaterialBlock";
 import type { IPropertyComponentProps } from "shared-ui-components/nodeGraphSystem/interfaces/propertyComponentProps";
@@ -20,7 +20,7 @@ export class GenericPropertyComponent extends React.Component<IPropertyComponent
         super(props);
     }
 
-    render() {
+    override render() {
         return (
             <>
                 <GeneralPropertyTabComponent stateManager={this.props.stateManager} nodeData={this.props.nodeData} />
@@ -35,7 +35,7 @@ export class GeneralPropertyTabComponent extends React.Component<IPropertyCompon
         super(props);
     }
 
-    render() {
+    override render() {
         const targetOptions = [
             { label: "Neutral", value: NodeMaterialBlockTargets.Neutral },
             { label: "Vertex", value: NodeMaterialBlockTargets.Vertex },
@@ -74,7 +74,7 @@ export class GeneralPropertyTabComponent extends React.Component<IPropertyCompon
                                 this.forceUpdate();
 
                                 this.props.stateManager.onUpdateRequiredObservable.notifyObservers(block);
-                                this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+                                this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
                             }}
                         />
                     )}
@@ -109,7 +109,7 @@ export class GenericPropertyTabComponent extends React.Component<IPropertyCompon
         }
 
         if (!notifiers || notifiers.rebuild) {
-            this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+            this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
         }
 
         if (notifiers?.activatePreviewCommand) {
@@ -119,11 +119,11 @@ export class GenericPropertyTabComponent extends React.Component<IPropertyCompon
         const rebuild = notifiers?.callback?.((this.props.stateManager.data as GlobalState).nodeMaterial.getScene(), this.props.nodeData.data as NodeMaterialBlock) ?? false;
 
         if (rebuild) {
-            this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+            this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
         }
     }
 
-    render() {
+    override render() {
         const block = this.props.nodeData.data as NodeMaterialBlock,
             propStore: IPropertyDescriptionForEdition[] = (block as any)._propStore;
 

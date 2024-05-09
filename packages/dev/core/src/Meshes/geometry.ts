@@ -3,7 +3,6 @@ import type { Scene } from "../scene";
 import type { Vector2 } from "../Maths/math.vector";
 import { Vector3 } from "../Maths/math.vector";
 import { Color4 } from "../Maths/math.color";
-import type { Engine } from "../Engines/engine";
 import type { IGetSetVerticesData } from "../Meshes/mesh.vertexData";
 import { VertexData } from "../Meshes/mesh.vertexData";
 import { VertexBuffer } from "../Buffers/buffer";
@@ -21,7 +20,10 @@ import type { AbstractScene } from "../abstractScene";
 import { EngineStore } from "../Engines/engineStore";
 import { CompatibilityOptions } from "../Compat/compatibilityOptions";
 
-declare type Mesh = import("../Meshes/mesh").Mesh;
+import type { Mesh } from "../Meshes/mesh";
+import type { Buffer } from "../Buffers/buffer";
+import type { AbstractEngine } from "../Engines/abstractEngine";
+import type { ThinEngine } from "../Engines/thinEngine";
 
 /**
  * Class used to store geometry data (vertex buffers + index buffer)
@@ -51,9 +53,10 @@ export class Geometry implements IGetSetVerticesData {
 
     // Private
     private _scene: Scene;
-    private _engine: Engine;
+    private _engine: AbstractEngine;
     private _meshes: Mesh[];
     private _totalVertices = 0;
+    private _totalIndices?: number;
     /** @internal */
     public _loadedUniqueId: string;
     /** @internal */
@@ -187,7 +190,7 @@ export class Geometry implements IGetSetVerticesData {
      * Gets the hosting engine
      * @returns the hosting Engine
      */
-    public getEngine(): Engine {
+    public getEngine(): AbstractEngine {
         return this._engine;
     }
 
@@ -220,14 +223,18 @@ export class Geometry implements IGetSetVerticesData {
 
         // Index buffer
         if (this._meshes.length !== 0 && this._indices) {
-            this._indexBuffer = this._engine.createIndexBuffer(this._indices, this._updatable);
+            this._indexBuffer = this._engine.createIndexBuffer(this._indices, this._updatable, "Geometry_" + this.id + "_IndexBuffer");
         }
 
         // Vertex buffers
+        const buffers = new Set<Buffer>();
         for (const key in this._vertexBuffers) {
-            const vertexBuffer = <VertexBuffer>this._vertexBuffers[key];
-            vertexBuffer._rebuild();
+            buffers.add(this._vertexBuffers[key].getWrapperBuffer());
         }
+
+        buffers.forEach((buffer) => {
+            buffer._rebuild();
+        });
     }
 
     /**
@@ -252,7 +259,12 @@ export class Geometry implements IGetSetVerticesData {
             // to avoid converting to Float32Array at each draw call in engine.updateDynamicVertexBuffer, we make the conversion a single time here
             data = new Float32Array(data);
         }
-        const buffer = new VertexBuffer(this._engine, data, kind, updatable, this._meshes.length === 0, stride);
+        const buffer = new VertexBuffer(this._engine, data, kind, {
+            updatable,
+            postponeInternalCreation: this._meshes.length === 0,
+            stride,
+            label: "Geometry_" + this.id + "_" + kind,
+        });
         this.setVerticesBuffer(buffer);
     }
 
@@ -292,21 +304,18 @@ export class Geometry implements IGetSetVerticesData {
         const numOfMeshes = meshes.length;
 
         if (kind === VertexBuffer.PositionKind) {
-            const data = <FloatArray>buffer.getData();
-            if (totalVertices != null) {
-                this._totalVertices = totalVertices;
-            } else {
-                if (data != null) {
-                    this._totalVertices = data.length / (buffer.type === VertexBuffer.BYTE ? buffer.byteStride : buffer.byteStride / 4);
-                }
-            }
+            this._totalVertices = totalVertices ?? buffer._maxVerticesCount;
 
-            this._updateExtend(data);
+            this._updateExtend(buffer.getFloatData(this._totalVertices));
             this._resetPointsArrayCache();
+
+            // this._extend can be empty if buffer.getFloatData(this._totalVertices) returned null
+            const minimum = (this._extend && this._extend.minimum) || new Vector3(-Number.MAX_VALUE, -Number.MAX_VALUE, -Number.MAX_VALUE);
+            const maximum = (this._extend && this._extend.maximum) || new Vector3(Number.MAX_VALUE, Number.MAX_VALUE, Number.MAX_VALUE);
 
             for (let index = 0; index < numOfMeshes; index++) {
                 const mesh = meshes[index];
-                mesh.buildBoundingInfo(this._extend.minimum, this._extend.maximum);
+                mesh.buildBoundingInfo(minimum, maximum);
                 mesh._createGlobalSubMesh(mesh.isUnIndexed);
                 mesh.computeWorldMatrix(true);
                 mesh.synchronizeInstances();
@@ -410,13 +419,14 @@ export class Geometry implements IGetSetVerticesData {
         }
 
         const vaos = overrideVertexArrayObjects ? overrideVertexArrayObjects : this._vertexArrayObjects;
+        const engine = this._engine as ThinEngine;
 
         // Using VAO
         if (!vaos[effect.key]) {
-            vaos[effect.key] = this._engine.recordVertexArrayObject(vbs, indexToBind, effect, overrideVertexBuffers);
+            vaos[effect.key] = engine.recordVertexArrayObject(vbs, indexToBind, effect, overrideVertexBuffers);
         }
 
-        this._engine.bindVertexArrayObject(vaos[effect.key], indexToBind);
+        engine.bindVertexArrayObject(vaos[effect.key], indexToBind);
     }
 
     /**
@@ -549,6 +559,29 @@ export class Geometry implements IGetSetVerticesData {
     }
 
     /**
+     * Sets the index buffer for this geometry.
+     * @param indexBuffer Defines the index buffer to use for this geometry
+     * @param totalVertices Defines the total number of vertices used by the buffer
+     * @param totalIndices Defines the total number of indices in the index buffer
+     */
+    public setIndexBuffer(indexBuffer: DataBuffer, totalVertices: number, totalIndices: number): void {
+        this._indices = [];
+        this._indexBufferIsUpdatable = false;
+        this._indexBuffer = indexBuffer;
+        this._totalVertices = totalVertices;
+        this._totalIndices = totalIndices;
+
+        indexBuffer.is32Bits ||= this._totalIndices > 65535;
+
+        for (const mesh of this._meshes) {
+            mesh._createGlobalSubMesh(true);
+            mesh.synchronizeInstances();
+        }
+
+        this._notifyUpdate();
+    }
+
+    /**
      * Creates a new index buffer
      * @param indices defines the indices to store in the index buffer
      * @param totalVertices defines the total number of vertices (could be null)
@@ -562,7 +595,7 @@ export class Geometry implements IGetSetVerticesData {
         this._indices = indices;
         this._indexBufferIsUpdatable = updatable;
         if (this._meshes.length !== 0 && this._indices) {
-            this._indexBuffer = this._engine.createIndexBuffer(this._indices, updatable);
+            this._indexBuffer = this._engine.createIndexBuffer(this._indices, updatable, "Geometry_" + this.id + "_IndexBuffer");
         }
 
         if (totalVertices != undefined) {
@@ -586,7 +619,7 @@ export class Geometry implements IGetSetVerticesData {
         if (!this.isReady()) {
             return 0;
         }
-        return this._indices.length;
+        return this._totalIndices !== undefined ? this._totalIndices : this._indices.length;
     }
 
     /**
@@ -627,7 +660,7 @@ export class Geometry implements IGetSetVerticesData {
         }
 
         if (this._vertexArrayObjects[effect.key]) {
-            this._engine.releaseVertexArrayObject(this._vertexArrayObjects[effect.key]);
+            (this._engine as ThinEngine).releaseVertexArrayObject(this._vertexArrayObjects[effect.key]);
             delete this._vertexArrayObjects[effect.key];
         }
     }
@@ -737,7 +770,7 @@ export class Geometry implements IGetSetVerticesData {
 
         // indexBuffer
         if (numOfMeshes === 1 && this._indices && this._indices.length > 0) {
-            this._indexBuffer = this._engine.createIndexBuffer(this._indices, this._updatable);
+            this._indexBuffer = this._engine.createIndexBuffer(this._indices, this._updatable, "Geometry_" + this.id + "_IndexBuffer");
         }
 
         // morphTargets
@@ -897,7 +930,7 @@ export class Geometry implements IGetSetVerticesData {
     private _disposeVertexArrayObjects(): void {
         if (this._vertexArrayObjects) {
             for (const kind in this._vertexArrayObjects) {
-                this._engine.releaseVertexArrayObject(this._vertexArrayObjects[kind]);
+                (this._engine as ThinEngine).releaseVertexArrayObject(this._vertexArrayObjects[kind]);
             }
             this._vertexArrayObjects = {}; // Will trigger a rebuild of the VAO if supported
 
@@ -1092,37 +1125,37 @@ export class Geometry implements IGetSetVerticesData {
         }
 
         if (this.isVerticesDataPresent(VertexBuffer.UV2Kind)) {
-            serializationObject.uv2s = this._toNumberArray(this.getVerticesData(VertexBuffer.UV2Kind));
+            serializationObject.uvs2 = this._toNumberArray(this.getVerticesData(VertexBuffer.UV2Kind));
             if (this.isVertexBufferUpdatable(VertexBuffer.UV2Kind)) {
-                serializationObject.uv2s._updatable = true;
+                serializationObject.uvs2._updatable = true;
             }
         }
 
         if (this.isVerticesDataPresent(VertexBuffer.UV3Kind)) {
-            serializationObject.uv3s = this._toNumberArray(this.getVerticesData(VertexBuffer.UV3Kind));
+            serializationObject.uvs3 = this._toNumberArray(this.getVerticesData(VertexBuffer.UV3Kind));
             if (this.isVertexBufferUpdatable(VertexBuffer.UV3Kind)) {
-                serializationObject.uv3s._updatable = true;
+                serializationObject.uvs3._updatable = true;
             }
         }
 
         if (this.isVerticesDataPresent(VertexBuffer.UV4Kind)) {
-            serializationObject.uv4s = this._toNumberArray(this.getVerticesData(VertexBuffer.UV4Kind));
+            serializationObject.uvs4 = this._toNumberArray(this.getVerticesData(VertexBuffer.UV4Kind));
             if (this.isVertexBufferUpdatable(VertexBuffer.UV4Kind)) {
-                serializationObject.uv4s._updatable = true;
+                serializationObject.uvs4._updatable = true;
             }
         }
 
         if (this.isVerticesDataPresent(VertexBuffer.UV5Kind)) {
-            serializationObject.uv5s = this._toNumberArray(this.getVerticesData(VertexBuffer.UV5Kind));
+            serializationObject.uvs5 = this._toNumberArray(this.getVerticesData(VertexBuffer.UV5Kind));
             if (this.isVertexBufferUpdatable(VertexBuffer.UV5Kind)) {
-                serializationObject.uv5s._updatable = true;
+                serializationObject.uvs5._updatable = true;
             }
         }
 
         if (this.isVerticesDataPresent(VertexBuffer.UV6Kind)) {
-            serializationObject.uv6s = this._toNumberArray(this.getVerticesData(VertexBuffer.UV6Kind));
+            serializationObject.uvs6 = this._toNumberArray(this.getVerticesData(VertexBuffer.UV6Kind));
             if (this.isVertexBufferUpdatable(VertexBuffer.UV6Kind)) {
-                serializationObject.uv6s._updatable = true;
+                serializationObject.uvs6._updatable = true;
             }
         }
 

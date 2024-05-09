@@ -2,9 +2,9 @@
 import type { Scene } from "./scene";
 import type { Nullable } from "./types";
 import { Matrix, Vector3 } from "./Maths/math.vector";
-import type { Engine } from "./Engines/engine";
+import type { AbstractEngine } from "./Engines/abstractEngine";
 import type { IBehaviorAware, Behavior } from "./Behaviors/behavior";
-import { SerializationHelper, serialize } from "./Misc/decorators";
+import { serialize } from "./Misc/decorators";
 import type { Observer } from "./Misc/observable";
 import { Observable } from "./Misc/observable";
 import { EngineStore } from "./Engines/engineStore";
@@ -13,12 +13,12 @@ import type { AbstractActionManager } from "./Actions/abstractActionManager";
 import type { IInspectable } from "./Misc/iInspectable";
 import type { AbstractScene } from "./abstractScene";
 import type { IAccessibilityTag } from "./IAccessibilityTag";
-
-declare type Animatable = import("./Animations/animatable").Animatable;
-declare type AnimationPropertiesOverride = import("./Animations/animationPropertiesOverride").AnimationPropertiesOverride;
-declare type Animation = import("./Animations/animation").Animation;
-declare type AnimationRange = import("./Animations/animationRange").AnimationRange;
-declare type AbstractMesh = import("./Meshes/abstractMesh").AbstractMesh;
+import type { AnimationRange } from "./Animations/animationRange";
+import type { AnimationPropertiesOverride } from "./Animations/animationPropertiesOverride";
+import type { AbstractMesh } from "./Meshes/abstractMesh";
+import type { Animation } from "./Animations/animation";
+import type { Animatable } from "./Animations/animatable";
+import { SerializationHelper } from "./Misc/decorators.serialization";
 
 /**
  * Defines how a node can be built from a string name.
@@ -139,6 +139,9 @@ export class Node implements IBehaviorAware<Node> {
 
     protected _accessibilityTag: Nullable<IAccessibilityTag> = null;
 
+    /**
+     * Observable fired when an accessibility tag is changed
+     */
     public onAccessibilityTagChangedObservable = new Observable<Nullable<IAccessibilityTag>>();
 
     /**
@@ -166,7 +169,7 @@ export class Node implements IBehaviorAware<Node> {
     /**
      * Gets a list of Animations associated with the node
      */
-    public animations = new Array<Animation>();
+    public animations: Animation[] = [];
     protected _ranges: { [name: string]: Nullable<AnimationRange> } = {};
 
     /**
@@ -236,6 +239,7 @@ export class Node implements IBehaviorAware<Node> {
 
         // Store new parent
         this._parentNode = parent;
+        this._isDirty = true;
 
         // Add as child to new parent
         if (this._parentNode) {
@@ -366,7 +370,7 @@ export class Node implements IBehaviorAware<Node> {
      * Gets the engine of the node
      * @returns a Engine
      */
-    public getEngine(): Engine {
+    public getEngine(): AbstractEngine {
         return this._scene.getEngine();
     }
 
@@ -477,7 +481,6 @@ export class Node implements IBehaviorAware<Node> {
     /** @internal */
     public _initCache() {
         this._cache = {};
-        this._cache.parent = undefined;
     }
 
     /**
@@ -487,8 +490,6 @@ export class Node implements IBehaviorAware<Node> {
         if (!force && this.isSynchronized()) {
             return;
         }
-
-        this._cache.parent = this.parent;
 
         this._updateCache();
     }
@@ -539,11 +540,6 @@ export class Node implements IBehaviorAware<Node> {
 
     /** @internal */
     public isSynchronized(): boolean {
-        if (this._cache.parent !== this._parentNode) {
-            this._cache.parent = this._parentNode;
-            return false;
-        }
-
         if (this._parentNode && !this.isSynchronizedWithParent()) {
             return false;
         }
@@ -674,7 +670,7 @@ export class Node implements IBehaviorAware<Node> {
      * @returns all children nodes of all types
      */
     public getDescendants(directDescendantsOnly?: boolean, predicate?: (node: Node) => boolean): Node[] {
-        const results = new Array<Node>();
+        const results: Node[] = [];
 
         this._getDescendants(results, directDescendantsOnly, predicate);
 

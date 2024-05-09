@@ -21,10 +21,10 @@ export class InputTextArea extends InputText {
     private _textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     private _textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
 
+    private _prevText: string = this.text;
+
     private _lines: any[];
     private _lineSpacing: ValueAndUnit = new ValueAndUnit(0);
-    private _outlineWidth: number = 0;
-    private _outlineColor: string = "white";
     private _maxHeight = new ValueAndUnit(1, ValueAndUnit.UNITMODE_PERCENTAGE, false);
 
     private _clipTextTop: number;
@@ -39,7 +39,7 @@ export class InputTextArea extends InputText {
     public onLinesReadyObservable = new Observable<InputTextArea>();
 
     /** @internal */
-    public _connectedVirtualKeyboard: Nullable<VirtualKeyboard>;
+    public override _connectedVirtualKeyboard: Nullable<VirtualKeyboard>;
     private _contextForBreakLines: ICanvasRenderingContext;
     private _clickedCoordinateX: Nullable<number>;
     private _clickedCoordinateY: Nullable<number>;
@@ -50,42 +50,6 @@ export class InputTextArea extends InputText {
     private _scrollTop: Nullable<number>;
 
     private _autoStretchHeight: boolean;
-
-    /**
-     * Gets or sets outlineWidth of the text to display
-     */
-    public get outlineWidth(): number {
-        return this._outlineWidth;
-    }
-
-    /**
-     * Gets or sets outlineWidth of the text to display
-     */
-    public set outlineWidth(value: number) {
-        if (this._outlineWidth === value) {
-            return;
-        }
-        this._outlineWidth = value;
-        this._markAsDirty();
-    }
-
-    /**
-     * Gets or sets outlineColor of the text to display
-     */
-    public get outlineColor(): string {
-        return this._outlineColor;
-    }
-
-    /**
-     * Gets or sets outlineColor of the text to display
-     */
-    public set outlineColor(value: string) {
-        if (this._outlineColor === value) {
-            return;
-        }
-        this._outlineColor = value;
-        this._markAsDirty();
-    }
 
     /** Gets or sets a boolean indicating if the control can auto stretch its height to adapt to the text */
     @serialize()
@@ -102,8 +66,8 @@ export class InputTextArea extends InputText {
         this._markAsDirty();
     }
 
-    public set height(value: string | number) {
-        this._fixedRatioMasterIsWidth = false;
+    public override set height(value: string | number) {
+        this.fixedRatioMasterIsWidth = false;
 
         if (this._height.toString(this._host) === value) {
             return;
@@ -141,7 +105,10 @@ export class InputTextArea extends InputText {
      * @param name defines the control name
      * @param text defines the text of the control
      */
-    constructor(public name?: string, text: string = "") {
+    constructor(
+        public override name?: string,
+        text: string = ""
+    ) {
         super(name);
 
         this.text = text;
@@ -165,7 +132,7 @@ export class InputTextArea extends InputText {
         };
     }
 
-    protected _getTypeName(): string {
+    protected override _getTypeName(): string {
         return "InputTextArea";
     }
 
@@ -173,7 +140,11 @@ export class InputTextArea extends InputText {
      * Handles the keyboard event
      * @param evt Defines the KeyboardEvent
      */
-    public processKeyboard(evt: IKeyboardEvent): void {
+    public override processKeyboard(evt: IKeyboardEvent): void {
+        if (this.isReadOnly) {
+            return;
+        }
+
         // process pressed key
         this.alternativeProcessKey(evt.code, evt.key, evt);
 
@@ -213,7 +184,7 @@ export class InputTextArea extends InputText {
                     this._cursorInfo.globalEndIndex = this._cursorInfo.globalStartIndex;
                     this._cursorInfo.globalStartIndex--;
                 }
-
+                this._prevText = this._textWrapper.text;
                 this._textWrapper.removePart(this._cursorInfo.globalStartIndex, this._cursorInfo.globalEndIndex);
 
                 this._cursorInfo.globalEndIndex = this._cursorInfo.globalStartIndex;
@@ -231,7 +202,7 @@ export class InputTextArea extends InputText {
                 if (!this._isTextHighlightOn && this._cursorInfo.globalEndIndex < this.text.length) {
                     this._cursorInfo.globalEndIndex = this._cursorInfo.globalStartIndex + 1;
                 }
-
+                this._prevText = this._textWrapper.text;
                 this._textWrapper.removePart(this._cursorInfo.globalStartIndex, this._cursorInfo.globalEndIndex);
 
                 this._cursorInfo.globalEndIndex = this._cursorInfo.globalStartIndex;
@@ -246,6 +217,7 @@ export class InputTextArea extends InputText {
                 this._textHasChanged();
                 break;
             case "Enter": // RETURN
+                this._prevText = this._textWrapper.text;
                 this._textWrapper.removePart(this._cursorInfo.globalStartIndex, this._cursorInfo.globalEndIndex, "\n");
                 this._cursorInfo.globalStartIndex++;
                 this._cursorInfo.globalEndIndex = this._cursorInfo.globalStartIndex;
@@ -513,7 +485,7 @@ export class InputTextArea extends InputText {
             if (this._addKey) {
                 this._isTextHighlightOn = false;
                 this._blinkIsEven = false;
-
+                this._prevText = this._textWrapper.text;
                 this._textWrapper.removePart(this._cursorInfo.globalStartIndex, this._cursorInfo.globalEndIndex, key);
                 this._cursorInfo.globalStartIndex += key.length;
                 this._cursorInfo.globalEndIndex = this._cursorInfo.globalStartIndex;
@@ -545,7 +517,7 @@ export class InputTextArea extends InputText {
 
                 line.split("").map((char) => {
                     if (context.measureText(flushedLine + char).width > width) {
-                        lines.push({ text: flushedLine, width: context.measureText(flushedLine).width, lineEnding: "\n" });
+                        lines.push({ text: flushedLine, width: context.measureText(flushedLine).width, lineEnding: "" });
                         flushedLine = "";
                     }
                     flushedLine += char;
@@ -566,7 +538,7 @@ export class InputTextArea extends InputText {
 
     protected _breakLines(refWidth: number, context: ICanvasRenderingContext): object[] {
         const lines: { text: string; width: number; lineEnding: string }[] = [];
-        const _lines = this.text.split("\n");
+        const _lines = (this.text || this.placeholderText).split("\n");
 
         if (this.clipContent) {
             for (const _line of _lines) {
@@ -594,20 +566,16 @@ export class InputTextArea extends InputText {
      * @param context The rendering canvas
      * @internal
      */
-    protected _preMeasure(parentMeasure: Measure, context: ICanvasRenderingContext): void {
+    protected override _preMeasure(parentMeasure: Measure, context: ICanvasRenderingContext): void {
         if (!this._fontOffset || this._wasDirty) {
-            this._fontOffset = Control._GetFontOffset(context.font);
+            this._fontOffset = Control._GetFontOffset(context.font, this._host.getScene()?.getEngine());
         }
 
         let text = this._beforeRenderText(this._textWrapper).text;
 
         // placeholder conditions and color setting
-        if (!this._isFocused && !this.text && this._placeholderText) {
+        if (!this.text && this._placeholderText) {
             text = this._placeholderText;
-
-            if (this._placeholderColor) {
-                context.fillStyle = this._placeholderColor;
-            }
         }
 
         // measures the textlength -> this.measure.width
@@ -663,6 +631,17 @@ export class InputTextArea extends InputText {
         }
     }
 
+    protected override _textHasChanged() {
+        if (!this._prevText && this._textWrapper.text && this.placeholderText) {
+            this._cursorInfo.currentLineIndex = 0;
+            this._cursorInfo.globalStartIndex = 1;
+            this._cursorInfo.globalEndIndex = 1;
+            this._cursorInfo.relativeStartIndex = 1;
+            this._cursorInfo.relativeEndIndex = 1;
+        }
+        super._textHasChanged();
+    }
+
     private _computeScroll() {
         this._clipTextLeft = this._currentMeasure.left + this._margin.getValueInPixel(this._host, this._cachedParentMeasure.width);
         this._clipTextTop = this._currentMeasure.top + this._margin.getValueInPixel(this._host, this._cachedParentMeasure.height);
@@ -694,7 +673,7 @@ export class InputTextArea extends InputText {
      *
      * @internal
      */
-    protected _additionalProcessing(): void {
+    protected override _additionalProcessing(): void {
         // Flush the highlighted text each frame
         this.highlightedText = "";
 
@@ -735,7 +714,7 @@ export class InputTextArea extends InputText {
      * @param ev The clipboard event
      * @internal
      */
-    protected _onCopyText(ev: ClipboardEvent): void {
+    protected override _onCopyText(ev: ClipboardEvent): void {
         this._isTextHighlightOn = false;
         //when write permission to clipbaord data is denied
         try {
@@ -750,7 +729,7 @@ export class InputTextArea extends InputText {
      * @param ev The clipboard event
      * @internal
      */
-    protected _onCutText(ev: ClipboardEvent): void {
+    protected override _onCutText(ev: ClipboardEvent): void {
         if (!this._highlightedText) {
             return;
         }
@@ -760,7 +739,7 @@ export class InputTextArea extends InputText {
         } catch {} //pass
 
         this._host.clipboardData = this._highlightedText;
-
+        this._prevText = this._textWrapper.text;
         this._textWrapper.removePart(this._cursorInfo.globalStartIndex, this._cursorInfo.globalEndIndex);
 
         this._textHasChanged();
@@ -772,7 +751,7 @@ export class InputTextArea extends InputText {
      * @param ev The clipboard event
      * @internal
      */
-    protected _onPasteText(ev: ClipboardEvent): void {
+    protected override _onPasteText(ev: ClipboardEvent): void {
         let data: string = "";
         if (ev.clipboardData && ev.clipboardData.types.indexOf("text/plain") !== -1) {
             data = ev.clipboardData.getData("text/plain");
@@ -782,7 +761,7 @@ export class InputTextArea extends InputText {
         }
 
         this._isTextHighlightOn = false;
-
+        this._prevText = this._textWrapper.text;
         this._textWrapper.removePart(this._cursorInfo.globalStartIndex, this._cursorInfo.globalEndIndex, data);
 
         const deltaIndex = data.length - (this._cursorInfo.globalEndIndex - this._cursorInfo.globalStartIndex);
@@ -793,7 +772,7 @@ export class InputTextArea extends InputText {
         this._textHasChanged();
     }
 
-    public _draw(context: ICanvasRenderingContext): void {
+    public override _draw(context: ICanvasRenderingContext): void {
         this._computeScroll();
 
         this._scrollLeft = this._scrollLeft ?? 0;
@@ -852,7 +831,9 @@ export class InputTextArea extends InputText {
         context.save();
         context.beginPath();
         context.fillStyle = this.fontStyle;
-
+        if (!this._textWrapper.text && this.placeholderText) {
+            context.fillStyle = this._placeholderColor;
+        }
         // here we define the visible reactangle to clip it in next line
         context.rect(this._clipTextLeft, this._clipTextTop, this._availableWidth + 2, this._availableHeight + 2);
         context.clip();
@@ -993,17 +974,13 @@ export class InputTextArea extends InputText {
         }, 500);
     }
 
-    protected _applyStates(context: ICanvasRenderingContext): void {
-        super._applyStates(context);
-        if (this.outlineWidth) {
-            context.lineWidth = this.outlineWidth;
-            context.strokeStyle = this.outlineColor;
-        }
-    }
-
-    public _onPointerDown(target: Control, coordinates: Vector2, pointerId: number, buttonIndex: number, pi: PointerInfoBase): boolean {
+    public override _onPointerDown(target: Control, coordinates: Vector2, pointerId: number, buttonIndex: number, pi: PointerInfoBase): boolean {
         if (!super._onPointerDown(target, coordinates, pointerId, buttonIndex, pi)) {
             return false;
+        }
+
+        if (this.isReadOnly) {
+            return true;
         }
 
         this._clickedCoordinateX = coordinates.x;
@@ -1028,13 +1005,13 @@ export class InputTextArea extends InputText {
     }
 
     // for textselection
-    public _onPointerMove(target: Control, coordinates: Vector2, pointerId: number, pi: PointerInfoBase): void {
+    public override _onPointerMove(target: Control, coordinates: Vector2, pointerId: number, pi: PointerInfoBase): void {
         // Avoid Chromium-like beahavior when this event is fired right after onPointerDown
         if (pi.event.movementX === 0 && pi.event.movementY === 0) {
             return;
         }
 
-        if (this._host.focusedControl === this && this._isPointerDown) {
+        if (this._host.focusedControl === this && this._isPointerDown && !this.isReadOnly) {
             this._clickedCoordinateX = coordinates.x;
             this._clickedCoordinateY = coordinates.y;
 
@@ -1059,94 +1036,88 @@ export class InputTextArea extends InputText {
             return;
         }
 
-        if (this._clickedCoordinateX && this._clickedCoordinateY) {
-            if (!this._isTextHighlightOn) {
-                this._cursorInfo = {
-                    globalStartIndex: 0,
-                    globalEndIndex: 0,
-                    relativeStartIndex: 0,
-                    relativeEndIndex: 0,
-                    currentLineIndex: 0,
-                };
-            }
+        if (!this._textWrapper.text && this.placeholderText) {
+            this._cursorInfo.currentLineIndex = 0;
+            this._cursorInfo.globalStartIndex = 0;
+            this._cursorInfo.globalEndIndex = 0;
+            this._cursorInfo.relativeStartIndex = 0;
+            this._cursorInfo.relativeEndIndex = 0;
+        } else {
+            if (this._clickedCoordinateX && this._clickedCoordinateY) {
+                if (!this._isTextHighlightOn) {
+                    this._cursorInfo = {
+                        globalStartIndex: 0,
+                        globalEndIndex: 0,
+                        relativeStartIndex: 0,
+                        relativeEndIndex: 0,
+                        currentLineIndex: 0,
+                    };
+                }
 
-            let globalIndex = 0;
-            let relativeIndex = 0;
+                let globalIndex = 0;
+                let relativeIndex = 0;
 
-            const lastClickedCoordinateY = this._clickedCoordinateY - (this._scrollTop as number);
+                const lastClickedCoordinateY = this._clickedCoordinateY - (this._scrollTop as number);
 
-            const relativeCoordinateY = Math.floor(lastClickedCoordinateY / this._fontOffset.height);
-            this._cursorInfo.currentLineIndex = Math.min(Math.max(relativeCoordinateY, 0), this._lines.length - 1);
+                const relativeCoordinateY = Math.floor(lastClickedCoordinateY / this._fontOffset.height);
+                this._cursorInfo.currentLineIndex = Math.min(Math.max(relativeCoordinateY, 0), this._lines.length - 1);
 
-            let currentSize = 0;
+                let currentSize = 0;
 
-            const relativeXPosition = this._clickedCoordinateX - (this._scrollLeft ?? 0);
+                const relativeXPosition = this._clickedCoordinateX - (this._scrollLeft ?? 0);
 
-            let previousDist = 0;
+                let previousDist = 0;
 
-            for (let index = 0; index < this._cursorInfo.currentLineIndex; index++) {
-                const line = this._lines[index];
-                globalIndex += line.text.length + line.lineEnding.length;
-            }
+                for (let index = 0; index < this._cursorInfo.currentLineIndex; index++) {
+                    const line = this._lines[index];
+                    globalIndex += line.text.length + line.lineEnding.length;
+                }
 
-            while (currentSize < relativeXPosition && this._lines[this._cursorInfo.currentLineIndex].text.length > relativeIndex) {
-                relativeIndex++;
-                previousDist = Math.abs(relativeXPosition - currentSize);
-                currentSize = this._contextForBreakLines.measureText(this._lines[this._cursorInfo.currentLineIndex].text.substr(0, relativeIndex)).width;
-            }
+                while (currentSize < relativeXPosition && this._lines[this._cursorInfo.currentLineIndex].text.length > relativeIndex) {
+                    relativeIndex++;
+                    previousDist = Math.abs(relativeXPosition - currentSize);
+                    currentSize = this._contextForBreakLines.measureText(this._lines[this._cursorInfo.currentLineIndex].text.substr(0, relativeIndex)).width;
+                }
 
-            // Find closest move
-            if (Math.abs(relativeXPosition - currentSize) > previousDist && relativeIndex > 0) {
-                relativeIndex--;
-            }
+                // Find closest move
+                if (Math.abs(relativeXPosition - currentSize) > previousDist && relativeIndex > 0) {
+                    relativeIndex--;
+                }
 
-            globalIndex += relativeIndex;
+                globalIndex += relativeIndex;
 
-            if (!this._isTextHighlightOn) {
-                this._cursorInfo.globalStartIndex = globalIndex;
-                this._cursorInfo.relativeStartIndex = relativeIndex;
-                this._cursorInfo.globalEndIndex = this._cursorInfo.globalStartIndex;
-                this._cursorInfo.relativeEndIndex = this._cursorInfo.relativeStartIndex;
-            } else {
-                if (globalIndex < this._highlightCursorInfo.initialStartIndex) {
+                if (!this._isTextHighlightOn) {
                     this._cursorInfo.globalStartIndex = globalIndex;
                     this._cursorInfo.relativeStartIndex = relativeIndex;
-                    this._cursorInfo.globalEndIndex = this._highlightCursorInfo.initialStartIndex;
-                    this._cursorInfo.relativeEndIndex = this._highlightCursorInfo.initialRelativeStartIndex;
+                    this._cursorInfo.globalEndIndex = this._cursorInfo.globalStartIndex;
+                    this._cursorInfo.relativeEndIndex = this._cursorInfo.relativeStartIndex;
                 } else {
-                    this._cursorInfo.globalStartIndex = this._highlightCursorInfo.initialStartIndex;
-                    this._cursorInfo.relativeStartIndex = this._highlightCursorInfo.initialRelativeStartIndex;
-                    this._cursorInfo.globalEndIndex = globalIndex;
-                    this._cursorInfo.relativeEndIndex = relativeIndex;
+                    if (globalIndex < this._highlightCursorInfo.initialStartIndex) {
+                        this._cursorInfo.globalStartIndex = globalIndex;
+                        this._cursorInfo.relativeStartIndex = relativeIndex;
+                        this._cursorInfo.globalEndIndex = this._highlightCursorInfo.initialStartIndex;
+                        this._cursorInfo.relativeEndIndex = this._highlightCursorInfo.initialRelativeStartIndex;
+                    } else {
+                        this._cursorInfo.globalStartIndex = this._highlightCursorInfo.initialStartIndex;
+                        this._cursorInfo.relativeStartIndex = this._highlightCursorInfo.initialRelativeStartIndex;
+                        this._cursorInfo.globalEndIndex = globalIndex;
+                        this._cursorInfo.relativeEndIndex = relativeIndex;
+                    }
                 }
-            }
 
-            // Avoid the caret during highlighting
-            this._blinkIsEven = this._isTextHighlightOn;
-            this._clickedCoordinateX = null;
-            this._clickedCoordinateY = null;
-        } else {
-            // Standard behavior same as Current line is at least above the initial highlight index
-            this._cursorInfo.relativeStartIndex = 0;
-            this._cursorInfo.currentLineIndex = 0;
+                // Avoid the caret during highlighting
+                this._blinkIsEven = this._isTextHighlightOn;
+                this._clickedCoordinateX = null;
+                this._clickedCoordinateY = null;
+            } else {
+                // Standard behavior same as Current line is at least above the initial highlight index
+                this._cursorInfo.relativeStartIndex = 0;
+                this._cursorInfo.currentLineIndex = 0;
 
-            let lineLength = this._lines[this._cursorInfo.currentLineIndex].text.length + this._lines[this._cursorInfo.currentLineIndex].lineEnding.length;
-            let tmpLength = 0;
+                let lineLength = this._lines[this._cursorInfo.currentLineIndex].text.length + this._lines[this._cursorInfo.currentLineIndex].lineEnding.length;
+                let tmpLength = 0;
 
-            while (tmpLength + lineLength <= this._cursorInfo.globalStartIndex) {
-                tmpLength += lineLength;
-
-                if (this._cursorInfo.currentLineIndex < this._lines.length - 1) {
-                    this._cursorInfo.currentLineIndex++;
-                    lineLength = this._lines[this._cursorInfo.currentLineIndex].text.length + this._lines[this._cursorInfo.currentLineIndex].lineEnding.length;
-                }
-            }
-
-            this._cursorInfo.relativeStartIndex = this._cursorInfo.globalStartIndex - tmpLength;
-
-            if (this._highlightCursorInfo.initialStartIndex !== -1 && this._cursorInfo.globalStartIndex >= this._highlightCursorInfo.initialStartIndex) {
-                // Current line is at least below the initial highlight index
-                while (tmpLength + lineLength <= this._cursorInfo.globalEndIndex) {
+                while (tmpLength + lineLength <= this._cursorInfo.globalStartIndex) {
                     tmpLength += lineLength;
 
                     if (this._cursorInfo.currentLineIndex < this._lines.length - 1) {
@@ -1155,10 +1126,24 @@ export class InputTextArea extends InputText {
                     }
                 }
 
-                this._cursorInfo.relativeEndIndex = this._cursorInfo.globalEndIndex - tmpLength;
-            } else if (!this._isTextHighlightOn) {
-                this._cursorInfo.relativeEndIndex = this._cursorInfo.relativeStartIndex;
-                this._cursorInfo.globalEndIndex = this._cursorInfo.globalStartIndex;
+                this._cursorInfo.relativeStartIndex = this._cursorInfo.globalStartIndex - tmpLength;
+
+                if (this._highlightCursorInfo.initialStartIndex !== -1 && this._cursorInfo.globalStartIndex >= this._highlightCursorInfo.initialStartIndex) {
+                    // Current line is at least below the initial highlight index
+                    while (tmpLength + lineLength <= this._cursorInfo.globalEndIndex) {
+                        tmpLength += lineLength;
+
+                        if (this._cursorInfo.currentLineIndex < this._lines.length - 1) {
+                            this._cursorInfo.currentLineIndex++;
+                            lineLength = this._lines[this._cursorInfo.currentLineIndex].text.length + this._lines[this._cursorInfo.currentLineIndex].lineEnding.length;
+                        }
+                    }
+
+                    this._cursorInfo.relativeEndIndex = this._cursorInfo.globalEndIndex - tmpLength;
+                } else if (!this._isTextHighlightOn) {
+                    this._cursorInfo.relativeEndIndex = this._cursorInfo.relativeStartIndex;
+                    this._cursorInfo.globalEndIndex = this._cursorInfo.globalStartIndex;
+                }
             }
         }
     }
@@ -1170,7 +1155,7 @@ export class InputTextArea extends InputText {
      * @internal
      */
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    protected _updateValueFromCursorIndex(offset: number) {
+    protected override _updateValueFromCursorIndex(offset: number) {
         // Override to avoid parent behavior during _onPointerMove
     }
 
@@ -1180,7 +1165,7 @@ export class InputTextArea extends InputText {
      * @param _evt Pointer informations of double click
      * @internal
      */
-    protected _processDblClick(_evt: PointerInfo) {
+    protected override _processDblClick(_evt: PointerInfo) {
         //pre-find the start and end index of the word under cursor, speeds up the rendering
         let moveLeft, moveRight;
         do {
@@ -1200,7 +1185,7 @@ export class InputTextArea extends InputText {
     }
 
     /** @internal */
-    protected _selectAllText() {
+    protected override _selectAllText() {
         this._isTextHighlightOn = true;
         this._blinkIsEven = true;
 
@@ -1221,7 +1206,7 @@ export class InputTextArea extends InputText {
         this._markAsDirty();
     }
 
-    public dipose() {
+    public override dispose() {
         super.dispose();
 
         this.onLinesReadyObservable.clear();

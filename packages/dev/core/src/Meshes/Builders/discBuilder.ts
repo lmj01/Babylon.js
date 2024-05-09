@@ -14,12 +14,6 @@ import { CompatibilityOptions } from "../../Compat/compatibilityOptions";
  * * sideOrientation optional and takes the values : Mesh.FRONTSIDE (default), Mesh.BACKSIDE or Mesh.DOUBLESIDE
  * * frontUvs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the front side, optional, default vector4 (0, 0, 1, 1)
  * * backUVs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the back side, optional, default vector4 (0, 0, 1, 1)
- * @param options.radius
- * @param options.tessellation
- * @param options.arc
- * @param options.sideOrientation
- * @param options.frontUVs
- * @param options.backUVs
  * @returns the VertexData of the box
  */
 // eslint-disable-next-line @typescript-eslint/naming-convention
@@ -31,10 +25,10 @@ export function CreateDiscVertexData(options: {
     frontUVs?: Vector4;
     backUVs?: Vector4;
 }): VertexData {
-    const positions = new Array<number>();
-    const indices = new Array<number>();
-    const normals = new Array<number>();
-    const uvs = new Array<number>();
+    const positions: number[] = [];
+    const indices: number[] = [];
+    const normals: number[] = [];
+    const uvs: number[] = [];
 
     const radius = options.radius || 0.5;
     const tessellation = options.tessellation || 64;
@@ -92,13 +86,6 @@ export function CreateDiscVertexData(options: {
  * * The mesh can be set to updatable with the boolean parameter `updatable` (default false) if its internal geometry is supposed to change once created
  * @param name defines the name of the mesh
  * @param options defines the options used to create the mesh
- * @param options.radius
- * @param options.tessellation
- * @param options.arc
- * @param options.updatable
- * @param options.sideOrientation
- * @param options.frontUVs
- * @param options.backUVs
  * @param scene defines the hosting scene
  * @returns the plane polygonal mesh
  * @see https://doc.babylonjs.com/features/featuresDeepDive/mesh/creation/set#disc-or-regular-polygon
@@ -130,7 +117,7 @@ export const DiscBuilder = {
 
 VertexData.CreateDisc = CreateDiscVertexData;
 
-(Mesh as any).CreateDisc = (name: string, radius: number, tessellation: number, scene: Nullable<Scene> = null, updatable?: boolean, sideOrientation?: number): Mesh => {
+Mesh.CreateDisc = (name: string, radius: number, tessellation: number, scene: Nullable<Scene> = null, updatable?: boolean, sideOrientation?: number): Mesh => {
     const options = {
         radius,
         tessellation,

@@ -1,6 +1,7 @@
 import type { WebXRSessionManager } from "./webXRSessionManager";
 import type { IDisposable } from "../scene";
 import { Tools } from "../Misc/tools";
+import type { Observable } from "core/Misc/observable";
 
 /**
  * Defining the interface required for a (webxr) feature
@@ -58,6 +59,15 @@ export interface IWebXRFeature extends IDisposable {
      * If this feature requires to extend the XRSessionInit object, this function will return the partial XR session init object
      */
     getXRSessionInitExtension?: () => Promise<Partial<XRSessionInit>>;
+
+    /**
+     * Triggered when the feature is attached
+     */
+    onFeatureAttachObservable: Observable<IWebXRFeature>;
+    /**
+     * Triggered when the feature is detached
+     */
+    onFeatureDetachObservable: Observable<IWebXRFeature>;
 }
 
 /**
@@ -140,6 +150,14 @@ export class WebXRFeatureName {
      * The name of the depth sensing feature
      */
     public static readonly DEPTH_SENSING = "xr-depth-sensing";
+    /**
+     * The name of the WebXR Space Warp feature
+     */
+    public static readonly SPACE_WARP = "xr-space-warp";
+    /**
+     * The name of the WebXR Raw Camera Access feature
+     */
+    public static readonly RAW_CAMERA_ACCESS = "xr-raw-camera-access";
 }
 
 /**
@@ -290,7 +308,10 @@ export class WebXRFeaturesManager implements IDisposable {
     public attachFeature(featureName: string) {
         const feature = this._features[featureName];
         if (feature && feature.enabled && !feature.featureImplementation.attached) {
-            feature.featureImplementation.attach();
+            const attached = feature.featureImplementation.attach();
+            if (!attached) {
+                Tools.Warn(`Feature ${featureName} failed to attach`);
+            }
         }
     }
 
@@ -301,7 +322,10 @@ export class WebXRFeaturesManager implements IDisposable {
     public detachFeature(featureName: string) {
         const feature = this._features[featureName];
         if (feature && feature.featureImplementation.attached) {
-            feature.featureImplementation.detach();
+            const detached = feature.featureImplementation.detach();
+            if (!detached) {
+                Tools.Warn(`Feature ${featureName} failed to detach`);
+            }
         }
     }
 

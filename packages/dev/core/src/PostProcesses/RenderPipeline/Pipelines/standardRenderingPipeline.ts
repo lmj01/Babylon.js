@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/naming-convention */
 import type { Nullable } from "../../../types";
-import { serialize, serializeAsTexture, SerializationHelper } from "../../../Misc/decorators";
+import { serialize, serializeAsTexture } from "../../../Misc/decorators";
+import { SerializationHelper } from "../../../Misc/decorators.serialization";
 import type { IAnimatable } from "../../../Animations/animatable.interface";
 import { Logger } from "../../../Misc/logger";
 import { Vector2, Vector3, Matrix, Vector4 } from "../../../Maths/math.vector";
@@ -23,7 +24,7 @@ import { RegisterClass } from "../../../Misc/typeStore";
 import { MotionBlurPostProcess } from "../../motionBlurPostProcess";
 import { ScreenSpaceReflectionPostProcess } from "../../screenSpaceReflectionPostProcess";
 
-declare type Animation = import("../../../Animations/animation").Animation;
+import type { Animation } from "../../../Animations/animation";
 
 import "../../../PostProcesses/RenderPipeline/postProcessRenderPipelineManagerSceneComponent";
 
@@ -1629,7 +1630,7 @@ export class StandardRenderingPipeline extends PostProcessRenderPipeline impleme
     /**
      * Dispose of the pipeline and stop all post processes
      */
-    public dispose(): void {
+    public override dispose(): void {
         this._disposePostProcesses();
 
         this._scene.postProcessRenderPipelineManager.detachCamerasFromRenderPipeline(this._name, this._cameras);

@@ -33,7 +33,18 @@ export class WebRequest implements IWebRequest {
      */
     public static CustomRequestModifiers = new Array<(request: XMLHttpRequest, url: string) => void>();
 
+    /**
+     * If set to true, requests to Babylon.js CDN requests will not be modified
+     */
     public static SkipRequestModificationForBabylonCDN = true;
+
+    /**
+     * This function can be called to check if there are request modifiers for network requests
+     * @returns true if there are any custom requests available
+     */
+    public static get IsCustomRequestAvailable(): boolean {
+        return Object.keys(WebRequest.CustomRequestHeaders).length > 0 || WebRequest.CustomRequestModifiers.length > 0;
+    }
 
     private _requestURL: string = "";
 
@@ -186,7 +197,7 @@ export class WebRequest implements IWebRequest {
 
         this._requestURL = url;
 
-        return this._xhr.open(method, url, true);
+        this._xhr.open(method, url, true);
     }
 
     /**

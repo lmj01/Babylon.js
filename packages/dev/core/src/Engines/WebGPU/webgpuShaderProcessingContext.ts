@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/naming-convention */
+/* eslint-disable babylonjs/available */
+/* eslint-disable jsdoc/require-jsdoc */
 import type { ShaderLanguage } from "../../Materials/shaderLanguage";
 import type { ShaderProcessingContext } from "../Processors/shaderProcessingOptions";
 
@@ -249,6 +251,7 @@ export class WebGPUShaderProcessingContext implements ShaderProcessingContext {
         }
 
         if (this.freeGroupIndex === _maxGroups) {
+            // eslint-disable-next-line no-throw-literal
             throw "Too many textures or UBOs have been declared and it is not supported in WebGPU.";
         }
 

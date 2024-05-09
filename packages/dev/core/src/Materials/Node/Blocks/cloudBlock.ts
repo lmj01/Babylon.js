@@ -4,7 +4,7 @@ import type { NodeMaterialBuildState } from "../nodeMaterialBuildState";
 import type { NodeMaterialConnectionPoint } from "../nodeMaterialBlockConnectionPoint";
 import { NodeMaterialBlockTargets } from "../Enums/nodeMaterialBlockTargets";
 import { RegisterClass } from "../../../Misc/typeStore";
-import { editableInPropertyPage, PropertyTypeForEdition } from "../nodeMaterialDecorator";
+import { editableInPropertyPage, PropertyTypeForEdition } from "../../../Decorators/nodeDecorator";
 import type { Scene } from "../../../scene";
 /**
  * block used to Generate Fractal Brownian Motion Clouds
@@ -36,7 +36,7 @@ export class CloudBlock extends NodeMaterialBlock {
      * Gets the current class name
      * @returns the class name
      */
-    public getClassName() {
+    public override getClassName() {
         return "CloudBlock";
     }
 
@@ -82,7 +82,7 @@ export class CloudBlock extends NodeMaterialBlock {
         return this._outputs[0];
     }
 
-    protected _buildBlock(state: NodeMaterialBuildState) {
+    protected override _buildBlock(state: NodeMaterialBuildState) {
         super._buildBlock(state);
 
         if (!this.seed.isConnected) {
@@ -169,15 +169,15 @@ export class CloudBlock extends NodeMaterialBlock {
         const localVariable = state._getFreeVariableName("st");
         const seedType = this.seed.connectedPoint?.type === NodeMaterialBlockConnectionPointTypes.Vector2 ? "vec2" : "vec3";
 
-        state.compilationString += `${seedType} ${localVariable} = ${this.seed.associatedVariableName};\r\n`;
+        state.compilationString += `${seedType} ${localVariable} = ${this.seed.associatedVariableName};\n`;
         if (this.offsetX.isConnected) {
-            state.compilationString += `${localVariable}.x += 0.1 * ${this.offsetX.associatedVariableName};\r\n`;
+            state.compilationString += `${localVariable}.x += 0.1 * ${this.offsetX.associatedVariableName};\n`;
         }
         if (this.offsetY.isConnected) {
-            state.compilationString += `${localVariable}.y += 0.1 * ${this.offsetY.associatedVariableName};\r\n`;
+            state.compilationString += `${localVariable}.y += 0.1 * ${this.offsetY.associatedVariableName};\n`;
         }
         if (this.offsetZ.isConnected && seedType === "vec3") {
-            state.compilationString += `${localVariable}.z += 0.1 * ${this.offsetZ.associatedVariableName};\r\n`;
+            state.compilationString += `${localVariable}.z += 0.1 * ${this.offsetZ.associatedVariableName};\n`;
         }
 
         let chaosValue = "";
@@ -187,17 +187,17 @@ export class CloudBlock extends NodeMaterialBlock {
             chaosValue = this.seed.connectedPoint?.type === NodeMaterialBlockConnectionPointTypes.Vector2 ? "vec2(0., 0.)" : "vec3(0., 0., 0.)";
         }
 
-        state.compilationString += this._declareOutput(this._outputs[0], state) + ` = ${fbmNewName}(${localVariable}, ${chaosValue});\r\n`;
+        state.compilationString += state._declareOutput(this._outputs[0]) + ` = ${fbmNewName}(${localVariable}, ${chaosValue});\n`;
 
         return this;
     }
 
-    protected _dumpPropertiesCode() {
-        const codeString = super._dumpPropertiesCode() + `${this._codeVariableName}.octaves = ${this.octaves};\r\n`;
+    protected override _dumpPropertiesCode() {
+        const codeString = super._dumpPropertiesCode() + `${this._codeVariableName}.octaves = ${this.octaves};\n`;
         return codeString;
     }
 
-    public serialize(): any {
+    public override serialize(): any {
         const serializationObject = super.serialize();
 
         serializationObject.octaves = this.octaves;
@@ -205,7 +205,7 @@ export class CloudBlock extends NodeMaterialBlock {
         return serializationObject;
     }
 
-    public _deserialize(serializationObject: any, scene: Scene, rootUrl: string) {
+    public override _deserialize(serializationObject: any, scene: Scene, rootUrl: string) {
         super._deserialize(serializationObject, scene, rootUrl);
 
         this.octaves = serializationObject.octaves;

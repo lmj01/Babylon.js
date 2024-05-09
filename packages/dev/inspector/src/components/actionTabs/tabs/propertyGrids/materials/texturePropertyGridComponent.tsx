@@ -128,7 +128,7 @@ export class TexturePropertyGridComponent extends React.Component<ITextureProper
         this.openTextureEditor.bind(this);
     }
 
-    componentWillUnmount() {
+    override componentWillUnmount() {
         if (this._adtInstrumentation) {
             this._adtInstrumentation.dispose();
             this._adtInstrumentation = null;
@@ -212,7 +212,7 @@ export class TexturePropertyGridComponent extends React.Component<ITextureProper
         return null;
     }
 
-    render() {
+    override render() {
         const texture = this.props.texture;
         const textureAsRTT = texture as RenderTargetTexture;
 
@@ -348,6 +348,7 @@ export class TexturePropertyGridComponent extends React.Component<ITextureProper
                     {!!oformat?.normalizable && !oformat?.compressed && !!otype?.normalizable && <TextLineComponent label="Normalized" value={otype.normalizable ? "Yes" : "No"} />}
                     <TextLineComponent label="Is compressed" value={oformat?.compressed ? "Yes" : "No"} />
                     <TextLineComponent label="Use sRGB buffers" value={texture._texture?._useSRGBBuffer ? "Yes" : "No"} />
+                    <TextLineComponent label="Is Gamma space" value={texture.gammaSpace ? "Yes" : "No"} />
                     {extension && <TextLineComponent label="File format" value={extension} />}
                     <TextLineComponent label="Unique ID" value={texture.uniqueId.toString()} />
                     <TextLineComponent label="Internal Unique ID" value={(texture._texture?.uniqueId ?? "N/A").toString()} />

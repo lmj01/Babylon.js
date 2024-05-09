@@ -6,7 +6,7 @@ import { Constants } from "../Engines/constants";
 import "../Shaders/tonemap.fragment";
 import type { Nullable } from "../types";
 
-declare type Engine = import("../Engines/engine").Engine;
+import type { Engine } from "../Engines/engine";
 
 /** Defines operator used for tonemapping */
 export enum TonemappingOperator {
@@ -28,7 +28,7 @@ export class TonemapPostProcess extends PostProcess {
      * Gets a string identifying the name of the class
      * @returns "TonemapPostProcess" string
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "TonemapPostProcess";
     }
 

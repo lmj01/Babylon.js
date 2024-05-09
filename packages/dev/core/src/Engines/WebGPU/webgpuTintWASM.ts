@@ -1,7 +1,5 @@
-import { IsWindowObjectExist } from "../../Misc/domManagement";
+import { Logger } from "core/Misc/logger";
 import { Tools } from "../../Misc/tools";
-
-declare function importScripts(...urls: string[]): void;
 
 /**
  * Options to load the associated Twgsl library
@@ -25,18 +23,18 @@ export interface TwgslOptions {
 export class WebGPUTintWASM {
     // Default twgsl options.
     private static readonly _TWgslDefaultOptions: TwgslOptions = {
-        jsPath: "https://preview.babylonjs.com/twgsl/twgsl.js",
-        wasmPath: "https://preview.babylonjs.com/twgsl/twgsl.wasm",
+        jsPath: `${Tools._DefaultCdnUrl}/twgsl/twgsl.js`,
+        wasmPath: `${Tools._DefaultCdnUrl}/twgsl/twgsl.wasm`,
     };
 
     public static ShowWGSLShaderCode = false;
 
     public static DisableUniformityAnalysis = false;
 
-    private static _twgsl: any = null;
+    private static _Twgsl: any = null;
 
     public async initTwgsl(twgslOptions?: TwgslOptions): Promise<void> {
-        if (WebGPUTintWASM._twgsl) {
+        if (WebGPUTintWASM._Twgsl) {
             return;
         }
 
@@ -47,20 +45,16 @@ export class WebGPUTintWASM {
         };
 
         if (twgslOptions.twgsl) {
-            WebGPUTintWASM._twgsl = twgslOptions.twgsl;
+            WebGPUTintWASM._Twgsl = twgslOptions.twgsl;
             return Promise.resolve();
         }
 
         if (twgslOptions.jsPath && twgslOptions.wasmPath) {
-            if (IsWindowObjectExist()) {
-                await Tools.LoadScriptAsync(twgslOptions.jsPath);
-            } else {
-                importScripts(twgslOptions.jsPath);
-            }
+            await Tools.LoadBabylonScriptAsync(twgslOptions.jsPath);
         }
 
         if ((self as any).twgsl) {
-            WebGPUTintWASM._twgsl = await (self as any).twgsl(twgslOptions!.wasmPath);
+            WebGPUTintWASM._Twgsl = await (self as any).twgsl(Tools.GetBabylonScriptURL(twgslOptions!.wasmPath!));
             return Promise.resolve();
         }
 
@@ -68,10 +62,10 @@ export class WebGPUTintWASM {
     }
 
     public convertSpirV2WGSL(code: Uint32Array, disableUniformityAnalysis = false): string {
-        const ccode = WebGPUTintWASM._twgsl.convertSpirV2WGSL(code);
+        const ccode = WebGPUTintWASM._Twgsl.convertSpirV2WGSL(code, WebGPUTintWASM.DisableUniformityAnalysis || disableUniformityAnalysis);
         if (WebGPUTintWASM.ShowWGSLShaderCode) {
-            console.log(ccode);
-            console.log("***********************************************");
+            Logger.Log(ccode);
+            Logger.Log("***********************************************");
         }
         return WebGPUTintWASM.DisableUniformityAnalysis || disableUniformityAnalysis ? "diagnostic(off, derivative_uniformity);\n" + ccode : ccode;
     }

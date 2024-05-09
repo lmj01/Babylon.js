@@ -11,13 +11,12 @@ import { CompilationError } from "../components/errorDisplayComponent";
 import { Observable } from "@dev/core";
 import { debounce } from "ts-debounce";
 
-declare type IStandaloneCodeEditor = import("monaco-editor/esm/vs/editor/editor.api").editor.IStandaloneCodeEditor;
-declare type IStandaloneEditorConstructionOptions = import("monaco-editor/esm/vs/editor/editor.api").editor.IStandaloneEditorConstructionOptions;
+import type { editor } from "monaco-editor/esm/vs/editor/editor.api";
 
 //declare var monaco: any;
 
 export class MonacoManager {
-    private _editor: IStandaloneCodeEditor;
+    private _editor: editor.IStandaloneCodeEditor;
     private _definitionWorker: Worker;
     private _tagCandidates: { name: string; tagName: string }[];
     private _hostElement: HTMLDivElement;
@@ -189,7 +188,7 @@ class Playground {
             this._editor.dispose();
         }
 
-        const editorOptions: IStandaloneEditorConstructionOptions = {
+        const editorOptions: editor.IStandaloneEditorConstructionOptions = {
             value: "",
             language: this.globalState.language === "JS" ? "javascript" : "typescript",
             lineNumbers: "on",
@@ -250,11 +249,21 @@ class Playground {
         let snapshot = "";
         // see if a snapshot should be used
         if (window.location.search.indexOf("snapshot=") !== -1) {
-            snapshot = window.location.search.split("=")[1];
+            snapshot = window.location.search.split("snapshot=")[1];
             // cleanup, just in case
             snapshot = snapshot.split("&")[0];
             for (let index = 0; index < declarations.length; index++) {
                 declarations[index] = declarations[index].replace("https://preview.babylonjs.com", "https://babylonsnapshots.z22.web.core.windows.net/" + snapshot);
+            }
+        }
+
+        let version = "";
+        if (window.location.search.indexOf("version=") !== -1) {
+            version = window.location.search.split("version=")[1];
+            // cleanup, just in case
+            version = version.split("&")[0];
+            for (let index = 0; index < declarations.length; index++) {
+                declarations[index] = declarations[index].replace("https://preview.babylonjs.com", "https://cdn.babylonjs.com/v" + version);
             }
         }
 
@@ -269,8 +278,9 @@ class Playground {
         declarations.push("https://assets.babylonjs.com/generated/Assets.d.ts");
 
         // Check for Unity Toolkit
-        if (location.href.indexOf("UnityToolkit") !== -1 || Utilities.ReadBoolFromStore("unity-toolkit", false)) {
-            declarations.push("https://playground.babylonjs.com/libs/babylon.manager.d.ts");
+        if (location.href.indexOf("UnityToolkit") !== -1 || Utilities.ReadBoolFromStore("unity-toolkit", false) || Utilities.ReadBoolFromStore("unity-toolkit-used", false)) {
+            declarations.push("https://cdn.jsdelivr.net/gh/BabylonJS/UnityExporter@master/Redist/Runtime/babylon.toolkit.d.ts");
+            declarations.push("https://cdn.jsdelivr.net/gh/BabylonJS/UnityExporter@master/Redist/Runtime/unity.playground.d.ts");
         }
 
         const timestamp = typeof globalThis !== "undefined" && (globalThis as any).__babylonSnapshotTimestamp__ ? (globalThis as any).__babylonSnapshotTimestamp__ : 0;
@@ -292,6 +302,7 @@ class Playground {
                 if (fallbackResponse.ok) {
                     libContent += await fallbackResponse.text();
                 } else {
+                    // eslint-disable-next-line no-console
                     console.log("missing declaration", response.url);
                 }
             } else {
@@ -518,7 +529,7 @@ declare var canvas: HTMLCanvasElement;
         }
 
         const model = this._editor.getModel();
-        if (!model) {
+        if (!model || model.isDisposed()) {
             return;
         }
 

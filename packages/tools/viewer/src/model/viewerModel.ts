@@ -133,7 +133,11 @@ export class ViewerModel implements IDisposable {
 
     private _shadowsRenderedAfterLoad: boolean = false;
 
-    constructor(private _observablesManager: ObservablesManager, modelConfiguration: IModelConfiguration, private _configurationContainer?: ConfigurationContainer) {
+    constructor(
+        private _observablesManager: ObservablesManager,
+        modelConfiguration: IModelConfiguration,
+        private _configurationContainer?: ConfigurationContainer
+    ) {
         this.onLoadedObservable = new Observable();
         this.onLoadErrorObservable = new Observable();
         this.onLoadProgressObservable = new Observable();
@@ -224,6 +228,7 @@ export class ViewerModel implements IDisposable {
      *
      * @param mesh the new mesh to add
      * @param triggerLoaded should this mesh trigger the onLoaded observable. Used when adding meshes manually.
+     * @returns a promise that will resolve when the model is done loading
      */
     public addMesh(mesh: AbstractMesh, triggerLoaded?: boolean) {
         if (!mesh.parent) {
@@ -373,6 +378,7 @@ export class ViewerModel implements IDisposable {
 
     /**
      * Get the ModelAnimation array
+     * @returns the array of ModelAnimations
      */
     public getAnimations(): Array<IModelAnimation> {
         return this._animations;
@@ -380,6 +386,7 @@ export class ViewerModel implements IDisposable {
 
     /**
      * Get the animations' names. Using the names you can play a specific animation.
+     * @returns the array of ModelAnimations
      */
     public getAnimationNames(): Array<string> {
         return this._animations.map((a) => a.name);
@@ -388,12 +395,12 @@ export class ViewerModel implements IDisposable {
     /**
      * Get an animation by the provided name. Used mainly when playing n animation.
      * @param name the name of the animation to find
+     * @returns the ModelAnimation object
      */
     protected _getAnimationByName(name: string): Nullable<IModelAnimation> {
         // can't use .find, noe available on IE
         const filtered = this._animations.filter((a) => a.name === name.trim());
-        // what the next line means - if two animations have the same name, they will not be returned!
-        if (filtered.length === 1) {
+        if (filtered.length >= 1) {
             return filtered[0];
         } else {
             return null;

@@ -1,8 +1,8 @@
-// import * as mv from "mv";
+/* eslint-disable no-console */
 import * as path from "path";
 import * as glob from "glob";
 import * as fs from "fs-extra";
-import { checkArgs } from "./utils";
+import { checkArgs } from "./utils.js";
 
 export const prepareES6Build = async () => {
     const baseDir = path.resolve(".");

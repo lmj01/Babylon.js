@@ -4,13 +4,14 @@ import type { Camera } from "../Cameras/camera";
 import type { Effect } from "../Materials/effect";
 import type { PostProcessOptions } from "./postProcess";
 import { PostProcess } from "./postProcess";
-import type { Engine } from "../Engines/engine";
+import type { AbstractEngine } from "../Engines/abstractEngine";
 
 import "../Shaders/filter.fragment";
 import { RegisterClass } from "../Misc/typeStore";
-import { serializeAsMatrix, SerializationHelper } from "../Misc/decorators";
+import { serializeAsMatrix } from "../Misc/decorators";
+import { SerializationHelper } from "../Misc/decorators.serialization";
 
-declare type Scene = import("../scene").Scene;
+import type { Scene } from "../scene";
 
 /**
  * Applies a kernel filter to the image
@@ -24,7 +25,7 @@ export class FilterPostProcess extends PostProcess {
      * Gets a string identifying the name of the class
      * @returns "FilterPostProcess" string
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "FilterPostProcess";
     }
 
@@ -38,7 +39,15 @@ export class FilterPostProcess extends PostProcess {
      * @param engine The engine which the post process will be applied. (default: current engine)
      * @param reusable If the post process can be reused on the same frame. (default: false)
      */
-    constructor(name: string, kernelMatrix: Matrix, options: number | PostProcessOptions, camera: Nullable<Camera>, samplingMode?: number, engine?: Engine, reusable?: boolean) {
+    constructor(
+        name: string,
+        kernelMatrix: Matrix,
+        options: number | PostProcessOptions,
+        camera: Nullable<Camera>,
+        samplingMode?: number,
+        engine?: AbstractEngine,
+        reusable?: boolean
+    ) {
         super(name, "filter", ["kernelMatrix"], null, options, camera, samplingMode, engine, reusable);
         this.kernelMatrix = kernelMatrix;
 
@@ -50,7 +59,7 @@ export class FilterPostProcess extends PostProcess {
     /**
      * @internal
      */
-    public static _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string): Nullable<FilterPostProcess> {
+    public static override _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string): Nullable<FilterPostProcess> {
         return SerializationHelper.Parse(
             () => {
                 return new FilterPostProcess(

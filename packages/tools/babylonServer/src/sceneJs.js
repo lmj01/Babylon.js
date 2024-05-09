@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import { loadPlayground, getPlaygroundId } from "./playground";
 const canvas = document.getElementById("babylon-canvas"); // Get the canvas element
 import { createScene } from "./createScene";
@@ -14,6 +15,10 @@ const openInspector = (e) => {
     }
 };
 const runScene = async () => {
+    try {
+        // eslint-disable-next-line no-undef
+        await Recast();
+    } catch (e) {}
     const playgroundId = getPlaygroundId();
     if (engine) {
         engine.dispose();

@@ -25,7 +25,7 @@ export class ArcRotateCameraPointersInput extends BaseCameraPointersInput {
      * Gets the class name of the current input.
      * @returns the class name
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "ArcRotateCameraPointersInput";
     }
 
@@ -33,7 +33,7 @@ export class ArcRotateCameraPointersInput extends BaseCameraPointersInput {
      * Defines the buttons associated with the input to handle camera move.
      */
     @serialize()
-    public buttons = [0, 1, 2];
+    public override buttons = [0, 1, 2];
 
     /**
      * Defines the pointer angular sensibility  along the X axis or how fast is
@@ -141,11 +141,11 @@ export class ArcRotateCameraPointersInput extends BaseCameraPointersInput {
 
     /**
      * Called on pointer POINTERMOVE event if only a single touch is active.
-     * @param point
-     * @param offsetX
-     * @param offsetY
+     * @param point current touch point
+     * @param offsetX offset on X
+     * @param offsetY offset on Y
      */
-    public onTouch(point: Nullable<PointerTouch>, offsetX: number, offsetY: number): void {
+    public override onTouch(point: Nullable<PointerTouch>, offsetX: number, offsetY: number): void {
         if (this.panningSensibility !== 0 && ((this._ctrlKey && this.camera._useCtrlForPanning) || this._isPanClick)) {
             this.camera.inertialPanningX += -offsetX / this.panningSensibility;
             this.camera.inertialPanningY += offsetY / this.panningSensibility;
@@ -158,7 +158,7 @@ export class ArcRotateCameraPointersInput extends BaseCameraPointersInput {
     /**
      * Called on pointer POINTERDOUBLETAP event.
      */
-    public onDoubleTap() {
+    public override onDoubleTap() {
         if (this.camera.useInputToRestoreState) {
             this.camera.restoreState();
         }
@@ -166,14 +166,14 @@ export class ArcRotateCameraPointersInput extends BaseCameraPointersInput {
 
     /**
      * Called on pointer POINTERMOVE event if multiple touches are active.
-     * @param pointA
-     * @param pointB
-     * @param previousPinchSquaredDistance
-     * @param pinchSquaredDistance
-     * @param previousMultiTouchPanPosition
-     * @param multiTouchPanPosition
+     * @param pointA point A
+     * @param pointB point B
+     * @param previousPinchSquaredDistance distance between points in previous pinch
+     * @param pinchSquaredDistance distance between points in current pinch
+     * @param previousMultiTouchPanPosition multi-touch position in previous step
+     * @param multiTouchPanPosition multi-touch position in current step
      */
-    public onMultiTouch(
+    public override onMultiTouch(
         pointA: Nullable<PointerTouch>,
         pointB: Nullable<PointerTouch>,
         previousPinchSquaredDistance: number,
@@ -228,17 +228,18 @@ export class ArcRotateCameraPointersInput extends BaseCameraPointersInput {
     /**
      * Called each time a new POINTERDOWN event occurs. Ie, for each button
      * press.
-     * @param evt
+     * @param evt Defines the event to track
      */
-    public onButtonDown(evt: IPointerEvent): void {
+    public override onButtonDown(evt: IPointerEvent): void {
         this._isPanClick = evt.button === this.camera._panningMouseButton;
     }
 
     /**
      * Called each time a new POINTERUP event occurs. Ie, for each button
      * release.
+     * @param _evt Defines the event to track
      */
-    public onButtonUp(): void {
+    public override onButtonUp(_evt: IPointerEvent): void {
         this._twoFingerActivityCount = 0;
         this._isPinching = false;
     }
@@ -246,7 +247,7 @@ export class ArcRotateCameraPointersInput extends BaseCameraPointersInput {
     /**
      * Called when window becomes inactive.
      */
-    public onLostFocus(): void {
+    public override onLostFocus(): void {
         this._isPanClick = false;
         this._twoFingerActivityCount = 0;
         this._isPinching = false;

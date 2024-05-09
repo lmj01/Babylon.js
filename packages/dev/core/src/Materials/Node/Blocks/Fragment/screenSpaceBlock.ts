@@ -34,7 +34,7 @@ export class ScreenSpaceBlock extends NodeMaterialBlock {
      * Gets the current class name
      * @returns the class name
      */
-    public getClassName() {
+    public override getClassName() {
         return "ScreenSpaceBlock";
     }
 
@@ -73,9 +73,9 @@ export class ScreenSpaceBlock extends NodeMaterialBlock {
         return this._outputs[2];
     }
 
-    public autoConfigure(material: NodeMaterial) {
+    public override autoConfigure(material: NodeMaterial, additionalFilteringInfo: (node: NodeMaterialBlock) => boolean = () => true) {
         if (!this.worldViewProjection.isConnected) {
-            let worldViewProjectionInput = material.getInputBlockByPredicate((b) => b.systemValue === NodeMaterialSystemValues.WorldViewProjection);
+            let worldViewProjectionInput = material.getInputBlockByPredicate((b) => b.systemValue === NodeMaterialSystemValues.WorldViewProjection && additionalFilteringInfo(b));
 
             if (!worldViewProjectionInput) {
                 worldViewProjectionInput = new InputBlock("worldViewProjection");
@@ -85,7 +85,7 @@ export class ScreenSpaceBlock extends NodeMaterialBlock {
         }
     }
 
-    protected _buildBlock(state: NodeMaterialBuildState) {
+    protected override _buildBlock(state: NodeMaterialBuildState) {
         super._buildBlock(state);
 
         const vector = this.vector;
@@ -101,10 +101,10 @@ export class ScreenSpaceBlock extends NodeMaterialBlock {
 
         switch (vector.connectedPoint.type) {
             case NodeMaterialBlockConnectionPointTypes.Vector3:
-                state.compilationString += `vec4 ${tempVariableName} = ${worldViewProjectionName} * vec4(${vector.associatedVariableName}, 1.0);\r\n`;
+                state.compilationString += `vec4 ${tempVariableName} = ${worldViewProjectionName} * vec4(${vector.associatedVariableName}, 1.0);\n`;
                 break;
             case NodeMaterialBlockConnectionPointTypes.Vector4:
-                state.compilationString += `vec4 ${tempVariableName} = ${worldViewProjectionName} * ${vector.associatedVariableName};\r\n`;
+                state.compilationString += `vec4 ${tempVariableName} = ${worldViewProjectionName} * ${vector.associatedVariableName};\n`;
                 break;
         }
 
@@ -112,13 +112,13 @@ export class ScreenSpaceBlock extends NodeMaterialBlock {
         state.compilationString += `${tempVariableName}.xy = ${tempVariableName}.xy * 0.5 + vec2(0.5, 0.5);`;
 
         if (this.output.hasEndpoints) {
-            state.compilationString += this._declareOutput(this.output, state) + ` = ${tempVariableName}.xy;\r\n`;
+            state.compilationString += state._declareOutput(this.output) + ` = ${tempVariableName}.xy;\n`;
         }
         if (this.x.hasEndpoints) {
-            state.compilationString += this._declareOutput(this.x, state) + ` = ${tempVariableName}.x;\r\n`;
+            state.compilationString += state._declareOutput(this.x) + ` = ${tempVariableName}.x;\n`;
         }
         if (this.y.hasEndpoints) {
-            state.compilationString += this._declareOutput(this.y, state) + ` = ${tempVariableName}.y;\r\n`;
+            state.compilationString += state._declareOutput(this.y) + ` = ${tempVariableName}.y;\n`;
         }
 
         return this;

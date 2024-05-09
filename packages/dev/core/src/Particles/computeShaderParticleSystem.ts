@@ -1,4 +1,4 @@
-import type { ThinEngine } from "../Engines/thinEngine";
+import type { WebGPUEngine } from "../Engines/webgpuEngine";
 import { StorageBuffer } from "../Buffers/storageBuffer";
 import { ComputeShader } from "../Compute/computeShader";
 import { UniformBuffer } from "../Materials/uniformBuffer";
@@ -6,7 +6,7 @@ import type { IGPUParticleSystemPlatform } from "./IGPUParticleSystemPlatform";
 import type { Buffer, VertexBuffer } from "../Buffers/buffer";
 import type { GPUParticleSystem } from "./gpuParticleSystem";
 
-import type { DataArray } from "../types";
+import type { DataArray, Nullable } from "../types";
 import type { DataBuffer } from "../Buffers/dataBuffer";
 import { Constants } from "../Engines/constants";
 import { UniformBufferEffectCommonAccessor } from "../Materials/uniformBufferEffectCommonAccessor";
@@ -19,7 +19,7 @@ import "../ShadersWGSL/gpuUpdateParticles.compute";
 /** @internal */
 export class ComputeShaderParticleSystem implements IGPUParticleSystemPlatform {
     private _parent: GPUParticleSystem;
-    private _engine: ThinEngine;
+    private _engine: WebGPUEngine;
     private _updateComputeShader: ComputeShader;
     private _simParamsComputeShader: UniformBuffer;
     private _bufferComputeShader: StorageBuffer[] = [];
@@ -27,9 +27,15 @@ export class ComputeShaderParticleSystem implements IGPUParticleSystemPlatform {
 
     public readonly alignDataInBuffer = true;
 
-    constructor(parent: GPUParticleSystem, engine: ThinEngine) {
+    constructor(parent: GPUParticleSystem, engine: WebGPUEngine) {
         this._parent = parent;
         this._engine = engine;
+    }
+
+    public contextLost(): void {
+        this._updateComputeShader = undefined as any;
+        this._bufferComputeShader.length = 0;
+        this._renderVertexBuffers.length = 0;
     }
 
     public isUpdateBufferCreated(): boolean {
@@ -67,10 +73,10 @@ export class ComputeShaderParticleSystem implements IGPUParticleSystemPlatform {
             bindingsMapping["noiseTexture"] = { group: 1, binding: 11 };
         }
 
-        this._updateComputeShader = new ComputeShader("updateParticles", this._engine, "gpuUpdateParticles", { bindingsMapping, defines: defines.split("\n") });
+        this._updateComputeShader = new ComputeShader("updateParticles", this._engine as WebGPUEngine, "gpuUpdateParticles", { bindingsMapping, defines: defines.split("\n") });
 
         this._simParamsComputeShader?.dispose();
-        this._simParamsComputeShader = new UniformBuffer(this._engine);
+        this._simParamsComputeShader = new UniformBuffer(this._engine, undefined, undefined, "ComputeShaderParticleSystemUBO");
 
         this._simParamsComputeShader.addUniform("currentCount", 1);
         this._simParamsComputeShader.addUniform("timeDelta", 1);
@@ -112,7 +118,12 @@ export class ComputeShaderParticleSystem implements IGPUParticleSystemPlatform {
     }
 
     public createParticleBuffer(data: number[]): DataArray | DataBuffer {
-        const buffer = new StorageBuffer(this._engine, data.length * 4, Constants.BUFFER_CREATIONFLAG_READWRITE | Constants.BUFFER_CREATIONFLAG_VERTEX);
+        const buffer = new StorageBuffer(
+            this._engine,
+            data.length * 4,
+            Constants.BUFFER_CREATIONFLAG_READWRITE | Constants.BUFFER_CREATIONFLAG_VERTEX,
+            "ComputeShaderParticleSystemBuffer"
+        );
 
         buffer.update(data);
         this._bufferComputeShader.push(buffer);
@@ -120,8 +131,8 @@ export class ComputeShaderParticleSystem implements IGPUParticleSystemPlatform {
         return buffer.getBuffer();
     }
 
-    public bindDrawBuffers(index: number, effect: Effect): void {
-        this._engine.bindBuffers(this._renderVertexBuffers[index], null, effect);
+    public bindDrawBuffers(index: number, effect: Effect, indexBuffer: Nullable<DataBuffer>): void {
+        this._engine.bindBuffers(this._renderVertexBuffers[index], indexBuffer, effect);
     }
 
     public preUpdateParticleBuffer(): void {}

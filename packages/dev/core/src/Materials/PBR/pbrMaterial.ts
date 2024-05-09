@@ -1,4 +1,4 @@
-import { serialize, SerializationHelper, serializeAsColor3, expandToProperty, serializeAsTexture } from "../../Misc/decorators";
+import { serialize, serializeAsColor3, expandToProperty, serializeAsTexture } from "../../Misc/decorators";
 import { GetEnvironmentBRDFTexture } from "../../Misc/brdfTextureTools";
 import type { Nullable } from "../../types";
 import type { Scene } from "../../scene";
@@ -8,6 +8,8 @@ import type { ColorCurves } from "../../Materials/colorCurves";
 import type { BaseTexture } from "../../Materials/Textures/baseTexture";
 import { PBRBaseMaterial } from "./pbrBaseMaterial";
 import { RegisterClass } from "../../Misc/typeStore";
+import { Material } from "../material";
+import { SerializationHelper } from "../../Misc/decorators.serialization";
 
 /**
  * The Physically based material of BJS.
@@ -20,29 +22,29 @@ export class PBRMaterial extends PBRBaseMaterial {
     /**
      * PBRMaterialTransparencyMode: No transparency mode, Alpha channel is not use.
      */
-    public static readonly PBRMATERIAL_OPAQUE = PBRBaseMaterial.PBRMATERIAL_OPAQUE;
+    public static override readonly PBRMATERIAL_OPAQUE = PBRBaseMaterial.PBRMATERIAL_OPAQUE;
 
     /**
      * PBRMaterialTransparencyMode: Alpha Test mode, pixel are discarded below a certain threshold defined by the alpha cutoff value.
      */
-    public static readonly PBRMATERIAL_ALPHATEST = PBRBaseMaterial.PBRMATERIAL_ALPHATEST;
+    public static override readonly PBRMATERIAL_ALPHATEST = PBRBaseMaterial.PBRMATERIAL_ALPHATEST;
 
     /**
      * PBRMaterialTransparencyMode: Pixels are blended (according to the alpha mode) with the already drawn pixels in the current frame buffer.
      */
-    public static readonly PBRMATERIAL_ALPHABLEND = PBRBaseMaterial.PBRMATERIAL_ALPHABLEND;
+    public static override readonly PBRMATERIAL_ALPHABLEND = PBRBaseMaterial.PBRMATERIAL_ALPHABLEND;
 
     /**
      * PBRMaterialTransparencyMode: Pixels are blended (according to the alpha mode) with the already drawn pixels in the current frame buffer.
      * They are also discarded below the alpha cutoff threshold to improve performances.
      */
-    public static readonly PBRMATERIAL_ALPHATESTANDBLEND = PBRBaseMaterial.PBRMATERIAL_ALPHATESTANDBLEND;
+    public static override readonly PBRMATERIAL_ALPHATESTANDBLEND = PBRBaseMaterial.PBRMATERIAL_ALPHATESTANDBLEND;
 
     /**
      * Defines the default value of how much AO map is occluding the analytical lights
      * (point spot...).
      */
-    public static DEFAULT_AO_ON_ANALYTICAL_LIGHTS = PBRBaseMaterial.DEFAULT_AO_ON_ANALYTICAL_LIGHTS;
+    public static override DEFAULT_AO_ON_ANALYTICAL_LIGHTS = PBRBaseMaterial.DEFAULT_AO_ON_ANALYTICAL_LIGHTS;
 
     /**
      * Intensity of the direct lights e.g. the four lights available in your scene.
@@ -178,13 +180,13 @@ export class PBRMaterial extends PBRBaseMaterial {
     public metallicF0Factor = 1;
 
     /**
-     * In metallic workflow, specifies an F90 color to help configuring the material F90.
+     * In metallic workflow, specifies an F0 color.
      * By default the F90 is always 1;
      *
      * Please note that this factor is also used as a factor against the default reflectance at normal incidence.
      *
-     * F0 = defaultF0 * metallicF0Factor * metallicReflectanceColor
-     * F90 = metallicReflectanceColor;
+     * F0 = defaultF0_from_IOR * metallicF0Factor * metallicReflectanceColor
+     * F90 = metallicF0Factor;
      */
     @serializeAsColor3()
     @expandToProperty("_markAllSubMeshesAsTexturesDirty")
@@ -387,6 +389,7 @@ export class PBRMaterial extends PBRBaseMaterial {
 
     /**
      * Specifies if the metallic texture contains the roughness information in its green channel.
+     * Needs useRoughnessFromMetallicTextureAlpha to be false.
      */
     @serialize()
     @expandToProperty("_markAllSubMeshesAsTexturesDirty")
@@ -620,6 +623,13 @@ export class PBRMaterial extends PBRBaseMaterial {
     public unlit = false;
 
     /**
+     * If sets to true, the decal map will be applied after the detail map. Else, it is applied before (default: false)
+     */
+    @serialize()
+    @expandToProperty("_markAllSubMeshesAsMiscDirty")
+    public applyDecalMapAfterDetailMap = false;
+
+    /**
      * Gets the image processing configuration used either in this material.
      */
     public get imageProcessingConfiguration(): ImageProcessingConfiguration {
@@ -753,9 +763,9 @@ export class PBRMaterial extends PBRBaseMaterial {
     }
 
     /**
-     * Returns the name of this material class.
+     * @returns the name of this material class.
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "PBRMaterial";
     }
 
@@ -763,20 +773,18 @@ export class PBRMaterial extends PBRBaseMaterial {
      * Makes a duplicate of the current material.
      * @param name - name to use for the new material.
      * @param cloneTexturesOnlyOnce - if a texture is used in more than one channel (e.g diffuse and opacity), only clone it once and reuse it on the other channels. Default false.
+     * @param rootUrl defines the root URL to use to load textures
+     * @returns cloned material instance
      */
-    public clone(name: string, cloneTexturesOnlyOnce: boolean = true): PBRMaterial {
+    public override clone(name: string, cloneTexturesOnlyOnce: boolean = true, rootUrl = ""): PBRMaterial {
         const clone = SerializationHelper.Clone(() => new PBRMaterial(name, this.getScene()), this, { cloneTexturesOnlyOnce });
 
         clone.id = name;
         clone.name = name;
 
         this.stencil.copyTo(clone.stencil);
-        this.clearCoat.copyTo(clone.clearCoat);
-        this.anisotropy.copyTo(clone.anisotropy);
-        this.brdf.copyTo(clone.brdf);
-        this.sheen.copyTo(clone.sheen);
-        this.subSurface.copyTo(clone.subSurface);
-        this.iridescence.copyTo(clone.iridescence);
+
+        this._clonePlugins(clone, rootUrl);
 
         return clone;
     }
@@ -785,16 +793,9 @@ export class PBRMaterial extends PBRBaseMaterial {
      * Serializes this PBR Material.
      * @returns - An object with the serialized material.
      */
-    public serialize(): any {
+    public override serialize(): any {
         const serializationObject = super.serialize();
         serializationObject.customType = "BABYLON.PBRMaterial";
-
-        serializationObject.clearCoat = this.clearCoat.serialize();
-        serializationObject.anisotropy = this.anisotropy.serialize();
-        serializationObject.brdf = this.brdf.serialize();
-        serializationObject.sheen = this.sheen.serialize();
-        serializationObject.subSurface = this.subSurface.serialize();
-        serializationObject.iridescence = this.iridescence.serialize();
 
         return serializationObject;
     }
@@ -807,11 +808,16 @@ export class PBRMaterial extends PBRBaseMaterial {
      * @param rootUrl - url for the scene object
      * @returns - PBRMaterial
      */
-    public static Parse(source: any, scene: Scene, rootUrl: string): PBRMaterial {
+    public static override Parse(source: any, scene: Scene, rootUrl: string): PBRMaterial {
         const material = SerializationHelper.Parse(() => new PBRMaterial(source.name, scene), source, scene, rootUrl);
+
         if (source.stencil) {
             material.stencil.parse(source.stencil, scene, rootUrl);
         }
+
+        Material._ParsePlugins(source, material, scene, rootUrl);
+
+        // The code block below ensures backward compatibility with serialized materials before plugins are automatically serialized.
         if (source.clearCoat) {
             material.clearCoat.parse(source.clearCoat, scene, rootUrl);
         }
@@ -830,6 +836,7 @@ export class PBRMaterial extends PBRBaseMaterial {
         if (source.iridescence) {
             material.iridescence.parse(source.iridescence, scene, rootUrl);
         }
+
         return material;
     }
 }

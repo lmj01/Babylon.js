@@ -8,7 +8,7 @@ import type { IPropertyComponentProps } from "shared-ui-components/nodeGraphSyst
 import { OptionsLineComponent } from "shared-ui-components/lines/optionsLineComponent";
 
 export class LightPropertyTabComponent extends React.Component<IPropertyComponentProps> {
-    render() {
+    override render() {
         const scene = (this.props.stateManager.data as GlobalState).nodeMaterial!.getScene();
         const lightOptions = scene.lights.map((l: Light) => {
             return { label: l.name, value: l.name };
@@ -37,7 +37,7 @@ export class LightPropertyTabComponent extends React.Component<IPropertyComponen
                                 lightBlock.light = scene.getLightByName(name);
                             }
                             this.forceUpdate();
-                            this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+                            this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
                         }}
                     />
                 </LineContainerComponent>

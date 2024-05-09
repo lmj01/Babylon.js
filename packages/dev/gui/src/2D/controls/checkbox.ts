@@ -91,19 +91,19 @@ export class Checkbox extends Control {
      * Creates a new CheckBox
      * @param name defines the control name
      */
-    constructor(public name?: string) {
+    constructor(public override name?: string) {
         super(name);
         this.isPointerBlocker = true;
     }
 
-    protected _getTypeName(): string {
+    protected override _getTypeName(): string {
         return "Checkbox";
     }
 
     /**
      * @internal
      */
-    public _draw(context: ICanvasRenderingContext): void {
+    public override _draw(context: ICanvasRenderingContext): void {
         context.save();
 
         this._applyStates(context);
@@ -127,7 +127,8 @@ export class Checkbox extends Control {
         }
 
         if (this._isChecked) {
-            context.fillStyle = this._isEnabled ? this.color : this._disabledColorItem;
+            // Color is white if not set
+            context.fillStyle = this._isEnabled ? (this.color ? this.color : "#ffffff") : this._disabledColorItem;
             const offsetWidth = actualWidth * this._checkSizeRatio;
             const offsetHeight = actualHeight * this._checkSizeRatio;
 
@@ -152,7 +153,7 @@ export class Checkbox extends Control {
     /**
      * @internal
      */
-    public _onPointerDown(target: Control, coordinates: Vector2, pointerId: number, buttonIndex: number, pi: PointerInfoBase): boolean {
+    public override _onPointerDown(target: Control, coordinates: Vector2, pointerId: number, buttonIndex: number, pi: PointerInfoBase): boolean {
         if (!super._onPointerDown(target, coordinates, pointerId, buttonIndex, pi)) {
             return false;
         }

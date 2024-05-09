@@ -5,15 +5,17 @@ import type { PostProcessOptions } from "./postProcess";
 import { PostProcess } from "./postProcess";
 import { Constants } from "../Engines/constants";
 import { GeometryBufferRenderer } from "../Rendering/geometryBufferRenderer";
-import { serialize, SerializationHelper } from "../Misc/decorators";
+import { serialize } from "../Misc/decorators";
+import { SerializationHelper } from "../Misc/decorators.serialization";
 import type { PrePassRenderer } from "../Rendering/prePassRenderer";
 import { ScreenSpaceReflectionsConfiguration } from "../Rendering/screenSpaceReflectionsConfiguration";
 
 import "../Shaders/screenSpaceReflection.fragment";
 import { RegisterClass } from "../Misc/typeStore";
 
-declare type Engine = import("../Engines/engine").Engine;
-declare type Scene = import("../scene").Scene;
+import type { AbstractEngine } from "../Engines/abstractEngine";
+import type { Scene } from "../scene";
+import { Logger } from "core/Misc/logger";
 
 /**
  * The ScreenSpaceReflectionPostProcess performs realtime reflections using only and only the available informations on the screen (positions and normals).
@@ -73,7 +75,7 @@ export class ScreenSpaceReflectionPostProcess extends PostProcess {
      * Gets a string identifying the name of the class
      * @returns "ScreenSpaceReflectionPostProcess" string
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "ScreenSpaceReflectionPostProcess";
     }
 
@@ -96,7 +98,7 @@ export class ScreenSpaceReflectionPostProcess extends PostProcess {
         options: number | PostProcessOptions,
         camera: Nullable<Camera>,
         samplingMode?: number,
-        engine?: Engine,
+        engine?: AbstractEngine,
         reusable?: boolean,
         textureType: number = Constants.TEXTURETYPE_UNSIGNED_INT,
         blockCompilation = false,
@@ -128,11 +130,18 @@ export class ScreenSpaceReflectionPostProcess extends PostProcess {
                 if (geometryBufferRenderer.isSupported) {
                     geometryBufferRenderer.enablePosition = true;
                     geometryBufferRenderer.enableReflectivity = true;
+
+                    if (geometryBufferRenderer.generateNormalsInWorldSpace) {
+                        Logger.Error("ScreenSpaceReflectionPostProcess does not support generateNormalsInWorldSpace=true for the geometry buffer renderer!");
+                    }
                 }
             }
         } else {
             const prePassRenderer = scene.enablePrePassRenderer();
             prePassRenderer?.markAsDirty();
+            if (prePassRenderer?.generateNormalsInWorldSpace) {
+                Logger.Error("ScreenSpaceReflectionPostProcess does not support generateNormalsInWorldSpace=true for the prepass renderer!");
+            }
             this._prePassEffectConfiguration = new ScreenSpaceReflectionsConfiguration();
         }
 
@@ -276,7 +285,7 @@ export class ScreenSpaceReflectionPostProcess extends PostProcess {
     /**
      * @internal
      */
-    public static _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string) {
+    public static override _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string) {
         return SerializationHelper.Parse(
             () => {
                 return new ScreenSpaceReflectionPostProcess(

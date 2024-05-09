@@ -7,7 +7,7 @@ import type { Camera } from "../Cameras/camera";
 import type { Scene } from "../scene";
 import type { ISize } from "../Maths/math.size";
 import { Color4 } from "../Maths/math.color";
-import { Engine } from "../Engines/engine";
+import type { AbstractEngine } from "../Engines/abstractEngine";
 import { EngineStore } from "../Engines/engineStore";
 import { VertexBuffer } from "../Buffers/buffer";
 import type { SubMesh } from "../Meshes/subMesh";
@@ -19,7 +19,6 @@ import { Texture } from "../Materials/Textures/texture";
 import { RenderTargetTexture } from "../Materials/Textures/renderTargetTexture";
 import type { Effect } from "../Materials/effect";
 import { Material } from "../Materials/material";
-import { MaterialHelper } from "../Materials/materialHelper";
 import { Constants } from "../Engines/constants";
 
 import "../Shaders/glowMapGeneration.fragment";
@@ -29,6 +28,8 @@ import type { DataBuffer } from "../Buffers/dataBuffer";
 import { EffectFallbacks } from "../Materials/effectFallbacks";
 import { DrawWrapper } from "../Materials/drawWrapper";
 import { addClipPlaneUniforms, bindClipPlane, prepareStringDefinesForClipPlanes } from "../Materials/clipPlaneMaterialHelper";
+import { BindMorphTargetParameters, PrepareAttributesForMorphTargetsInfluencers, PushAttributesForInstances } from "../Materials/materialHelper.functions";
+import { GetExponentOfTwo } from "../Misc/tools.functions";
 
 /**
  * Effect layer options. This helps customizing the behaviour
@@ -65,6 +66,11 @@ export interface IEffectLayerOptions {
      * The type of the main texture. Default: TEXTURETYPE_UNSIGNED_INT
      */
     mainTextureType: number;
+
+    /**
+     * Whether or not to generate a stencil buffer. Default: false
+     */
+    generateStencilBuffer: boolean;
 }
 
 /**
@@ -82,7 +88,7 @@ export abstract class EffectLayer {
     private _mergeDrawWrapper: DrawWrapper[];
 
     protected _scene: Scene;
-    protected _engine: Engine;
+    protected _engine: AbstractEngine;
     protected _maxSize: number = 0;
     protected _mainTextureDesiredSize: ISize = { width: 0, height: 0 };
     protected _mainTexture: RenderTargetTexture;
@@ -332,6 +338,7 @@ export abstract class EffectLayer {
             camera: null,
             renderingGroupId: -1,
             mainTextureType: Constants.TEXTURETYPE_UNSIGNED_INT,
+            generateStencilBuffer: false,
             ...options,
         };
 
@@ -385,10 +392,10 @@ export abstract class EffectLayer {
             this._mainTextureDesiredSize.height = this._engine.getRenderHeight() * this._effectLayerOptions.mainTextureRatio;
 
             this._mainTextureDesiredSize.width = this._engine.needPOTTextures
-                ? Engine.GetExponentOfTwo(this._mainTextureDesiredSize.width, this._maxSize)
+                ? GetExponentOfTwo(this._mainTextureDesiredSize.width, this._maxSize)
                 : this._mainTextureDesiredSize.width;
             this._mainTextureDesiredSize.height = this._engine.needPOTTextures
-                ? Engine.GetExponentOfTwo(this._mainTextureDesiredSize.height, this._maxSize)
+                ? GetExponentOfTwo(this._mainTextureDesiredSize.height, this._maxSize)
                 : this._mainTextureDesiredSize.height;
         }
 
@@ -409,7 +416,11 @@ export abstract class EffectLayer {
             this._scene,
             false,
             true,
-            this._effectLayerOptions.mainTextureType
+            this._effectLayerOptions.mainTextureType,
+            false,
+            Texture.TRILINEAR_SAMPLINGMODE,
+            true,
+            this._effectLayerOptions.generateStencilBuffer
         );
         this._mainTexture.activeCamera = this._effectLayerOptions.camera;
         this._mainTexture.wrapU = Texture.CLAMP_ADDRESSMODE;
@@ -488,7 +499,7 @@ export abstract class EffectLayer {
             engine.setAlphaMode(previousAlphaMode);
         };
 
-        this._mainTexture.onClearObservable.add((engine: Engine) => {
+        this._mainTexture.onClearObservable.add((engine: AbstractEngine) => {
             engine.clear(this.neutralColor, true, true, true);
         });
 
@@ -649,21 +660,21 @@ export abstract class EffectLayer {
         const manager = (<Mesh>mesh).morphTargetManager;
         let morphInfluencers = 0;
         if (manager) {
-            if (manager.numInfluencers > 0) {
+            morphInfluencers = manager.numMaxInfluencers || manager.numInfluencers;
+            if (morphInfluencers > 0) {
                 defines.push("#define MORPHTARGETS");
-                morphInfluencers = manager.numInfluencers;
                 defines.push("#define NUM_MORPH_INFLUENCERS " + morphInfluencers);
                 if (manager.isUsingTextureForTargets) {
                     defines.push("#define MORPHTARGETS_TEXTURE");
                 }
-                MaterialHelper.PrepareAttributesForMorphTargetsInfluencers(attribs, mesh, morphInfluencers);
+                PrepareAttributesForMorphTargetsInfluencers(attribs, mesh, morphInfluencers);
             }
         }
 
         // Instances
         if (useInstances) {
             defines.push("#define INSTANCES");
-            MaterialHelper.PushAttributesForInstances(attribs);
+            PushAttributesForInstances(attribs);
             if (subMesh.getRenderingMesh().hasThinInstances) {
                 defines.push("#define THIN_INSTANCES");
             }
@@ -685,6 +696,7 @@ export abstract class EffectLayer {
                 "viewProjection",
                 "glowColor",
                 "morphTargetInfluences",
+                "morphTargetCount",
                 "boneTextureWidth",
                 "diffuseMatrix",
                 "emissiveMatrix",
@@ -975,7 +987,7 @@ export abstract class EffectLayer {
                 }
 
                 // Morph targets
-                MaterialHelper.BindMorphTargetParameters(renderingMesh, effect);
+                BindMorphTargetParameters(renderingMesh, effect);
                 if (renderingMesh.morphTargetManager && renderingMesh.morphTargetManager.isUsingTextureForTargets) {
                     renderingMesh.morphTargetManager._bind(effect);
                 }
@@ -1007,6 +1019,7 @@ export abstract class EffectLayer {
     /**
      * Defines whether the current material of the mesh should be use to render the effect.
      * @param mesh defines the current mesh to render
+     * @returns true if the mesh material should be use
      */
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     protected _useMeshMaterial(mesh: AbstractMesh): boolean {

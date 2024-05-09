@@ -1,8 +1,10 @@
-import type { OcclusionQuery } from "../../Extensions/engine.query";
 import { WebGPUEngine } from "../../webgpuEngine";
 import { WebGPURenderItemBeginOcclusionQuery, WebGPURenderItemEndOcclusionQuery } from "../webgpuBundleList";
 
-declare type PerfCounter = import("../../../Misc/perfCounter").PerfCounter;
+import type { PerfCounter } from "../../../Misc/perfCounter";
+import type { OcclusionQuery } from "../../../Engines/AbstractEngine/abstractEngine.query";
+
+import "../../../Engines/AbstractEngine/abstractEngine.query";
 
 WebGPUEngine.prototype.getGPUFrameTimeCounter = function (): PerfCounter {
     return this._timestampQuery.gpuFrameTimeCounter;
@@ -32,14 +34,12 @@ WebGPUEngine.prototype.getQueryResult = function (query: OcclusionQuery): number
 
 WebGPUEngine.prototype.beginOcclusionQuery = function (algorithmType: number, query: OcclusionQuery): boolean {
     if (this.compatibilityMode) {
-        if (this._occlusionQuery.canBeginQuery) {
+        if (this._occlusionQuery.canBeginQuery(query as number)) {
             this._currentRenderPass?.beginOcclusionQuery(query as number);
             return true;
         }
     } else {
-        const renderPassIndex = this._getCurrentRenderPassIndex();
-        const bundleList = renderPassIndex === 0 ? this._bundleList : this._bundleListRenderTarget;
-        bundleList.addItem(new WebGPURenderItemBeginOcclusionQuery(query as number));
+        this._bundleList.addItem(new WebGPURenderItemBeginOcclusionQuery(query as number));
         return true;
     }
 
@@ -50,9 +50,7 @@ WebGPUEngine.prototype.endOcclusionQuery = function (): WebGPUEngine {
     if (this.compatibilityMode) {
         this._currentRenderPass?.endOcclusionQuery();
     } else {
-        const renderPassIndex = this._getCurrentRenderPassIndex();
-        const bundleList = renderPassIndex === 0 ? this._bundleList : this._bundleListRenderTarget;
-        bundleList.addItem(new WebGPURenderItemEndOcclusionQuery());
+        this._bundleList.addItem(new WebGPURenderItemEndOcclusionQuery());
     }
     return this;
 };

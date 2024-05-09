@@ -118,8 +118,8 @@ export class LinesMesh extends Mesh {
         }
     }
 
-    public isReady() {
-        if (!this._lineMaterial.isReady(this, !!this._userInstancedBuffersStorage)) {
+    public override isReady() {
+        if (!this._lineMaterial.isReady(this, !!this._userInstancedBuffersStorage || this.hasThinInstances)) {
             return false;
         }
 
@@ -127,23 +127,23 @@ export class LinesMesh extends Mesh {
     }
 
     /**
-     * Returns the string "LineMesh"
+     * @returns the string "LineMesh"
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "LinesMesh";
     }
 
     /**
      * @internal
      */
-    public get material(): Material {
+    public override get material(): Material {
         return this._lineMaterial;
     }
 
     /**
      * @internal
      */
-    public set material(value: Material) {
+    public override set material(value: Material) {
         this._lineMaterial = value;
         this._lineMaterial.fillMode = Material.LineListDrawMode;
     }
@@ -151,25 +151,25 @@ export class LinesMesh extends Mesh {
     /**
      * @internal
      */
-    public get checkCollisions(): boolean {
+    public override get checkCollisions(): boolean {
         return false;
     }
 
-    public set checkCollisions(value: boolean) {
+    public override set checkCollisions(value: boolean) {
         // Just ignore it
     }
 
     /**
      * @internal
      */
-    public _bind(_subMesh: SubMesh, colorEffect: Effect): Mesh {
+    public override _bind(_subMesh: SubMesh, colorEffect: Effect): Mesh {
         if (!this._geometry) {
             return this;
         }
 
         // VBOs
         const indexToBind = this.isUnIndexed ? null : this._geometry.getIndexBuffer();
-        if (!this._userInstancedBuffersStorage) {
+        if (!this._userInstancedBuffersStorage || this.hasThinInstances) {
             this._geometry._bind(colorEffect, indexToBind);
         } else {
             this._geometry._bind(colorEffect, indexToBind, this._userInstancedBuffersStorage.vertexBuffers, this._userInstancedBuffersStorage.vertexArrayObjects);
@@ -188,7 +188,7 @@ export class LinesMesh extends Mesh {
     /**
      * @internal
      */
-    public _draw(subMesh: SubMesh, fillMode: number, instancesCount?: number): Mesh {
+    public override _draw(subMesh: SubMesh, fillMode: number, instancesCount?: number): Mesh {
         if (!this._geometry || !this._geometry.getVertexBuffers() || (!this._unIndexed && !this._geometry.getIndexBuffer())) {
             return this;
         }
@@ -212,7 +212,7 @@ export class LinesMesh extends Mesh {
      * @param doNotDisposeMaterial If the material should not be disposed (default: false, meaning the material is disposed)
      */
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    public dispose(doNotRecurse?: boolean, disposeMaterialAndTextures = false, doNotDisposeMaterial?: boolean): void {
+    public override dispose(doNotRecurse?: boolean, disposeMaterialAndTextures = false, doNotDisposeMaterial?: boolean): void {
         if (!doNotDisposeMaterial) {
             this._lineMaterial.dispose(false, false, true);
         }
@@ -221,11 +221,12 @@ export class LinesMesh extends Mesh {
 
     /**
      * Returns a new LineMesh object cloned from the current one.
-     * @param name
-     * @param newParent
-     * @param doNotCloneChildren
+     * @param name defines the cloned mesh name
+     * @param newParent defines the new mesh parent
+     * @param doNotCloneChildren if set to true, none of the mesh children are cloned (false by default)
+     * @returns the new mesh
      */
-    public clone(name: string, newParent: Nullable<Node> = null, doNotCloneChildren?: boolean): LinesMesh {
+    public override clone(name: string, newParent: Nullable<Node> = null, doNotCloneChildren?: boolean): LinesMesh {
         return new LinesMesh(name, this.getScene(), newParent, this, doNotCloneChildren);
     }
 
@@ -235,7 +236,7 @@ export class LinesMesh extends Mesh {
      * @param name defines the name of the new instance
      * @returns a new InstancedLinesMesh
      */
-    public createInstance(name: string): InstancedLinesMesh {
+    public override createInstance(name: string): InstancedLinesMesh {
         const instance = new InstancedLinesMesh(name, this);
 
         if (this.instancedBuffers) {
@@ -253,7 +254,7 @@ export class LinesMesh extends Mesh {
      * Serializes this ground mesh
      * @param serializationObject object to write serialization to
      */
-    public serialize(serializationObject: any): void {
+    public override serialize(serializationObject: any): void {
         super.serialize(serializationObject);
         serializationObject.color = this.color.asArray();
         serializationObject.alpha = this.alpha;
@@ -265,7 +266,7 @@ export class LinesMesh extends Mesh {
      * @param scene the scene to create the ground mesh in
      * @returns the created ground mesh
      */
-    public static Parse(parsedMesh: any, scene: Scene): LinesMesh {
+    public static override Parse(parsedMesh: any, scene: Scene): LinesMesh {
         const result = new LinesMesh(parsedMesh.name, scene);
 
         result.color = Color3.FromArray(parsedMesh.color);
@@ -292,9 +293,9 @@ export class InstancedLinesMesh extends InstancedMesh {
     }
 
     /**
-     * Returns the string "InstancedLinesMesh".
+     * @returns the string "InstancedLinesMesh".
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "InstancedLinesMesh";
     }
 }

@@ -1,28 +1,56 @@
 #!/usr/bin/env node
-import { addJsExtensionsToCompiledFilesCommand } from "./addJSToCompiledFiles";
-// import { buildShaders } from "./buildShaders";
-import { generateDeclaration } from "./generateDeclaration";
-import { transformLtsCommand } from "./ltsTransformer";
-import { prepareES6Build } from "./prepareEs6Build";
-import { checkArgs, populateEnvironment } from "./utils";
-import { devWatch } from "./devWatcher";
-import { processAssets } from "./copyAssets";
-import { prepareSnapshot } from "./prepareSnapshot";
-import { umdPackageMapping } from "./packageMapping";
-import { updateEngineVersion } from "./updateEngineVersion";
-import { declarationsEs6 } from "./declarationsEs6";
+/* eslint-disable no-console */
+import { addJsExtensionsToCompiledFilesCommand } from "./addJSToCompiledFiles.js";
+import { generateDeclaration } from "./generateDeclaration.js";
+import { transformLtsCommand } from "./ltsTransformer.js";
+import { prepareES6Build } from "./prepareEs6Build.js";
+import { checkArgs, copyFolder, externalArgs, populateEnvironment } from "./utils.js";
+import { devWatch } from "./devWatcher.js";
+import { processAssets } from "./copyAssets.js";
+import { prepareSnapshot } from "./prepareSnapshot.js";
+import { umdPackageMapping } from "./packageMapping.js";
+import { updateEngineVersion } from "./updateEngineVersion.js";
+import { declarationsEs6 } from "./declarationsEs6.js";
 // public API
-import transformer from "./pathTransform";
-import * as webpackTools from "./webpackTools";
+import transformer from "./pathTransform.js";
+import * as webpackTools from "./webpackTools.js";
+import * as fs from "fs";
+import * as path from "path";
 
-runCommand();
+const cliCommand = checkArgs(["-c", "--command"], false, true) as string;
+runCommand(cliCommand);
 
-function runCommand() {
-    const command = checkArgs(["-c", "--command"], false, true);
+function processConfigFile() {
+    const baseDir = path.resolve(".");
+    const configFile = (checkArgs(["-f", "--file"], false, true) as string) || "config.tasks.json";
+    if (configFile) {
+        console.log(`Processing config file: ${configFile}`);
+        // read the json file using fs
+        const config = JSON.parse(fs.readFileSync(path.resolve(baseDir, configFile), "utf8"));
+        if (config) {
+            if (config.commands) {
+                for (const command of config.commands as { command: string; args?: string[] }[]) {
+                    // populate the args
+                    externalArgs.length = 0;
+                    if (command.args) {
+                        externalArgs.push(...(command.args as string[]));
+                    }
+                    runCommand(command.command);
+                }
+            }
+        }
+    }
+}
+
+function runCommand(command: string) {
     if (command) {
         console.log("Babylon.js build tools");
         console.log(`Command: ${command}`);
         switch (command) {
+            case "run-tasks":
+            case "rt":
+                processConfigFile();
+                break;
             case "add-js-to-es6":
             case "ajte":
                 addJsExtensionsToCompiledFilesCommand();
@@ -65,6 +93,10 @@ function runCommand() {
             case "declarations-es6":
             case "des6":
                 declarationsEs6();
+                break;
+            case "copy":
+            case "cp":
+                copyFolder(checkArgs(["-f", "--from"], false, true) as string, checkArgs(["-t", "--to"], false, true) as string);
                 break;
             default:
                 console.log(`Unknown command: ${command}`);

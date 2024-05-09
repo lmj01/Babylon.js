@@ -58,13 +58,6 @@ class DecalVertex {
  * @param name defines the name of the mesh
  * @param sourceMesh defines the mesh where the decal must be applied
  * @param options defines the options used to create the mesh
- * @param options.position
- * @param options.normal
- * @param options.size
- * @param options.angle
- * @param options.captureUVS
- * @param options.cullBackFaces
- * @param options.localMode
  * @returns the decal mesh
  * @see https://doc.babylonjs.com/features/featuresDeepDive/mesh/decals
  */
@@ -253,7 +246,7 @@ export function CreateDecal(
         let clipResult: Nullable<DecalVertex[]> = null;
 
         if (vertices.length > 3) {
-            clipResult = new Array<DecalVertex>();
+            clipResult = [] as DecalVertex[];
         }
 
         for (let index = 0; index < vertices.length; index += 3) {
@@ -359,16 +352,16 @@ export function CreateDecal(
         return clipResult;
     };
 
-    const sourceMeshAsMesh = sourceMesh as Mesh;
-    const matrixData = sourceMeshAsMesh._thinInstanceDataStorage.matrixData;
+    const sourceMeshAsMesh = sourceMesh instanceof Mesh ? sourceMesh : null;
+    const matrixData = sourceMeshAsMesh?._thinInstanceDataStorage.matrixData;
 
-    const numMatrices = sourceMeshAsMesh.thinInstanceCount || 1;
+    const numMatrices = sourceMeshAsMesh?.thinInstanceCount || 1;
     const thinInstanceMatrix = TmpVectors.Matrix[0];
 
     thinInstanceMatrix.copyFrom(Matrix.IdentityReadOnly);
 
     for (let m = 0; m < numMatrices; ++m) {
-        if (sourceMeshAsMesh.hasThinInstances && matrixData) {
+        if (sourceMeshAsMesh?.hasThinInstances && matrixData) {
             const ofst = m * 16;
 
             thinInstanceMatrix.setRowFromFloats(0, matrixData[ofst + 0], matrixData[ofst + 1], matrixData[ofst + 2], matrixData[ofst + 3]);
@@ -538,7 +531,7 @@ export const DecalBuilder = {
     CreateDecal,
 };
 
-(Mesh as any).CreateDecal = (name: string, sourceMesh: AbstractMesh, position: Vector3, normal: Vector3, size: Vector3, angle: number): Mesh => {
+Mesh.CreateDecal = (name: string, sourceMesh: AbstractMesh, position: Vector3, normal: Vector3, size: Vector3, angle: number): Mesh => {
     const options = {
         position,
         normal,

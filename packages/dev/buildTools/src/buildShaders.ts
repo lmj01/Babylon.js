@@ -1,6 +1,7 @@
+/* eslint-disable no-console */
 import * as fs from "fs";
 import * as path from "path";
-import { checkDirectorySync, checkArgs, getHashOfFile, getHashOfContent } from "./utils";
+import { checkDirectorySync, checkArgs, getHashOfFile, getHashOfContent } from "./utils.js";
 // import * as glob from "glob";
 // import * as chokidar from "chokidar";
 // import { DevPackageName } from "./packageMapping";
@@ -28,6 +29,7 @@ ShaderStore.##SHADERSTORE_PLACEHOLDER##[name] = shader;
 /**
  * Get the shaders name from their path.
  * @param filename
+ * @returns the shader name
  */
 function getShaderName(filename: string) {
     const parts = filename.split(".");
@@ -41,6 +43,7 @@ function getShaderName(filename: string) {
 /**
  * Get the shaders included in the current one to generate to proper imports.
  * @param sourceCode
+ * @returns the includes
  */
 function getIncludes(sourceCode: string) {
     const regex = /#include<(.+)>(\((.*)\))*(\[(.*)\])*/g;
@@ -99,13 +102,13 @@ export function buildShader(filePath: string, basePackageName: string = "core", 
     // Remove Trailing whitespace...
     fxData = fxData
         .replace(/^\uFEFF/, "")
+        .replace(/\r\n/g, "\n")
         .replace(/(\/\/)+.*$/gm, "")
         .replace(/\t+/gm, " ")
         .replace(/^\s+/gm, "")
-        // .replace(/[^\S\r\n]{2,}$/gm, "")
         // eslint-disable-next-line no-useless-escape
         .replace(/ ([\*\/\=\+\-\>\<]+) /g, "$1")
-        .replace(/,[ \n]/g, ",")
+        .replace(/,[ ]/g, ",")
         .replace(/ {1,}/g, " ")
         // .replace(/;\s*/g, ";")
         .replace(/^#(.*)/gm, "#$1\n")

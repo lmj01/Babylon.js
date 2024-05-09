@@ -4,14 +4,15 @@ import type { PostProcessOptions } from "./postProcess";
 import { PostProcess } from "./postProcess";
 import type { Effect } from "../Materials/effect";
 import type { Camera } from "../Cameras/camera";
-import type { Engine } from "../Engines/engine";
+import type { AbstractEngine } from "../Engines/abstractEngine";
 import { Constants } from "../Engines/constants";
 
 import "../Shaders/chromaticAberration.fragment";
 import { RegisterClass } from "../Misc/typeStore";
-import { serialize, SerializationHelper } from "../Misc/decorators";
+import { serialize } from "../Misc/decorators";
+import { SerializationHelper } from "../Misc/decorators.serialization";
 
-declare type Scene = import("../scene").Scene;
+import type { Scene } from "../scene";
 
 /**
  * The ChromaticAberrationPostProcess separates the rgb channels in an image to produce chromatic distortion around the edges of the screen
@@ -53,7 +54,7 @@ export class ChromaticAberrationPostProcess extends PostProcess {
      * Gets a string identifying the name of the class
      * @returns "ChromaticAberrationPostProcess" string
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "ChromaticAberrationPostProcess";
     }
 
@@ -77,7 +78,7 @@ export class ChromaticAberrationPostProcess extends PostProcess {
         options: number | PostProcessOptions,
         camera: Nullable<Camera>,
         samplingMode?: number,
-        engine?: Engine,
+        engine?: AbstractEngine,
         reusable?: boolean,
         textureType: number = Constants.TEXTURETYPE_UNSIGNED_INT,
         blockCompilation = false
@@ -115,7 +116,7 @@ export class ChromaticAberrationPostProcess extends PostProcess {
     /**
      * @internal
      */
-    public static _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string): Nullable<ChromaticAberrationPostProcess> {
+    public static override _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string): Nullable<ChromaticAberrationPostProcess> {
         return SerializationHelper.Parse(
             () => {
                 return new ChromaticAberrationPostProcess(

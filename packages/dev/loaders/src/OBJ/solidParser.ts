@@ -9,18 +9,21 @@ import { Geometry } from "core/Meshes/geometry";
 import { Mesh } from "core/Meshes/mesh";
 import { VertexData } from "core/Meshes/mesh.vertexData";
 import type { Scene } from "core/scene";
-import type { FloatArray, IndicesArray, Nullable } from "core/types";
+import type { Nullable } from "core/types";
 import type { OBJLoadingOptions } from "./objLoadingOptions";
+import { Logger } from "core/Misc/logger";
 
 type MeshObject = {
     name: string;
-    indices?: Array<number>;
-    positions?: Array<number>;
-    normals?: Array<number>;
-    colors?: Array<number>;
-    uvs?: Array<number>;
+    indices: Nullable<Array<number>>;
+    positions: Nullable<Array<number>>;
+    normals: Nullable<Array<number>>;
+    colors: Nullable<Array<number>>;
+    uvs: Nullable<Array<number>>;
     materialName: string;
     directMaterial?: Nullable<Material>;
+    isObject: boolean; // If the entity is defined as an object ("o"), or group ("g")
+    _babylonMesh?: AbstractMesh; // The corresponding Babylon mesh
 };
 
 /**
@@ -41,27 +44,27 @@ export class SolidParser {
 
     // Patterns
     /** Pattern used to detect a vertex */
-    public static VertexPattern = /v(\s+[\d|.|+|\-|e|E]+){3,7}/;
+    public static VertexPattern = /^v(\s+[\d|.|+|\-|e|E]+){3,7}/;
     /** Pattern used to detect a normal */
-    public static NormalPattern = /vn(\s+[\d|.|+|\-|e|E]+)( +[\d|.|+|\-|e|E]+)( +[\d|.|+|\-|e|E]+)/;
+    public static NormalPattern = /^vn(\s+[\d|.|+|\-|e|E]+)( +[\d|.|+|\-|e|E]+)( +[\d|.|+|\-|e|E]+)/;
     /** Pattern used to detect a UV set */
-    public static UVPattern = /vt(\s+[\d|.|+|\-|e|E]+)( +[\d|.|+|\-|e|E]+)/;
+    public static UVPattern = /^vt(\s+[\d|.|+|\-|e|E]+)( +[\d|.|+|\-|e|E]+)/;
     /** Pattern used to detect a first kind of face (f vertex vertex vertex) */
-    public static FacePattern1 = /f\s+(([\d]{1,}[\s]?){3,})+/;
+    public static FacePattern1 = /^f\s+(([\d]{1,}[\s]?){3,})+/;
     /** Pattern used to detect a second kind of face (f vertex/uvs vertex/uvs vertex/uvs) */
-    public static FacePattern2 = /f\s+((([\d]{1,}\/[\d]{1,}[\s]?){3,})+)/;
+    public static FacePattern2 = /^f\s+((([\d]{1,}\/[\d]{1,}[\s]?){3,})+)/;
     /** Pattern used to detect a third kind of face (f vertex/uvs/normal vertex/uvs/normal vertex/uvs/normal) */
-    public static FacePattern3 = /f\s+((([\d]{1,}\/[\d]{1,}\/[\d]{1,}[\s]?){3,})+)/;
+    public static FacePattern3 = /^f\s+((([\d]{1,}\/[\d]{1,}\/[\d]{1,}[\s]?){3,})+)/;
     /** Pattern used to detect a fourth kind of face (f vertex//normal vertex//normal vertex//normal)*/
-    public static FacePattern4 = /f\s+((([\d]{1,}\/\/[\d]{1,}[\s]?){3,})+)/;
+    public static FacePattern4 = /^f\s+((([\d]{1,}\/\/[\d]{1,}[\s]?){3,})+)/;
     /** Pattern used to detect a fifth kind of face (f -vertex/-uvs/-normal -vertex/-uvs/-normal -vertex/-uvs/-normal) */
-    public static FacePattern5 = /f\s+(((-[\d]{1,}\/-[\d]{1,}\/-[\d]{1,}[\s]?){3,})+)/;
+    public static FacePattern5 = /^f\s+(((-[\d]{1,}\/-[\d]{1,}\/-[\d]{1,}[\s]?){3,})+)/;
     /** Pattern used to detect a line(l vertex vertex) */
-    public static LinePattern1 = /l\s+(([\d]{1,}[\s]?){2,})+/;
+    public static LinePattern1 = /^l\s+(([\d]{1,}[\s]?){2,})+/;
     /** Pattern used to detect a second kind of line (l vertex/uvs vertex/uvs) */
-    public static LinePattern2 = /l\s+((([\d]{1,}\/[\d]{1,}[\s]?){2,})+)/;
+    public static LinePattern2 = /^l\s+((([\d]{1,}\/[\d]{1,}[\s]?){2,})+)/;
     /** Pattern used to detect a third kind of line (l vertex/uvs/normal vertex/uvs/normal) */
-    public static LinePattern3 = /f\s+((([\d]{1,}\/[\d]{1,}\/[\d]{1,}[\s]?){2,})+)/;
+    public static LinePattern3 = /^l\s+((([\d]{1,}\/[\d]{1,}\/[\d]{1,}[\s]?){2,})+)/;
 
     private _loadingOptions: OBJLoadingOptions;
     private _positions: Array<Vector3> = []; //values for the positions of vertices
@@ -90,6 +93,8 @@ export class SolidParser {
     private _grayColor = new Color4(0.5, 0.5, 0.5, 1);
     private _materialToUse: string[];
     private _babylonMeshesArray: Array<Mesh>;
+    private _pushTriangle: (faces: Array<string>, faceIndex: number) => void;
+    private _handednessSign: number;
 
     /**
      * Creates a new SolidParser
@@ -207,8 +212,16 @@ export class SolidParser {
         //Every array has the same length
         for (let l = 0; l < this._wrappedPositionForBabylon.length; l++) {
             //Push the x, y, z values of each element in the unwrapped array
-            this._unwrappedPositionsForBabylon.push(this._wrappedPositionForBabylon[l].x, this._wrappedPositionForBabylon[l].y, this._wrappedPositionForBabylon[l].z);
-            this._unwrappedNormalsForBabylon.push(this._wrappedNormalsForBabylon[l].x, this._wrappedNormalsForBabylon[l].y, this._wrappedNormalsForBabylon[l].z);
+            this._unwrappedPositionsForBabylon.push(
+                this._wrappedPositionForBabylon[l].x * this._handednessSign,
+                this._wrappedPositionForBabylon[l].y,
+                this._wrappedPositionForBabylon[l].z
+            );
+            this._unwrappedNormalsForBabylon.push(
+                this._wrappedNormalsForBabylon[l].x * this._handednessSign,
+                this._wrappedNormalsForBabylon[l].y,
+                this._wrappedNormalsForBabylon[l].z
+            );
             this._unwrappedUVForBabylon.push(this._wrappedUvsForBabylon[l].x, this._wrappedUvsForBabylon[l].y); //z is an optional value not supported by BABYLON
             if (this._loadingOptions.importVertexColors) {
                 //Push the r, g, b, a values of each element in the unwrapped array
@@ -246,7 +259,7 @@ export class SolidParser {
         //Work for each element of the array
         for (let faceIndex = v; faceIndex < faces.length - 1; faceIndex++) {
             //Add on the triangle variable the indexes to obtain triangles
-            this._triangles.push(faces[0], faces[faceIndex], faces[faceIndex + 1]);
+            this._pushTriangle(faces, faceIndex);
         }
 
         //Result obtained after 2 iterations:
@@ -429,8 +442,11 @@ export class SolidParser {
             //Set the data into Array for the mesh
             this._unwrapData();
 
-            // Reverse tab. Otherwise face are displayed in the wrong sens
-            this._indicesForBabylon.reverse();
+            if (this._loadingOptions.useLegacyBehavior) {
+                // Reverse tab. Otherwise face are displayed in the wrong sens
+                this._indicesForBabylon.reverse();
+            }
+
             //Set the information for the mesh
             //Slice the array to avoid rewriting because of the fact this is the same var which be rewrited
             this._handledMesh.indices = this._indicesForBabylon.slice();
@@ -511,6 +527,17 @@ export class SolidParser {
      * @param onFileToLoadFound defines a callback that will be called if a MTL file is found
      */
     public parse(meshesNames: any, data: string, scene: Scene, assetContainer: Nullable<AssetContainer>, onFileToLoadFound: (fileToLoad: string) => void): void {
+        if (this._loadingOptions.useLegacyBehavior) {
+            this._pushTriangle = (faces, faceIndex) => this._triangles.push(faces[0], faces[faceIndex], faces[faceIndex + 1]);
+            this._handednessSign = 1;
+        } else if (scene.useRightHandedSystem) {
+            this._pushTriangle = (faces, faceIndex) => this._triangles.push(faces[0], faces[faceIndex + 1], faces[faceIndex]);
+            this._handednessSign = 1;
+        } else {
+            this._pushTriangle = (faces, faceIndex) => this._triangles.push(faces[0], faces[faceIndex], faces[faceIndex + 1]);
+            this._handednessSign = -1;
+        }
+
         // Split the file into lines
         const lines = data.split("\n");
         // Look at each line
@@ -649,12 +676,13 @@ export class SolidParser {
                 // Definition of the mesh
                 const objMesh: MeshObject = {
                     name: line.substring(2).trim(), //Set the name of the current obj mesh
-                    indices: undefined,
-                    positions: undefined,
-                    normals: undefined,
-                    uvs: undefined,
-                    colors: undefined,
+                    indices: null,
+                    positions: null,
+                    normals: null,
+                    uvs: null,
+                    colors: null,
                     materialName: this._materialNameFromObj,
+                    isObject: SolidParser.ObjectDescriptor.test(line),
                 };
                 this._addPreviousObjMesh();
 
@@ -680,12 +708,13 @@ export class SolidParser {
                         //Set the name of the current obj mesh
                         {
                             name: (this._objMeshName || "mesh") + "_mm" + this._increment.toString(), //Set the name of the current obj mesh
-                            indices: undefined,
-                            positions: undefined,
-                            normals: undefined,
-                            uvs: undefined,
-                            colors: undefined,
+                            indices: null,
+                            positions: null,
+                            normals: null,
+                            uvs: null,
+                            colors: null,
                             materialName: this._materialNameFromObj,
+                            isObject: false,
                         };
                     this._increment++;
                     //If meshes are already defined
@@ -711,7 +740,7 @@ export class SolidParser {
                 // With the obj file  an integer is set
             } else {
                 //If there is another possibility
-                console.log("Unhandled expression at line : " + line);
+                Logger.Log("Unhandled expression at line : " + line);
             }
         }
 
@@ -720,8 +749,11 @@ export class SolidParser {
             // Set the data for the last mesh
             this._handledMesh = this._meshesFromObj[this._meshesFromObj.length - 1];
 
-            //Reverse indices for displaying faces in the good sense
-            this._indicesForBabylon.reverse();
+            if (this._loadingOptions.useLegacyBehavior) {
+                //Reverse indices for displaying faces in the good sense
+                this._indicesForBabylon.reverse();
+            }
+
             //Get the good array
             this._unwrapData();
             //Set array
@@ -739,8 +771,11 @@ export class SolidParser {
         if (!this._hasMeshes) {
             let newMaterial: Nullable<StandardMaterial> = null;
             if (this._indicesForBabylon.length) {
-                // reverse tab of indices
-                this._indicesForBabylon.reverse();
+                if (this._loadingOptions.useLegacyBehavior) {
+                    // reverse tab of indices
+                    this._indicesForBabylon.reverse();
+                }
+
                 //Get positions normals uvs
                 this._unwrapData();
             } else {
@@ -792,6 +827,7 @@ export class SolidParser {
                 uvs: this._unwrappedUVForBabylon,
                 materialName: this._materialNameFromObj,
                 directMaterial: newMaterial,
+                isObject: true,
             });
         }
 
@@ -819,6 +855,16 @@ export class SolidParser {
             const babylonMesh = new Mesh(this._meshesFromObj[j].name, scene);
             babylonMesh._parentContainer = assetContainer;
             scene._blockEntityCollection = false;
+            this._handledMesh._babylonMesh = babylonMesh;
+            // If this is a group mesh, it should have an object mesh as a parent. So look for the first object mesh that appears before it.
+            if (!this._handledMesh.isObject) {
+                for (let k = j - 1; k >= 0; --k) {
+                    if (this._meshesFromObj[k].isObject && this._meshesFromObj[k]._babylonMesh) {
+                        babylonMesh.parent = this._meshesFromObj[k]._babylonMesh!;
+                        break;
+                    }
+                }
+            }
 
             //Push the name of the material to an array
             //This is indispensable for the importMesh function
@@ -832,18 +878,18 @@ export class SolidParser {
 
             const vertexData: VertexData = new VertexData(); //The container for the values
             //Set the data for the babylonMesh
-            vertexData.uvs = this._handledMesh.uvs as FloatArray;
-            vertexData.indices = this._handledMesh.indices as IndicesArray;
-            vertexData.positions = this._handledMesh.positions as FloatArray;
+            vertexData.uvs = this._handledMesh.uvs;
+            vertexData.indices = this._handledMesh.indices;
+            vertexData.positions = this._handledMesh.positions;
             if (this._loadingOptions.computeNormals) {
                 const normals: Array<number> = new Array<number>();
                 VertexData.ComputeNormals(this._handledMesh.positions, this._handledMesh.indices, normals);
                 vertexData.normals = normals;
             } else {
-                vertexData.normals = this._handledMesh.normals as FloatArray;
+                vertexData.normals = this._handledMesh.normals;
             }
             if (this._loadingOptions.importVertexColors) {
-                vertexData.colors = this._handledMesh.colors as FloatArray;
+                vertexData.colors = this._handledMesh.colors;
             }
             //Set the data from the VertexBuffer to the current Mesh
             vertexData.applyToMesh(babylonMesh);

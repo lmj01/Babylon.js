@@ -31,11 +31,6 @@ export class Button extends Rectangle {
      */
     public pointerUpAnimation: () => void;
 
-    /**
-     * Gets or sets a boolean indicating that the button will let internal controls handle picking instead of doing it directly using its bounding info
-     */
-    public delegatePickingToChildren = false;
-
     private _image: Nullable<Image>;
     /**
      * Returns the image part of the button (if any)
@@ -56,7 +51,7 @@ export class Button extends Rectangle {
      * Creates a new Button
      * @param name defines the name of the button
      */
-    constructor(public name?: string) {
+    constructor(public override name?: string) {
         super(name);
 
         this.thickness = 1;
@@ -86,7 +81,7 @@ export class Button extends Rectangle {
         };
     }
 
-    protected _getTypeName(): string {
+    protected override _getTypeName(): string {
         return "Button";
     }
 
@@ -94,7 +89,7 @@ export class Button extends Rectangle {
     /**
      * @internal
      */
-    public _processPicking(x: number, y: number, pi: PointerInfoBase, type: number, pointerId: number, buttonIndex: number, deltaX?: number, deltaY?: number): boolean {
+    public override _processPicking(x: number, y: number, pi: PointerInfoBase, type: number, pointerId: number, buttonIndex: number, deltaX?: number, deltaY?: number): boolean {
         if (!this._isEnabled || !this.isHitTestVisible || !this.isVisible || this.notRenderable) {
             return false;
         }
@@ -126,7 +121,7 @@ export class Button extends Rectangle {
     /**
      * @internal
      */
-    public _onPointerEnter(target: Control, pi: PointerInfoBase): boolean {
+    public override _onPointerEnter(target: Control, pi: PointerInfoBase): boolean {
         if (!super._onPointerEnter(target, pi)) {
             return false;
         }
@@ -141,7 +136,7 @@ export class Button extends Rectangle {
     /**
      * @internal
      */
-    public _onPointerOut(target: Control, pi: PointerInfoBase, force = false): void {
+    public override _onPointerOut(target: Control, pi: PointerInfoBase, force = false): void {
         if (!this.isReadOnly && this.pointerOutAnimation) {
             this.pointerOutAnimation();
         }
@@ -152,7 +147,7 @@ export class Button extends Rectangle {
     /**
      * @internal
      */
-    public _onPointerDown(target: Control, coordinates: Vector2, pointerId: number, buttonIndex: number, pi: PointerInfoBase): boolean {
+    public override _onPointerDown(target: Control, coordinates: Vector2, pointerId: number, buttonIndex: number, pi: PointerInfoBase): boolean {
         if (!super._onPointerDown(target, coordinates, pointerId, buttonIndex, pi)) {
             return false;
         }
@@ -164,7 +159,7 @@ export class Button extends Rectangle {
         return true;
     }
 
-    protected _getRectangleFill(context: ICanvasRenderingContext) {
+    protected override _getRectangleFill(context: ICanvasRenderingContext) {
         if (this.isEnabled) {
             return this._getBackgroundColor(context);
         } else {
@@ -175,7 +170,7 @@ export class Button extends Rectangle {
     /**
      * @internal
      */
-    public _onPointerUp(target: Control, coordinates: Vector2, pointerId: number, buttonIndex: number, notifyClick: boolean, pi: PointerInfoBase): void {
+    public override _onPointerUp(target: Control, coordinates: Vector2, pointerId: number, buttonIndex: number, notifyClick: boolean, pi: PointerInfoBase): void {
         if (!this.isReadOnly && this.pointerUpAnimation) {
             this.pointerUpAnimation();
         }
@@ -186,9 +181,13 @@ export class Button extends Rectangle {
     /**
      * Serializes the current button
      * @param serializationObject defines the JSON serialized object
+     * @param force force serialization even if isSerializable === false
      */
-    public serialize(serializationObject: any) {
-        super.serialize(serializationObject);
+    public override serialize(serializationObject: any, force: boolean) {
+        super.serialize(serializationObject, force);
+        if (!this.isSerializable && !force) {
+            return;
+        }
 
         if (this._textBlock) {
             serializationObject.textBlockName = this._textBlock.name;
@@ -201,7 +200,7 @@ export class Button extends Rectangle {
     /**
      * @internal
      */
-    public _parseFromContent(serializedObject: any, host: AdvancedDynamicTexture) {
+    public override _parseFromContent(serializedObject: any, host: AdvancedDynamicTexture) {
         super._parseFromContent(serializedObject, host);
 
         if (serializedObject.textBlockName) {

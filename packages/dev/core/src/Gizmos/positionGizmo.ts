@@ -3,11 +3,12 @@ import type { Observer } from "../Misc/observable";
 import { Observable } from "../Misc/observable";
 import type { Nullable } from "../types";
 import { Vector3 } from "../Maths/math.vector";
+import type { Quaternion } from "../Maths/math.vector";
 import { Color3 } from "../Maths/math.color";
 import type { AbstractMesh } from "../Meshes/abstractMesh";
 import type { Node } from "../node";
 import type { Mesh } from "../Meshes/mesh";
-import type { GizmoAnchorPoint, GizmoAxisCache, IGizmo } from "./gizmo";
+import type { GizmoAnchorPoint, GizmoCoordinatesMode, GizmoAxisCache, IGizmo } from "./gizmo";
 import { Gizmo } from "./gizmo";
 import type { IAxisDragGizmo } from "./axisDragGizmo";
 import { AxisDragGizmo } from "./axisDragGizmo";
@@ -16,6 +17,7 @@ import { PlaneDragGizmo } from "./planeDragGizmo";
 import { UtilityLayerRenderer } from "../Rendering/utilityLayerRenderer";
 import type { PointerInfo } from "../Events/pointerEvents";
 import type { GizmoManager } from "./gizmoManager";
+import type { TransformNode } from "../Meshes/transformNode";
 
 /**
  * Interface for position gizmo
@@ -33,8 +35,12 @@ export interface IPositionGizmo extends IGizmo {
     yPlaneGizmo: IPlaneDragGizmo;
     /** Internal gizmo used for interactions on the xy plane */
     zPlaneGizmo: IPlaneDragGizmo;
+    /** True when the mouse pointer is dragging a gizmo mesh */
+    readonly isDragging: boolean;
     /** Fires an event when any of it's sub gizmos are dragged */
     onDragStartObservable: Observable<unknown>;
+    /** Fires an event when any of it's sub gizmos are being dragged */
+    onDragObservable: Observable<unknown>;
     /** Fires an event when any of it's sub gizmos are released from dragging */
     onDragEndObservable: Observable<unknown>;
     /**
@@ -50,6 +56,21 @@ export interface IPositionGizmo extends IGizmo {
      * @param cache Gizmo axis definition used for reactive gizmo UI
      */
     addToAxisCache(mesh: Mesh, cache: GizmoAxisCache): void;
+    /**
+     * Force release the drag action by code
+     */
+    releaseDrag(): void;
+}
+
+/**
+ * Additional options for the position gizmo
+ */
+export interface PositionGizmoOptions {
+    /**
+     * Additional transform applied to the gizmo.
+     * @See Gizmo.additionalTransformNode for more detail
+     */
+    additionalTransformNode?: TransformNode;
 }
 
 /**
@@ -94,6 +115,8 @@ export class PositionGizmo extends Gizmo implements IPositionGizmo {
 
     /** Fires an event when any of it's sub gizmos are dragged */
     public onDragStartObservable = new Observable();
+    /** Fires an event when any of it's sub gizmos are being dragged */
+    public onDragObservable = new Observable();
     /** Fires an event when any of it's sub gizmos are released from dragging */
     public onDragEndObservable = new Observable();
 
@@ -102,10 +125,10 @@ export class PositionGizmo extends Gizmo implements IPositionGizmo {
      */
     protected _planarGizmoEnabled = false;
 
-    public get attachedMesh() {
+    public override get attachedMesh() {
         return this._meshAttached;
     }
-    public set attachedMesh(mesh: Nullable<AbstractMesh>) {
+    public override set attachedMesh(mesh: Nullable<AbstractMesh>) {
         this._meshAttached = mesh;
         this._nodeAttached = mesh;
         [this.xGizmo, this.yGizmo, this.zGizmo, this.xPlaneGizmo, this.yPlaneGizmo, this.zPlaneGizmo].forEach((gizmo) => {
@@ -117,10 +140,10 @@ export class PositionGizmo extends Gizmo implements IPositionGizmo {
         });
     }
 
-    public get attachedNode() {
+    public override get attachedNode() {
         return this._nodeAttached;
     }
-    public set attachedNode(node: Nullable<Node>) {
+    public override set attachedNode(node: Nullable<Node>) {
         this._meshAttached = null;
         this._nodeAttached = node;
         [this.xGizmo, this.yGizmo, this.zGizmo, this.xPlaneGizmo, this.yPlaneGizmo, this.zPlaneGizmo].forEach((gizmo) => {
@@ -135,21 +158,39 @@ export class PositionGizmo extends Gizmo implements IPositionGizmo {
     /**
      * True when the mouse pointer is hovering a gizmo mesh
      */
-    public get isHovered() {
-        let hovered = false;
+    public override get isHovered() {
+        return this.xGizmo.isHovered || this.yGizmo.isHovered || this.zGizmo.isHovered || this.xPlaneGizmo.isHovered || this.yPlaneGizmo.isHovered || this.zPlaneGizmo.isHovered;
+    }
+
+    public get isDragging() {
+        return (
+            this.xGizmo.dragBehavior.dragging ||
+            this.yGizmo.dragBehavior.dragging ||
+            this.zGizmo.dragBehavior.dragging ||
+            this.xPlaneGizmo.dragBehavior.dragging ||
+            this.yPlaneGizmo.dragBehavior.dragging ||
+            this.zPlaneGizmo.dragBehavior.dragging
+        );
+    }
+
+    public override get additionalTransformNode() {
+        return this._additionalTransformNode;
+    }
+
+    public override set additionalTransformNode(transformNode: TransformNode | undefined) {
         [this.xGizmo, this.yGizmo, this.zGizmo, this.xPlaneGizmo, this.yPlaneGizmo, this.zPlaneGizmo].forEach((gizmo) => {
-            hovered = hovered || gizmo.isHovered;
+            gizmo.additionalTransformNode = transformNode;
         });
-        return hovered;
     }
 
     /**
      * Creates a PositionGizmo
      * @param gizmoLayer The utility layer the gizmo will be added to
-      @param thickness display gizmo axis thickness
+     * @param thickness display gizmo axis thickness
      * @param gizmoManager
+     * @param options More options
      */
-    constructor(gizmoLayer: UtilityLayerRenderer = UtilityLayerRenderer.DefaultUtilityLayer, thickness: number = 1, gizmoManager?: GizmoManager) {
+    constructor(gizmoLayer: UtilityLayerRenderer = UtilityLayerRenderer.DefaultUtilityLayer, thickness: number = 1, gizmoManager?: GizmoManager, options?: PositionGizmoOptions) {
         super(gizmoLayer);
         this.xGizmo = new AxisDragGizmo(new Vector3(1, 0, 0), Color3.Red().scale(0.5), gizmoLayer, this, thickness);
         this.yGizmo = new AxisDragGizmo(new Vector3(0, 1, 0), Color3.Green().scale(0.5), gizmoLayer, this, thickness);
@@ -158,10 +199,16 @@ export class PositionGizmo extends Gizmo implements IPositionGizmo {
         this.xPlaneGizmo = new PlaneDragGizmo(new Vector3(1, 0, 0), Color3.Red().scale(0.5), this.gizmoLayer, this);
         this.yPlaneGizmo = new PlaneDragGizmo(new Vector3(0, 1, 0), Color3.Green().scale(0.5), this.gizmoLayer, this);
         this.zPlaneGizmo = new PlaneDragGizmo(new Vector3(0, 0, 1), Color3.Blue().scale(0.5), this.gizmoLayer, this);
+
+        this.additionalTransformNode = options?.additionalTransformNode;
+
         // Relay drag events
         [this.xGizmo, this.yGizmo, this.zGizmo, this.xPlaneGizmo, this.yPlaneGizmo, this.zPlaneGizmo].forEach((gizmo) => {
             gizmo.dragBehavior.onDragStartObservable.add(() => {
                 this.onDragStartObservable.notifyObservers({});
+            });
+            gizmo.dragBehavior.onDragObservable.add(() => {
+                this.onDragObservable.notifyObservers({});
             });
             gizmo.dragBehavior.onDragEndObservable.add(() => {
                 this.onDragEndObservable.notifyObservers({});
@@ -202,10 +249,27 @@ export class PositionGizmo extends Gizmo implements IPositionGizmo {
     }
 
     /**
+     * posture that the gizmo will be display
+     * When set null, default value will be used (Quaternion(0, 0, 0, 1))
+     */
+    public override get customRotationQuaternion(): Nullable<Quaternion> {
+        return this._customRotationQuaternion;
+    }
+
+    public override set customRotationQuaternion(customRotationQuaternion: Nullable<Quaternion>) {
+        this._customRotationQuaternion = customRotationQuaternion;
+        [this.xGizmo, this.yGizmo, this.zGizmo, this.xPlaneGizmo, this.yPlaneGizmo, this.zPlaneGizmo].forEach((gizmo) => {
+            if (gizmo) {
+                gizmo.customRotationQuaternion = customRotationQuaternion;
+            }
+        });
+    }
+
+    /**
      * If set the gizmo's rotation will be updated to match the attached mesh each frame (Default: true)
      * NOTE: This is only possible for meshes with uniform scaling, as otherwise it's not possible to decompose the rotation
      */
-    public set updateGizmoRotationToMatchAttachedMesh(value: boolean) {
+    public override set updateGizmoRotationToMatchAttachedMesh(value: boolean) {
         this._updateGizmoRotationToMatchAttachedMesh = value;
         [this.xGizmo, this.yGizmo, this.zGizmo, this.xPlaneGizmo, this.yPlaneGizmo, this.zPlaneGizmo].forEach((gizmo) => {
             if (gizmo) {
@@ -213,11 +277,11 @@ export class PositionGizmo extends Gizmo implements IPositionGizmo {
             }
         });
     }
-    public get updateGizmoRotationToMatchAttachedMesh() {
+    public override get updateGizmoRotationToMatchAttachedMesh() {
         return this._updateGizmoRotationToMatchAttachedMesh;
     }
 
-    public set updateGizmoPositionToMatchAttachedMesh(value: boolean) {
+    public override set updateGizmoPositionToMatchAttachedMesh(value: boolean) {
         this._updateGizmoPositionToMatchAttachedMesh = value;
         [this.xGizmo, this.yGizmo, this.zGizmo, this.xPlaneGizmo, this.yPlaneGizmo, this.zPlaneGizmo].forEach((gizmo) => {
             if (gizmo) {
@@ -225,28 +289,39 @@ export class PositionGizmo extends Gizmo implements IPositionGizmo {
             }
         });
     }
-    public get updateGizmoPositionToMatchAttachedMesh() {
+    public override get updateGizmoPositionToMatchAttachedMesh() {
         return this._updateGizmoPositionToMatchAttachedMesh;
     }
 
-    public set anchorPoint(value: GizmoAnchorPoint) {
+    public override set anchorPoint(value: GizmoAnchorPoint) {
         this._anchorPoint = value;
         [this.xGizmo, this.yGizmo, this.zGizmo, this.xPlaneGizmo, this.yPlaneGizmo, this.zPlaneGizmo].forEach((gizmo) => {
             gizmo.anchorPoint = value;
         });
     }
-    public get anchorPoint() {
+    public override get anchorPoint() {
         return this._anchorPoint;
     }
 
-    public set updateScale(value: boolean) {
+    /**
+     * Set the coordinate system to use. By default it's local.
+     * But it's possible for a user to tweak so its local for translation and world for rotation.
+     * In that case, setting the coordinate system will change `updateGizmoRotationToMatchAttachedMesh` and `updateGizmoPositionToMatchAttachedMesh`
+     */
+    public override set coordinatesMode(coordinatesMode: GizmoCoordinatesMode) {
+        [this.xGizmo, this.yGizmo, this.zGizmo, this.xPlaneGizmo, this.yPlaneGizmo, this.zPlaneGizmo].forEach((gizmo) => {
+            gizmo.coordinatesMode = coordinatesMode;
+        });
+    }
+
+    public override set updateScale(value: boolean) {
         if (this.xGizmo) {
             this.xGizmo.updateScale = value;
             this.yGizmo.updateScale = value;
             this.zGizmo.updateScale = value;
         }
     }
-    public get updateScale() {
+    public override get updateScale() {
         return this.xGizmo.updateScale;
     }
     /**
@@ -267,7 +342,7 @@ export class PositionGizmo extends Gizmo implements IPositionGizmo {
     /**
      * Ratio for the scale of the gizmo (Default: 1)
      */
-    public set scaleRatio(value: number) {
+    public override set scaleRatio(value: number) {
         this._scaleRatio = value;
         [this.xGizmo, this.yGizmo, this.zGizmo, this.xPlaneGizmo, this.yPlaneGizmo, this.zPlaneGizmo].forEach((gizmo) => {
             if (gizmo) {
@@ -275,7 +350,7 @@ export class PositionGizmo extends Gizmo implements IPositionGizmo {
             }
         });
     }
-    public get scaleRatio() {
+    public override get scaleRatio() {
         return this._scaleRatio;
     }
 
@@ -287,11 +362,22 @@ export class PositionGizmo extends Gizmo implements IPositionGizmo {
     public addToAxisCache(mesh: Mesh, cache: GizmoAxisCache) {
         this._gizmoAxisCache.set(mesh, cache);
     }
+    /**
+     * Force release the drag action by code
+     */
+    public releaseDrag() {
+        this.xGizmo.dragBehavior.releaseDrag();
+        this.yGizmo.dragBehavior.releaseDrag();
+        this.zGizmo.dragBehavior.releaseDrag();
+        this.xPlaneGizmo.dragBehavior.releaseDrag();
+        this.yPlaneGizmo.dragBehavior.releaseDrag();
+        this.zPlaneGizmo.dragBehavior.releaseDrag();
+    }
 
     /**
      * Disposes of the gizmo
      */
-    public dispose() {
+    public override dispose() {
         [this.xGizmo, this.yGizmo, this.zGizmo, this.xPlaneGizmo, this.yPlaneGizmo, this.zPlaneGizmo].forEach((gizmo) => {
             if (gizmo) {
                 gizmo.dispose();
@@ -301,13 +387,14 @@ export class PositionGizmo extends Gizmo implements IPositionGizmo {
             this.gizmoLayer.utilityLayerScene.onPointerObservable.remove(obs);
         });
         this.onDragStartObservable.clear();
+        this.onDragObservable.clear();
         this.onDragEndObservable.clear();
     }
 
     /**
      * CustomMeshes are not supported by this gizmo
      */
-    public setCustomMesh() {
+    public override setCustomMesh() {
         Logger.Error(
             "Custom meshes are not supported on this gizmo, please set the custom meshes on the gizmos contained within this one (gizmo.xGizmo, gizmo.yGizmo, gizmo.zGizmo,gizmo.xPlaneGizmo, gizmo.yPlaneGizmo, gizmo.zPlaneGizmo)"
         );

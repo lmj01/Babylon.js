@@ -18,7 +18,7 @@ import type { ISize } from "../Maths/math.size";
 import { EngineStore } from "../Engines/engineStore";
 import { Constants } from "../Engines/constants";
 
-declare type Ray = import("../Culling/ray").Ray;
+import type { Ray } from "../Culling/ray";
 
 // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Reflect
 declare const Reflect: any;
@@ -100,6 +100,11 @@ export interface ISpriteManager extends IDisposable {
      * Rebuilds the manager (after a context lost, for eg)
      */
     rebuild(): void;
+
+    /**
+     * Serializes the sprite manager to a JSON object
+     */
+    serialize(serializeTexture?: boolean): any;
 }
 
 /**
@@ -114,7 +119,7 @@ export class SpriteManager implements ISpriteManager {
     public snippetId: string;
 
     /** Gets the list of sprites */
-    public sprites = new Array<Sprite>();
+    public sprites: Sprite[] = [];
     /** Gets or sets the rendering group id (0 by default) */
     public renderingGroupId = 0;
     /** Gets or sets camera layer mask */

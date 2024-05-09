@@ -4,15 +4,15 @@ import type { Effect } from "../Materials/effect";
 import { Texture } from "../Materials/Textures/texture";
 import type { PostProcessOptions } from "./postProcess";
 import { PostProcess } from "./postProcess";
-import type { Engine } from "../Engines/engine";
+import type { AbstractEngine } from "../Engines/abstractEngine";
 import { Constants } from "../Engines/constants";
 
 import "../Shaders/fxaa.fragment";
 import "../Shaders/fxaa.vertex";
 import { RegisterClass } from "../Misc/typeStore";
-import { SerializationHelper } from "../Misc/decorators";
+import { SerializationHelper } from "../Misc/decorators.serialization";
 
-declare type Scene = import("../scene").Scene;
+import type { Scene } from "../scene";
 /**
  * Fxaa post process
  * @see https://doc.babylonjs.com/features/featuresDeepDive/postProcesses/usePostProcesses#fxaa
@@ -22,7 +22,7 @@ export class FxaaPostProcess extends PostProcess {
      * Gets a string identifying the name of the class
      * @returns "FxaaPostProcess" string
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "FxaaPostProcess";
     }
 
@@ -31,7 +31,7 @@ export class FxaaPostProcess extends PostProcess {
         options: number | PostProcessOptions,
         camera: Nullable<Camera> = null,
         samplingMode?: number,
-        engine?: Engine,
+        engine?: AbstractEngine,
         reusable?: boolean,
         textureType: number = Constants.TEXTURETYPE_UNSIGNED_INT
     ) {
@@ -52,8 +52,8 @@ export class FxaaPostProcess extends PostProcess {
             return null;
         }
 
-        const glInfo = engine.getGlInfo();
-        if (glInfo && glInfo.renderer && glInfo.renderer.toLowerCase().indexOf("mali") > -1) {
+        const driverInfo = engine.extractDriverInfo();
+        if (driverInfo.toLowerCase().indexOf("mali") > -1) {
             return "#define MALI 1\n";
         }
 
@@ -63,7 +63,7 @@ export class FxaaPostProcess extends PostProcess {
     /**
      * @internal
      */
-    public static _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string) {
+    public static override _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string) {
         return SerializationHelper.Parse(
             () => {
                 return new FxaaPostProcess(

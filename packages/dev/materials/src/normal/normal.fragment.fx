@@ -35,6 +35,12 @@ uniform vec2 vDiffuseInfos;
 
 #include<clipPlaneFragmentDeclaration>
 
+#ifdef LOGARITHMICDEPTH
+#extension GL_EXT_frag_depth : enable
+#endif
+
+#include<logDepthDeclaration>
+
 // Fog
 #include<fogFragmentDeclaration>
 
@@ -87,6 +93,8 @@ void main(void) {
     lightingInfo info;
 	float shadow = 1.;
     float glossiness = 0.;
+    float aggShadow = 0.;
+	float numLights = 0.;
     
 #include<lightFragment>[0]
 #include<lightFragment>[1]
@@ -100,6 +108,7 @@ void main(void) {
 	// Composition
 	vec4 color = vec4(finalDiffuse, alpha);
 
+#include<logDepthFragment>
 #include<fogFragment>
 
 	gl_FragColor = color;

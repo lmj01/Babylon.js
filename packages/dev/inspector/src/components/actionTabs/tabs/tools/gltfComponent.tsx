@@ -47,7 +47,7 @@ export class GLTFComponent extends React.Component<IGLTFComponentProps> {
         return `${singularForm}`;
     }
 
-    componentDidMount() {
+    override componentDidMount() {
         if (this.props.globalState) {
             this._onValidationResultsUpdatedObserver = this.props.globalState.onValidationResultsUpdatedObservable.add(() => {
                 this.forceUpdate();
@@ -55,7 +55,7 @@ export class GLTFComponent extends React.Component<IGLTFComponentProps> {
         }
     }
 
-    componentWillUnmount() {
+    override componentWillUnmount() {
         if (this.props.globalState) {
             if (this._onValidationResultsUpdatedObserver) {
                 this.props.globalState.onValidationResultsUpdatedObservable.remove(this._onValidationResultsUpdatedObserver);
@@ -84,7 +84,7 @@ export class GLTFComponent extends React.Component<IGLTFComponentProps> {
         );
     }
 
-    render() {
+    override render() {
         const extensionStates = this.props.globalState.glTFLoaderExtensionDefaults;
         const loaderState = this.props.globalState.glTFLoaderDefaults;
 
@@ -149,6 +149,11 @@ export class GLTFComponent extends React.Component<IGLTFComponentProps> {
                         onSelect={(value) => (extensionStates["EXT_texture_webp"].enabled = value)}
                     />
                     <CheckBoxLineComponent
+                        label="EXT_texture_avif"
+                        isSelected={() => extensionStates["EXT_texture_avif"].enabled}
+                        onSelect={(value) => (extensionStates["EXT_texture_avif"].enabled = value)}
+                    />
+                    <CheckBoxLineComponent
                         label="KHR_draco_mesh_compression"
                         isSelected={() => extensionStates["KHR_draco_mesh_compression"].enabled}
                         onSelect={(value) => (extensionStates["KHR_draco_mesh_compression"].enabled = value)}
@@ -209,14 +214,19 @@ export class GLTFComponent extends React.Component<IGLTFComponentProps> {
                         onSelect={(value) => (extensionStates["KHR_materials_transmission"].enabled = value)}
                     />
                     <CheckBoxLineComponent
-                        label="KHR_materials_translucency"
-                        isSelected={() => extensionStates["KHR_materials_translucency"].enabled}
-                        onSelect={(value) => (extensionStates["KHR_materials_translucency"].enabled = value)}
+                        label="KHR_materials_diffuse_transmission"
+                        isSelected={() => extensionStates["KHR_materials_diffuse_transmission"].enabled}
+                        onSelect={(value) => (extensionStates["KHR_materials_diffuse_transmission"].enabled = value)}
                     />
                     <CheckBoxLineComponent
                         label="KHR_materials_volume"
                         isSelected={() => extensionStates["KHR_materials_volume"].enabled}
                         onSelect={(value) => (extensionStates["KHR_materials_volume"].enabled = value)}
+                    />
+                    <CheckBoxLineComponent
+                        label="KHR_materials_dispersion"
+                        isSelected={() => extensionStates["KHR_materials_dispersion"].enabled}
+                        onSelect={(value) => (extensionStates["KHR_materials_dispersion"].enabled = value)}
                     />
                     <CheckBoxLineComponent
                         label="KHR_mesh_quantization"

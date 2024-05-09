@@ -100,37 +100,45 @@ export class Rectangle extends Container {
      * Creates a new Rectangle
      * @param name defines the control name
      */
-    constructor(public name?: string) {
+    constructor(public override name?: string) {
         super(name);
     }
 
-    protected _getTypeName(): string {
+    protected override _getTypeName(): string {
         return "Rectangle";
     }
 
     /** @internal */
-    protected _computeAdditionnalOffsetX() {
+    protected override _computeAdditionalOffsetX() {
+        let additionalWidth = 0;
         if (this._cornerRadius[0] !== 0 || this._cornerRadius[1] !== 0 || this._cornerRadius[2] !== 0 || this._cornerRadius[3] !== 0) {
             // Take in account the aliasing
-            return 1;
+            additionalWidth += 1;
         }
-        return 0;
+        if (this.thickness) {
+            additionalWidth += this.thickness / 2;
+        }
+        return additionalWidth;
     }
 
     /** @internal */
-    protected _computeAdditionnalOffsetY() {
+    protected override _computeAdditionalOffsetY() {
+        let additionalHeight = 0;
         if (this._cornerRadius[0] !== 0 || this._cornerRadius[1] !== 0 || this._cornerRadius[2] !== 0 || this._cornerRadius[3] !== 0) {
             // Take in account the aliasing
-            return 1;
+            additionalHeight += 1;
         }
-        return 0;
+        if (this.thickness) {
+            additionalHeight += this.thickness / 2;
+        }
+        return additionalHeight;
     }
 
     protected _getRectangleFill(context: ICanvasRenderingContext) {
         return this._getBackgroundColor(context);
     }
 
-    protected _localDraw(context: ICanvasRenderingContext): void {
+    protected override _localDraw(context: ICanvasRenderingContext): void {
         context.save();
 
         if (this.shadowBlur || this.shadowOffsetX || this.shadowOffsetY) {
@@ -179,7 +187,7 @@ export class Rectangle extends Container {
         context.restore();
     }
 
-    protected _additionalProcessing(parentMeasure: Measure, context: ICanvasRenderingContext): void {
+    protected override _additionalProcessing(parentMeasure: Measure, context: ICanvasRenderingContext): void {
         super._additionalProcessing(parentMeasure, context);
 
         this._measureForChildren.width -= 2 * this._thickness;
@@ -211,7 +219,7 @@ export class Rectangle extends Container {
         context.closePath();
     }
 
-    protected _clipForChildren(context: ICanvasRenderingContext) {
+    protected override _clipForChildren(context: ICanvasRenderingContext) {
         if (this._cornerRadius[0] !== 0 || this._cornerRadius[1] !== 0 || this._cornerRadius[2] !== 0 || this._cornerRadius[3] !== 0) {
             this._drawRoundedRect(context, this._thickness);
             context.clip();

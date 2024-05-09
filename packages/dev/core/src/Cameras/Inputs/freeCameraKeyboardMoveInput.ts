@@ -8,8 +8,8 @@ import type { KeyboardInfo } from "../../Events/keyboardEvents";
 import { KeyboardEventTypes } from "../../Events/keyboardEvents";
 import type { Scene } from "../../scene";
 import { Vector3 } from "../../Maths/math.vector";
-import type { Engine } from "../../Engines/engine";
 import { Tools } from "../../Misc/tools";
+import type { AbstractEngine } from "../../Engines/abstractEngine";
 /**
  * Manage the keyboard inputs to control the movement of a free camera.
  * @see https://doc.babylonjs.com/features/featuresDeepDive/cameras/customizingCameraInputs
@@ -87,9 +87,9 @@ export class FreeCameraKeyboardMoveInput implements ICameraInput<FreeCamera> {
     public keysRotateDown: number[] = [];
 
     private _keys = new Array<number>();
-    private _onCanvasBlurObserver: Nullable<Observer<Engine>>;
+    private _onCanvasBlurObserver: Nullable<Observer<AbstractEngine>>;
     private _onKeyboardObserver: Nullable<Observer<KeyboardInfo>>;
-    private _engine: Engine;
+    private _engine: AbstractEngine;
     private _scene: Scene;
 
     /**
@@ -250,13 +250,9 @@ export class FreeCameraKeyboardMoveInput implements ICameraInput<FreeCamera> {
     }
 
     private _getLocalRotation(): number {
-        let rotation = (this.rotationSpeed * this._engine.getDeltaTime()) / 1000;
-        if (this.camera.getScene().useRightHandedSystem) {
-            rotation *= -1;
-        }
-        if (this.camera.parent && this.camera.parent._getWorldMatrixDeterminant() < 0) {
-            rotation *= -1;
-        }
+        const handednessMultiplier = this.camera._calculateHandednessMultiplier();
+        const rotation = ((this.rotationSpeed * this._engine.getDeltaTime()) / 1000) * handednessMultiplier;
+
         return rotation;
     }
 }

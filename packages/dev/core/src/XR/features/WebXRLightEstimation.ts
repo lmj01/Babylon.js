@@ -13,6 +13,8 @@ import { DirectionalLight } from "../../Lights/directionalLight";
 import { BaseTexture } from "../../Materials/Textures/baseTexture";
 import { SphericalHarmonics, SphericalPolynomial } from "../../Maths/sphericalPolynomial";
 import { LightConstants } from "../../Lights/lightConstants";
+import { HDRFiltering } from "core/Materials/Textures/Filtering/hdrFiltering";
+import type { ThinEngine } from "core/Engines";
 
 /**
  * Options for Light Estimation feature
@@ -56,6 +58,11 @@ export interface IWebXRLightEstimationOptions {
      * disable applying the spherical polynomial to the cube map texture
      */
     disableSphericalPolynomial?: boolean;
+
+    /**
+     * disable prefiltering the cube map texture
+     */
+    disablePreFiltering?: boolean;
 }
 
 /**
@@ -116,6 +123,8 @@ export class WebXRLightEstimation extends WebXRAbstractFeature {
      */
     private _reflectionCubeMapTextureSize: number = 16;
 
+    private _hdrFilter: HDRFiltering;
+
     /**
      * If createDirectionalLightSource is set to true this light source will be created automatically.
      * Otherwise this can be set with an external directional light source.
@@ -151,6 +160,8 @@ export class WebXRLightEstimation extends WebXRAbstractFeature {
             this.directionalLight.falloffType = LightConstants.FALLOFF_GLTF;
         }
 
+        this._hdrFilter = new HDRFiltering(this._xrSessionManager.scene.getEngine() as ThinEngine);
+
         // https://immersive-web.github.io/lighting-estimation/
         Tools.Warn("light-estimation is an experimental and unstable feature.");
     }
@@ -181,7 +192,7 @@ export class WebXRLightEstimation extends WebXRAbstractFeature {
 
     private _getCanvasContext(): WebGLRenderingContext | WebGL2RenderingContext {
         if (this._canvasContext === null) {
-            this._canvasContext = this._xrSessionManager.scene.getEngine()._gl;
+            this._canvasContext = (this._xrSessionManager.scene.getEngine() as ThinEngine)._gl;
         }
         return this._canvasContext;
     }
@@ -231,9 +242,18 @@ export class WebXRLightEstimation extends WebXRAbstractFeature {
                 this._reflectionCubeMap._texture.getEngine().resetTextureCache();
             }
             this._reflectionCubeMap._texture.isReady = true;
-            this._xrSessionManager.scene.markAllMaterialsAsDirty(Constants.MATERIAL_TextureDirtyFlag);
+            if (!this.options.disablePreFiltering) {
+                this._xrLightProbe!.removeEventListener("reflectionchange", this._updateReflectionCubeMap);
+                this._hdrFilter.prefilter(this._reflectionCubeMap).then(() => {
+                    this._xrSessionManager.scene.markAllMaterialsAsDirty(Constants.MATERIAL_TextureDirtyFlag);
+                    this.onReflectionCubeMapUpdatedObservable.notifyObservers(this._reflectionCubeMap!);
+                    this._xrLightProbe!.addEventListener("reflectionchange", this._updateReflectionCubeMap);
+                });
+            } else {
+                this._xrSessionManager.scene.markAllMaterialsAsDirty(Constants.MATERIAL_TextureDirtyFlag);
 
-            this.onReflectionCubeMapUpdatedObservable.notifyObservers(this._reflectionCubeMap);
+                this.onReflectionCubeMapUpdatedObservable.notifyObservers(this._reflectionCubeMap);
+            }
         }
     };
 
@@ -243,7 +263,7 @@ export class WebXRLightEstimation extends WebXRAbstractFeature {
      *
      * @returns true if successful.
      */
-    public attach(): boolean {
+    public override attach(): boolean {
         if (!super.attach()) {
             return false;
         }
@@ -278,7 +298,7 @@ export class WebXRLightEstimation extends WebXRAbstractFeature {
      *
      * @returns true if successful.
      */
-    public detach(): boolean {
+    public override detach(): boolean {
         const detached = super.detach();
 
         if (this._xrLightProbe !== null && !this.options.disableCubeMapReflection) {
@@ -297,7 +317,7 @@ export class WebXRLightEstimation extends WebXRAbstractFeature {
     /**
      * Dispose this feature and all of the resources attached
      */
-    public dispose(): void {
+    public override dispose(): void {
         super.dispose();
 
         this.onReflectionCubeMapUpdatedObservable.clear();

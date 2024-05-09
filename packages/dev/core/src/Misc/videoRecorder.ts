@@ -2,7 +2,7 @@
 /* eslint-disable no-var */
 import type { Nullable } from "../types";
 import { Tools } from "./tools";
-import type { Engine } from "../Engines/engine";
+import type { AbstractEngine } from "../Engines/abstractEngine";
 
 interface MediaRecorder {
     /** Starts recording */
@@ -53,6 +53,8 @@ declare var MediaRecorder: MediaRecorderConstructor;
  * This represents the different options available for the video capture.
  */
 export interface VideoRecorderOptions {
+    /** The canvas you want to record */
+    canvas?: HTMLCanvasElement;
     /** Defines the mime type of the video. */
     mimeType: string;
     /** Defines the FPS the video should be recorded at. */
@@ -79,11 +81,12 @@ export class VideoRecorder {
     /**
      * Returns whether or not the VideoRecorder is available in your browser.
      * @param engine Defines the Babylon Engine.
+     * @param canvas Defines the canvas to record. If not provided, the engine canvas will be used.
      * @returns true if supported otherwise false.
      */
-    public static IsSupported(engine: Engine): boolean {
-        const canvas = engine.getRenderingCanvas();
-        return !!canvas && typeof (<any>canvas).captureStream === "function";
+    public static IsSupported(engine: AbstractEngine, canvas?: HTMLCanvasElement): boolean {
+        const targetCanvas = canvas ?? engine.getRenderingCanvas();
+        return !!targetCanvas && typeof (<any>targetCanvas).captureStream === "function";
     }
 
     private readonly _options: VideoRecorderOptions;
@@ -107,13 +110,15 @@ export class VideoRecorder {
      * @param engine Defines the BabylonJS Engine you wish to record.
      * @param options Defines options that can be used to customize the capture.
      */
-    constructor(engine: Engine, options: Partial<VideoRecorderOptions> = {}) {
-        if (!VideoRecorder.IsSupported(engine)) {
+    constructor(engine: AbstractEngine, options: Partial<VideoRecorderOptions> = {}) {
+        if (!VideoRecorder.IsSupported(engine, options.canvas)) {
+            // eslint-disable-next-line no-throw-literal
             throw "Your browser does not support recording so far.";
         }
 
-        const canvas = engine.getRenderingCanvas();
+        const canvas = options.canvas ?? engine.getRenderingCanvas();
         if (!canvas) {
+            // eslint-disable-next-line no-throw-literal
             throw "The babylon engine must have a canvas to be recorded";
         }
 
@@ -133,9 +138,9 @@ export class VideoRecorder {
         }
 
         this._mediaRecorder = new MediaRecorder(stream, { mimeType: this._options.mimeType });
-        this._mediaRecorder.ondataavailable = this._handleDataAvailable.bind(this);
-        this._mediaRecorder.onerror = this._handleError.bind(this);
-        this._mediaRecorder.onstop = this._handleStop.bind(this);
+        this._mediaRecorder.ondataavailable = (evt: Event) => this._handleDataAvailable(evt);
+        this._mediaRecorder.onerror = (evt: ErrorEvent) => this._handleError(evt);
+        this._mediaRecorder.onstop = () => this._handleStop();
     }
 
     /**
@@ -164,10 +169,12 @@ export class VideoRecorder {
      */
     public startRecording(fileName: Nullable<string> = "babylonjs.webm", maxDuration = 7): Promise<Blob> {
         if (!this._canvas || !this._mediaRecorder) {
+            // eslint-disable-next-line no-throw-literal
             throw "Recorder has already been disposed";
         }
 
         if (this.isRecording) {
+            // eslint-disable-next-line no-throw-literal
             throw "Recording already in progress";
         }
 

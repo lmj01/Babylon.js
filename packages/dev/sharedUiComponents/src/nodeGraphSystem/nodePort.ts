@@ -13,6 +13,7 @@ import localStyles from "./nodePort.modules.scss";
 export class NodePort {
     protected _element: HTMLDivElement;
     protected _img: HTMLImageElement;
+    protected _pip: HTMLDivElement;
     protected _stateManager: StateManager;
     protected _portLabelElement: Element;
     protected _onCandidateLinkMovedObserver: Nullable<Observer<Nullable<Vector2>>>;
@@ -96,10 +97,15 @@ export class NodePort {
     }
 
     public refresh() {
-        this._stateManager.applyNodePortDesign(this.portData, this._element, this._img);
+        this._stateManager.applyNodePortDesign(this.portData, this._element, this._img, this._pip);
     }
 
-    public constructor(portContainer: HTMLElement, public portData: IPortData, public node: GraphNode, stateManager: StateManager) {
+    public constructor(
+        portContainer: HTMLElement,
+        public portData: IPortData,
+        public node: GraphNode,
+        stateManager: StateManager
+    ) {
         this._element = portContainer.ownerDocument!.createElement("div");
         this._element.classList.add(commonStyles.port);
         portContainer.appendChild(this._element);
@@ -107,6 +113,11 @@ export class NodePort {
 
         this._img = portContainer.ownerDocument!.createElement("img");
         this._element.appendChild(this._img);
+
+        this._pip = portContainer.ownerDocument!.createElement("div");
+        this._pip.classList.add(localStyles["pip"]);
+        this._pip.style.display = "none";
+        this._element.appendChild(this._pip);
 
         // determine if node name is editable
         if (portContainer.children[0].className === commonStyles["port-label"]) {

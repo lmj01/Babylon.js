@@ -70,7 +70,7 @@ export class ImageSourceBlock extends NodeMaterialBlock {
         );
     }
 
-    public bind(effect: Effect) {
+    public override bind(effect: Effect) {
         if (!this.texture) {
             return;
         }
@@ -78,7 +78,7 @@ export class ImageSourceBlock extends NodeMaterialBlock {
         effect.setTexture(this._samplerName, this.texture);
     }
 
-    public isReady() {
+    public override isReady() {
         if (this.texture && !this.texture.isReadyOrNotBlocking()) {
             return false;
         }
@@ -90,7 +90,7 @@ export class ImageSourceBlock extends NodeMaterialBlock {
      * Gets the current class name
      * @returns the class name
      */
-    public getClassName() {
+    public override getClassName() {
         return "ImageSourceBlock";
     }
 
@@ -101,7 +101,7 @@ export class ImageSourceBlock extends NodeMaterialBlock {
         return this._outputs[0];
     }
 
-    protected _buildBlock(state: NodeMaterialBuildState) {
+    protected override _buildBlock(state: NodeMaterialBuildState) {
         super._buildBlock(state);
 
         if (state.target === NodeMaterialBlockTargets.Vertex) {
@@ -118,29 +118,29 @@ export class ImageSourceBlock extends NodeMaterialBlock {
         return this;
     }
 
-    protected _dumpPropertiesCode() {
+    protected override _dumpPropertiesCode() {
         let codeString = super._dumpPropertiesCode();
 
         if (!this.texture) {
             return codeString;
         }
 
-        codeString += `${this._codeVariableName}.texture = new BABYLON.Texture("${this.texture.name}", null, ${this.texture.noMipmap}, ${this.texture.invertY}, ${this.texture.samplingMode});\r\n`;
-        codeString += `${this._codeVariableName}.texture.wrapU = ${this.texture.wrapU};\r\n`;
-        codeString += `${this._codeVariableName}.texture.wrapV = ${this.texture.wrapV};\r\n`;
-        codeString += `${this._codeVariableName}.texture.uAng = ${this.texture.uAng};\r\n`;
-        codeString += `${this._codeVariableName}.texture.vAng = ${this.texture.vAng};\r\n`;
-        codeString += `${this._codeVariableName}.texture.wAng = ${this.texture.wAng};\r\n`;
-        codeString += `${this._codeVariableName}.texture.uOffset = ${this.texture.uOffset};\r\n`;
-        codeString += `${this._codeVariableName}.texture.vOffset = ${this.texture.vOffset};\r\n`;
-        codeString += `${this._codeVariableName}.texture.uScale = ${this.texture.uScale};\r\n`;
-        codeString += `${this._codeVariableName}.texture.vScale = ${this.texture.vScale};\r\n`;
-        codeString += `${this._codeVariableName}.texture.coordinatesMode = ${this.texture.coordinatesMode};\r\n`;
+        codeString += `${this._codeVariableName}.texture = new BABYLON.Texture("${this.texture.name}", null, ${this.texture.noMipmap}, ${this.texture.invertY}, ${this.texture.samplingMode});\n`;
+        codeString += `${this._codeVariableName}.texture.wrapU = ${this.texture.wrapU};\n`;
+        codeString += `${this._codeVariableName}.texture.wrapV = ${this.texture.wrapV};\n`;
+        codeString += `${this._codeVariableName}.texture.uAng = ${this.texture.uAng};\n`;
+        codeString += `${this._codeVariableName}.texture.vAng = ${this.texture.vAng};\n`;
+        codeString += `${this._codeVariableName}.texture.wAng = ${this.texture.wAng};\n`;
+        codeString += `${this._codeVariableName}.texture.uOffset = ${this.texture.uOffset};\n`;
+        codeString += `${this._codeVariableName}.texture.vOffset = ${this.texture.vOffset};\n`;
+        codeString += `${this._codeVariableName}.texture.uScale = ${this.texture.uScale};\n`;
+        codeString += `${this._codeVariableName}.texture.vScale = ${this.texture.vScale};\n`;
+        codeString += `${this._codeVariableName}.texture.coordinatesMode = ${this.texture.coordinatesMode};\n`;
 
         return codeString;
     }
 
-    public serialize(): any {
+    public override serialize(): any {
         const serializationObject = super.serialize();
 
         if (this.texture && !this.texture.isRenderTarget && this.texture.getClassName() !== "VideoTexture") {
@@ -150,7 +150,7 @@ export class ImageSourceBlock extends NodeMaterialBlock {
         return serializationObject;
     }
 
-    public _deserialize(serializationObject: any, scene: Scene, rootUrl: string) {
+    public override _deserialize(serializationObject: any, scene: Scene, rootUrl: string) {
         super._deserialize(serializationObject, scene, rootUrl);
 
         if (serializationObject.texture && !NodeMaterial.IgnoreTexturesAtLoadTime && serializationObject.texture.url !== undefined) {

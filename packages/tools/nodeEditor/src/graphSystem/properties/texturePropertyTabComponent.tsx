@@ -42,7 +42,7 @@ export class TexturePropertyTabComponent extends React.Component<IPropertyCompon
     }
 
     // eslint-disable-next-line @typescript-eslint/naming-convention
-    UNSAFE_componentWillUpdate(nextProps: IPropertyComponentProps, nextState: { isEmbedded: boolean; loadAsCubeTexture: boolean }) {
+    override UNSAFE_componentWillUpdate(nextProps: IPropertyComponentProps, nextState: { isEmbedded: boolean; loadAsCubeTexture: boolean }) {
         if (nextProps.nodeData.data !== this.props.nodeData.data) {
             const texture = (nextProps.nodeData.data as AnyTexture).texture as BaseTexture;
 
@@ -60,7 +60,7 @@ export class TexturePropertyTabComponent extends React.Component<IPropertyCompon
 
     updateAfterTextureLoad() {
         this.props.stateManager.onUpdateRequiredObservable.notifyObservers(this.props.nodeData.data as NodeMaterialBlock);
-        this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+        this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
         this.forceUpdate();
     }
 
@@ -163,7 +163,7 @@ export class TexturePropertyTabComponent extends React.Component<IPropertyCompon
         }
     }
 
-    render() {
+    override render() {
         let url = "";
         const block = this.props.nodeData.data as NodeMaterialBlock;
 
@@ -286,7 +286,7 @@ export class TexturePropertyTabComponent extends React.Component<IPropertyCompon
                             target={block}
                             onValueChanged={() => {
                                 this.props.stateManager.onUpdateRequiredObservable.notifyObservers(block);
-                                this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+                                this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
                             }}
                         />
                     }
@@ -323,7 +323,7 @@ export class TexturePropertyTabComponent extends React.Component<IPropertyCompon
                             onSelect={(value) => {
                                 texture!.wrapU = value ? Texture.CLAMP_ADDRESSMODE : Texture.WRAP_ADDRESSMODE;
                                 this.props.stateManager.onUpdateRequiredObservable.notifyObservers(block);
-                                this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+                                this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
                             }}
                         />
                     )}
@@ -334,7 +334,7 @@ export class TexturePropertyTabComponent extends React.Component<IPropertyCompon
                             onSelect={(value) => {
                                 texture!.wrapV = value ? Texture.CLAMP_ADDRESSMODE : Texture.WRAP_ADDRESSMODE;
                                 this.props.stateManager.onUpdateRequiredObservable.notifyObservers(block);
-                                this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+                                this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
                             }}
                         />
                     )}

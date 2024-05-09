@@ -1,13 +1,13 @@
 /* eslint-disable @typescript-eslint/naming-convention */
 import type { Nullable } from "core/types";
-import { SerializationHelper, serialize } from "core/Misc/decorators";
+import { serialize } from "core/Misc/decorators";
+import { SerializationHelper } from "core/Misc/decorators.serialization";
 import type { Matrix } from "core/Maths/math.vector";
 import { Vector4 } from "core/Maths/math.vector";
 import type { IAnimatable } from "core/Animations/animatable.interface";
 import type { BaseTexture } from "core/Materials/Textures/baseTexture";
 import { Texture } from "core/Materials/Textures/texture";
 import { MaterialDefines } from "core/Materials/materialDefines";
-import { MaterialHelper } from "core/Materials/materialHelper";
 import type { IEffectCreationOptions } from "core/Materials/effect";
 import { PushMaterial } from "core/Materials/pushMaterial";
 import { VertexBuffer } from "core/Buffers/buffer";
@@ -22,6 +22,7 @@ import { Constants } from "core/Engines/constants";
 
 import "./shaders/mrdlBackplate.fragment";
 import "./shaders/mrdlBackplate.vertex";
+import { HandleFallbacksForShadows, PrepareAttributesForInstances, PrepareDefinesForAttributes, PrepareUniformsAndSamplersList } from "core/Materials/materialHelper.functions";
 
 /** @internal */
 class MRDLBackplateMaterialDefines extends MaterialDefines {
@@ -219,22 +220,24 @@ export class MRDLBackplateMaterial extends PushMaterial {
         this._iridescentMapTexture = new Texture(MRDLBackplateMaterial.IRIDESCENT_MAP_TEXTURE_URL, this.getScene(), true, false, Texture.NEAREST_SAMPLINGMODE);
     }
 
-    public needAlphaBlending(): boolean {
+    public override needAlphaBlending(): boolean {
         return false;
     }
 
-    public needAlphaTesting(): boolean {
+    public override needAlphaTesting(): boolean {
         return false;
     }
 
-    public getAlphaTestTexture(): Nullable<BaseTexture> {
+    public override getAlphaTestTexture(): Nullable<BaseTexture> {
         return null;
     }
 
     // Methods
-    public isReadyForSubMesh(mesh: AbstractMesh, subMesh: SubMesh): boolean {
+    public override isReadyForSubMesh(mesh: AbstractMesh, subMesh: SubMesh): boolean {
+        const drawWrapper = subMesh._drawWrapper;
+
         if (this.isFrozen) {
-            if (subMesh.effect && subMesh.effect._wasPreviouslyReady) {
+            if (drawWrapper.effect && drawWrapper._wasPreviouslyReady) {
                 return true;
             }
         }
@@ -253,7 +256,7 @@ export class MRDLBackplateMaterial extends PushMaterial {
         const engine = scene.getEngine();
 
         // Attribs
-        MaterialHelper.PrepareDefinesForAttributes(mesh, defines, false, false);
+        PrepareDefinesForAttributes(mesh, defines, false, false);
 
         // Get correct effect
         if (defines.isDirty) {
@@ -267,7 +270,7 @@ export class MRDLBackplateMaterial extends PushMaterial {
                 fallbacks.addFallback(1, "FOG");
             }
 
-            MaterialHelper.HandleFallbacksForShadows(defines, fallbacks);
+            HandleFallbacksForShadows(defines, fallbacks);
 
             defines.IMAGEPROCESSINGPOSTPROCESS = scene.imageProcessingConfiguration.applyByPostProcess;
 
@@ -294,7 +297,7 @@ export class MRDLBackplateMaterial extends PushMaterial {
                 attribs.push(VertexBuffer.TangentKind);
             }
 
-            MaterialHelper.PrepareAttributesForInstances(attribs, defines);
+            PrepareAttributesForInstances(attribs, defines);
 
             // Legacy browser patch
             const shaderName = "mrdlBackplate";
@@ -338,9 +341,9 @@ export class MRDLBackplateMaterial extends PushMaterial {
                 "_Fade_Out_",
             ];
             const samplers: string[] = ["_Iridescent_Map_"];
-            const uniformBuffers = new Array<string>();
+            const uniformBuffers: string[] = [];
 
-            MaterialHelper.PrepareUniformsAndSamplersList(<IEffectCreationOptions>{
+            PrepareUniformsAndSamplersList(<IEffectCreationOptions>{
                 uniformsNames: uniforms,
                 uniformBuffersNames: uniformBuffers,
                 samplers: samplers,
@@ -372,12 +375,12 @@ export class MRDLBackplateMaterial extends PushMaterial {
         }
 
         defines._renderId = scene.getRenderId();
-        subMesh.effect._wasPreviouslyReady = true;
+        drawWrapper._wasPreviouslyReady = true;
 
         return true;
     }
 
-    public bindForSubMesh(world: Matrix, mesh: Mesh, subMesh: SubMesh): void {
+    public override bindForSubMesh(world: Matrix, mesh: Mesh, subMesh: SubMesh): void {
         const defines = <MRDLBackplateMaterialDefines>subMesh.materialDefines;
         if (!defines) {
             return;
@@ -444,37 +447,37 @@ export class MRDLBackplateMaterial extends PushMaterial {
         // "Antialiasing"
         //define SMOOTH_EDGES true;
 
-        this._afterBind(mesh, this._activeEffect);
+        this._afterBind(mesh, this._activeEffect, subMesh);
     }
 
     /**
      * Get the list of animatables in the material.
      * @returns the list of animatables object used in the material
      */
-    public getAnimatables(): IAnimatable[] {
+    public override getAnimatables(): IAnimatable[] {
         return [];
     }
 
-    public dispose(forceDisposeEffect?: boolean): void {
+    public override dispose(forceDisposeEffect?: boolean): void {
         super.dispose(forceDisposeEffect);
     }
 
-    public clone(name: string): MRDLBackplateMaterial {
+    public override clone(name: string): MRDLBackplateMaterial {
         return SerializationHelper.Clone(() => new MRDLBackplateMaterial(name, this.getScene()), this);
     }
 
-    public serialize(): any {
+    public override serialize(): any {
         const serializationObject = super.serialize();
         serializationObject.customType = "BABYLON.MRDLBackplateMaterial";
         return serializationObject;
     }
 
-    public getClassName(): string {
+    public override getClassName(): string {
         return "MRDLBackplateMaterial";
     }
 
     // Statics
-    public static Parse(source: any, scene: Scene, rootUrl: string): MRDLBackplateMaterial {
+    public static override Parse(source: any, scene: Scene, rootUrl: string): MRDLBackplateMaterial {
         return SerializationHelper.Parse(() => new MRDLBackplateMaterial(source.name, scene), source, scene, rootUrl);
     }
 }

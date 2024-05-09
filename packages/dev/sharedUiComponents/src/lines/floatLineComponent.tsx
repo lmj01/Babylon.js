@@ -1,5 +1,4 @@
 import * as React from "react";
-
 import type { Observable } from "core/Misc/observable";
 import type { PropertyChangedEvent } from "../propertyChangedEvent";
 import type { LockObject } from "../tabs/propertyGrids/lockObject";
@@ -7,6 +6,8 @@ import { SliderLineComponent } from "./sliderLineComponent";
 import { Tools } from "core/Misc/tools";
 import { conflictingValuesPlaceholder } from "./targetsProxy";
 import { InputArrowsComponent } from "./inputArrowsComponent";
+import { copyCommandToClipboard, getClassNameWithNamespace } from "../copyCommandToClipboard";
+import copyIcon from "./copy.svg";
 
 interface IFloatLineComponentProps {
     label: string;
@@ -31,6 +32,7 @@ interface IFloatLineComponentProps {
     unit?: React.ReactNode;
     onDragStart?: (newValue: number) => void;
     onDragStop?: (newValue: number) => void;
+    disabled?: boolean;
 }
 
 export class FloatLineComponent extends React.Component<IFloatLineComponentProps, { value: string; dragging: boolean }> {
@@ -41,42 +43,42 @@ export class FloatLineComponent extends React.Component<IFloatLineComponentProps
         super(props);
 
         const currentValue = this.props.target[this.props.propertyName];
-        this.state = { value: this.getValueString(currentValue), dragging: false };
+        this.state = { value: this.getValueString(currentValue, this.props), dragging: false };
         this._store = currentValue;
     }
 
-    componentWillUnmount() {
+    override componentWillUnmount() {
         this.unlock();
     }
 
-    getValueString(value: any): string {
+    getValueString(value: any, props: IFloatLineComponentProps): string {
         if (value) {
             if (value === conflictingValuesPlaceholder) {
                 return conflictingValuesPlaceholder;
-            } else if (this.props.isInteger) {
+            } else if (props.isInteger) {
                 return value.toFixed(0);
             } else {
-                return value.toFixed(this.props.digits || 4);
+                return value.toFixed(props.digits || 4);
             }
         }
         return "0";
     }
 
-    shouldComponentUpdate(nextProps: IFloatLineComponentProps, nextState: { value: string; dragging: boolean }) {
+    override shouldComponentUpdate(nextProps: IFloatLineComponentProps, nextState: { value: string; dragging: boolean }) {
         if (this._localChange) {
             this._localChange = false;
             return true;
         }
 
         const newValue = nextProps.target[nextProps.propertyName];
-        const newValueString = this.getValueString(newValue);
+        const newValueString = this.getValueString(newValue, nextProps);
 
         if (newValueString !== nextState.value) {
             nextState.value = newValueString;
             return true;
         }
 
-        if (nextState.dragging != this.state.dragging || nextProps.unit !== this.props.unit) {
+        if (nextState.dragging != this.state.dragging || nextProps.unit !== this.props.unit || nextProps.isInteger !== this.props.isInteger) {
             return true;
         }
 
@@ -190,7 +192,22 @@ export class FloatLineComponent extends React.Component<IFloatLineComponentProps
         }
     }
 
-    render() {
+    // Copy to clipboard the code this slider actually does
+    // Example : BaseParticleSystem.minScaleX = 1.0;
+    onCopyClick() {
+        if (this.props && this.props.target) {
+            const { className, babylonNamespace } = getClassNameWithNamespace(this.props.target);
+            const targetName = "globalThis.debugNode";
+            const targetProperty = this.props.propertyName;
+            const value = this.props.target[this.props.propertyName!];
+            const strCommand = targetName + "." + targetProperty + " = " + value + ";// (debugNode as " + babylonNamespace + className + ")";
+            copyCommandToClipboard(strCommand);
+        } else {
+            copyCommandToClipboard("undefined");
+        }
+    }
+
+    override render() {
         let valueAsNumber: number;
 
         if (this.props.isInteger) {
@@ -235,6 +252,7 @@ export class FloatLineComponent extends React.Component<IFloatLineComponentProps
                                 placeholder={placeholder}
                                 onFocus={() => this.lock()}
                                 onChange={(evt) => this.updateValue(evt.target.value)}
+                                disabled={this.props.disabled}
                             />
                             {this.props.arrows && (
                                 <InputArrowsComponent
@@ -253,6 +271,9 @@ export class FloatLineComponent extends React.Component<IFloatLineComponentProps
                             )}
                         </div>
                         {this.props.unit}
+                        <div className="copy hoverIcon" onClick={() => this.onCopyClick()} title="Copy to clipboard">
+                            <img src={copyIcon} alt="Copy" />
+                        </div>
                     </div>
                 )}
                 {this.props.useEuler && (

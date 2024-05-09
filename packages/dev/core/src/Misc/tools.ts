@@ -24,9 +24,10 @@ import { TimingTools } from "./timingTools";
 import { InstantiationTools } from "./instantiationTools";
 import { RandomGUID } from "./guid";
 import type { IScreenshotSize } from "./interfaces/screenshotSize";
-import type { Engine } from "../Engines/engine";
 import type { Camera } from "../Cameras/camera";
 import type { IColor4Like } from "../Maths/math.like";
+import { IsExponentOfTwo, Mix } from "./tools.functions";
+import type { AbstractEngine } from "../Engines/abstractEngine";
 
 declare function importScripts(...urls: string[]): void;
 
@@ -46,11 +47,91 @@ export class Tools {
     }
 
     /**
+     * Gets or sets the clean URL function to use to load assets
+     */
+    public static get CleanUrl() {
+        return FileToolsOptions.CleanUrl;
+    }
+
+    public static set CleanUrl(value: (url: string) => string) {
+        FileToolsOptions.CleanUrl = value;
+    }
+
+    /**
+     * This function checks whether a URL is absolute or not.
+     * It will also detect data and blob URLs
+     * @param url the url to check
+     * @returns is the url absolute or relative
+     */
+    public static IsAbsoluteUrl(url: string): boolean {
+        // See https://stackoverflow.com/a/38979205.
+
+        // URL is protocol-relative (= absolute)
+        if (url.indexOf("//") === 0) {
+            return true;
+        }
+
+        // URL has no protocol (= relative)
+        if (url.indexOf("://") === -1) {
+            return false;
+        }
+
+        // URL does not contain a dot, i.e. no TLD (= relative, possibly REST)
+        if (url.indexOf(".") === -1) {
+            return false;
+        }
+
+        // URL does not contain a single slash (= relative)
+        if (url.indexOf("/") === -1) {
+            return false;
+        }
+
+        // The first colon comes after the first slash (= relative)
+        if (url.indexOf(":") > url.indexOf("/")) {
+            return false;
+        }
+
+        // Protocol is defined before first dot (= absolute)
+        if (url.indexOf("://") < url.indexOf(".")) {
+            return true;
+        }
+        if (url.indexOf("data:") === 0 || url.indexOf("blob:") === 0) {
+            return true;
+        }
+
+        // Anything else must be relative
+        return false;
+    }
+
+    /**
+     * Sets the base URL to use to load scripts
+     */
+    public static set ScriptBaseUrl(value: string) {
+        FileToolsOptions.ScriptBaseUrl = value;
+    }
+
+    public static get ScriptBaseUrl(): string {
+        return FileToolsOptions.ScriptBaseUrl;
+    }
+
+    /**
+     * Sets a preprocessing function to run on a source URL before importing it
+     * Note that this function will execute AFTER the base URL is appended to the URL
+     */
+    public static set ScriptPreprocessUrl(func: (source: string) => string) {
+        FileToolsOptions.ScriptPreprocessUrl = func;
+    }
+
+    public static get ScriptPreprocessUrl(): (source: string) => string {
+        return FileToolsOptions.ScriptPreprocessUrl;
+    }
+
+    /**
      * Enable/Disable Custom HTTP Request Headers globally.
      * default = false
      * @see CustomRequestHeaders
      */
-    public static UseCustomRequestHeaders: boolean = false;
+    public static UseCustomRequestHeaders = false;
 
     /**
      * Custom HTTP Request Headers to be sent with XMLHttpRequests
@@ -70,7 +151,7 @@ export class Tools {
     }
 
     /**
-     * Default behaviour for cors in the application.
+     * Default behavior for cors in the application.
      * It can be a string if the expected behavior is identical in the entire app.
      * Or a callback to be able to set it per url or on a group of them (in case of Video source for instance)
      */
@@ -148,7 +229,7 @@ export class Tools {
      * @returns The mixed value
      */
     public static Mix(a: number, b: number, alpha: number): number {
-        return a * (1 - alpha) + b * alpha;
+        return 0;
     }
 
     /**
@@ -174,16 +255,8 @@ export class Tools {
      * @returns true if the value is an exponent of 2
      */
     public static IsExponentOfTwo(value: number): boolean {
-        let count = 1;
-
-        do {
-            count *= 2;
-        } while (count < value);
-
-        return count === value;
+        return true;
     }
-
-    private static _TmpFloatArray = new Float32Array(1);
 
     /**
      * Returns the nearest 32-bit single precision float representation of a Number
@@ -192,11 +265,7 @@ export class Tools {
      * @returns number
      */
     public static FloatRound(value: number): number {
-        if (Math.fround) {
-            return Math.fround(value);
-        }
-
-        return (Tools._TmpFloatArray[0] = value), Tools._TmpFloatArray[0];
+        return Math.fround(value);
     }
 
     /**
@@ -293,7 +362,7 @@ export class Tools {
      * @param engine defines the engine we are finding the prefix for
      * @returns "pointer" if touch is enabled. Else returns "mouse"
      */
-    public static GetPointerPrefix(engine: Engine): string {
+    public static GetPointerPrefix(engine: AbstractEngine): string {
         let eventPrefix = "pointer";
 
         // Check if pointer events are supported
@@ -335,16 +404,6 @@ export class Tools {
     }
 
     // External files
-
-    /**
-     * Removes unwanted characters from an url
-     * @param url defines the url to clean
-     * @returns the cleaned url
-     */
-    public static CleanUrl(url: string): string {
-        url = url.replace(/#/gm, "%23");
-        return url;
-    }
 
     /**
      * Gets or sets a function used to pre-process url before using them to load assets
@@ -399,13 +458,17 @@ export class Tools {
         return FileToolsLoadFile(url, onSuccess, onProgress, offlineProvider, useArrayBuffer, onError);
     }
 
+    // Note that this must come first since useArrayBuffer defaults to true below.
+    public static LoadFileAsync(url: string, useArrayBuffer?: true): Promise<ArrayBuffer>;
+    public static LoadFileAsync(url: string, useArrayBuffer?: false): Promise<string>;
+
     /**
      * Loads a file from a url
      * @param url the file url to load
      * @param useArrayBuffer defines a boolean indicating that date must be returned as ArrayBuffer
      * @returns a promise containing an ArrayBuffer corresponding to the loaded file
      */
-    public static LoadFileAsync(url: string, useArrayBuffer: boolean = true): Promise<ArrayBuffer | string> {
+    public static LoadFileAsync(url: string, useArrayBuffer = true): Promise<ArrayBuffer | string> {
         return new Promise((resolve, reject) => {
             FileToolsLoadFile(
                 url,
@@ -423,9 +486,67 @@ export class Tools {
     }
 
     /**
-     * Load a script (identified by an url). When the url returns, the
+     * @internal
+     */
+    public static _DefaultCdnUrl = "https://cdn.babylonjs.com";
+
+    /**
+     * Get a script URL including preprocessing
+     * @param scriptUrl the script Url to process
+     * @param forceAbsoluteUrl force the script to be an absolute url (adding the current base url if necessary)
+     * @returns a modified URL to use
+     */
+    public static GetBabylonScriptURL(scriptUrl: Nullable<string>, forceAbsoluteUrl?: boolean): string {
+        if (!scriptUrl) {
+            return "";
+        }
+        // if the base URL was set, and the script Url is an absolute path change the default path
+        if (Tools.ScriptBaseUrl && scriptUrl.startsWith(Tools._DefaultCdnUrl)) {
+            // change the default host, which is https://cdn.babylonjs.com with the one defined
+            // make sure no trailing slash is present
+
+            const baseUrl = Tools.ScriptBaseUrl[Tools.ScriptBaseUrl.length - 1] === "/" ? Tools.ScriptBaseUrl.substring(0, Tools.ScriptBaseUrl.length - 1) : Tools.ScriptBaseUrl;
+            scriptUrl = scriptUrl.replace(Tools._DefaultCdnUrl, baseUrl);
+        }
+
+        // run the preprocessor
+        scriptUrl = Tools.ScriptPreprocessUrl(scriptUrl);
+
+        if (forceAbsoluteUrl) {
+            scriptUrl = Tools.GetAbsoluteUrl(scriptUrl);
+        }
+
+        return scriptUrl;
+    }
+
+    /**
+     * This function is used internally by babylon components to load a script (identified by an url). When the url returns, the
+     * content of this file is added into a new script element, attached to the DOM (body element)
+     * @param scriptUrl defines the url of the script to load
+     * @param onSuccess defines the callback called when the script is loaded
+     * @param onError defines the callback to call if an error occurs
+     * @param scriptId defines the id of the script element
+     */
+    public static LoadBabylonScript(scriptUrl: string, onSuccess: () => void, onError?: (message?: string, exception?: any) => void, scriptId?: string) {
+        scriptUrl = Tools.GetBabylonScriptURL(scriptUrl);
+        Tools.LoadScript(scriptUrl, onSuccess, onError);
+    }
+
+    /**
+     * Load an asynchronous script (identified by an url). When the url returns, the
      * content of this file is added into a new script element, attached to the DOM (body element)
      * @param scriptUrl defines the url of the script to laod
+     * @returns a promise request object
+     */
+    public static LoadBabylonScriptAsync(scriptUrl: string): Promise<void> {
+        scriptUrl = Tools.GetBabylonScriptURL(scriptUrl);
+        return Tools.LoadScriptAsync(scriptUrl);
+    }
+
+    /**
+     * This function is used internally by babylon components to load a script (identified by an url). When the url returns, the
+     * content of this file is added into a new script element, attached to the DOM (body element)
+     * @param scriptUrl defines the url of the script to load
      * @param onSuccess defines the callback called when the script is loaded
      * @param onError defines the callback to call if an error occurs
      * @param scriptId defines the id of the script element
@@ -469,10 +590,11 @@ export class Tools {
     /**
      * Load an asynchronous script (identified by an url). When the url returns, the
      * content of this file is added into a new script element, attached to the DOM (body element)
-     * @param scriptUrl defines the url of the script to laod
+     * @param scriptUrl defines the url of the script to load
+     * @param scriptId defines the id of the script element
      * @returns a promise request object
      */
-    public static LoadScriptAsync(scriptUrl: string): Promise<void> {
+    public static LoadScriptAsync(scriptUrl: string, scriptId?: string): Promise<void> {
         return new Promise((resolve, reject) => {
             this.LoadScript(
                 scriptUrl,
@@ -481,7 +603,8 @@ export class Tools {
                 },
                 (message, exception) => {
                     reject(exception || new Error(message));
-                }
+                },
+                scriptId
             );
         });
     }
@@ -554,7 +677,7 @@ export class Tools {
      * @param decimals defines the number of decimals to use
      * @returns the formatted string
      */
-    public static Format(value: number, decimals: number = 2): string {
+    public static Format(value: number, decimals = 2): string {
         return value.toFixed(decimals);
     }
 
@@ -631,15 +754,17 @@ export class Tools {
      * @param successCallback defines the callback triggered once the data are available
      * @param mimeType defines the mime type of the result
      * @param fileName defines the filename to download. If present, the result will automatically be downloaded
+     * @param quality The quality of the image if lossy mimeType is used (e.g. image/jpeg, image/webp). See {@link https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob | HTMLCanvasElement.toBlob()}'s `quality` parameter.
      * @returns a void promise
      */
     public static async DumpFramebuffer(
         width: number,
         height: number,
-        engine: Engine,
+        engine: AbstractEngine,
         successCallback?: (data: string) => void,
-        mimeType: string = "image/png",
-        fileName?: string
+        mimeType = "image/png",
+        fileName?: string,
+        quality?: number
     ) {
         throw _WarnImport("DumpTools");
     }
@@ -654,14 +779,14 @@ export class Tools {
      * @param fileName defines the filename to download. If present, the result will automatically be downloaded
      * @param invertY true to invert the picture in the Y dimension
      * @param toArrayBuffer true to convert the data to an ArrayBuffer (encoded as `mimeType`) instead of a base64 string
-     * @param quality defines the quality of the result
+     * @param quality The quality of the image if lossy mimeType is used (e.g. image/jpeg, image/webp). See {@link https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob | HTMLCanvasElement.toBlob()}'s `quality` parameter.
      */
     public static DumpData(
         width: number,
         height: number,
         data: ArrayBufferView,
         successCallback?: (data: string | ArrayBuffer) => void,
-        mimeType: string = "image/png",
+        mimeType = "image/png",
         fileName?: string,
         invertY = false,
         toArrayBuffer = false,
@@ -670,6 +795,7 @@ export class Tools {
         throw _WarnImport("DumpTools");
     }
 
+    // eslint-disable-next-line jsdoc/require-returns-check
     /**
      * Dumps an array buffer
      * @param width defines the rendering width
@@ -679,14 +805,14 @@ export class Tools {
      * @param fileName defines the filename to download. If present, the result will automatically be downloaded
      * @param invertY true to invert the picture in the Y dimension
      * @param toArrayBuffer true to convert the data to an ArrayBuffer (encoded as `mimeType`) instead of a base64 string
-     * @param quality defines the quality of the result
+     * @param quality The quality of the image if lossy mimeType is used (e.g. image/jpeg, image/webp). See {@link https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob | HTMLCanvasElement.toBlob()}'s `quality` parameter.
      * @returns a promise that resolve to the final data
      */
     public static DumpDataAsync(
         width: number,
         height: number,
         data: ArrayBufferView,
-        mimeType: string = "image/png",
+        mimeType = "image/png",
         fileName?: string,
         invertY = false,
         toArrayBuffer = false,
@@ -705,9 +831,9 @@ export class Tools {
      * @param canvas Defines the canvas to extract the data from (can be an offscreen canvas)
      * @param successCallback Defines the callback triggered once the data are available
      * @param mimeType Defines the mime type of the result
-     * @param quality defines the quality of the result
+     * @param quality The quality of the image if lossy mimeType is used (e.g. image/jpeg, image/webp). See {@link https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob | HTMLCanvasElement.toBlob()}'s `quality` parameter.
      */
-    static ToBlob(canvas: HTMLCanvasElement | OffscreenCanvas, successCallback: (blob: Nullable<Blob>) => void, mimeType: string = "image/png", quality?: number): void {
+    static ToBlob(canvas: HTMLCanvasElement | OffscreenCanvas, successCallback: (blob: Nullable<Blob>) => void, mimeType = "image/png", quality?: number): void {
         // We need HTMLCanvasElement.toBlob for HD screenshots
         if (!Tools._IsOffScreenCanvas(canvas) && !canvas.toBlob) {
             //  low performance polyfill based on toDataURL (https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob)
@@ -746,7 +872,6 @@ export class Tools {
      * Download a Blob object
      * @param blob the Blob object
      * @param fileName the file name to download
-     * @returns
      */
     static DownloadBlob(blob: Blob, fileName?: string) {
         //Creating a link if the browser have the download attribute on the a tag, to automatically start download generated image.
@@ -783,12 +908,12 @@ export class Tools {
      * @param successCallback The callback which is triggered once the data is available. If `fileName` is defined, the callback will be invoked after the download occurs, and the `data` argument will be an empty string.
      * @param mimeType The mime type of the result.
      * @param fileName The name of the file to download. If defined, the result will automatically be downloaded. If not defined, and `successCallback` is also not defined, the result will automatically be downloaded with an auto-generated file name.
-     * @param quality The quality of the result. See {@link https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob | HTMLCanvasElement.toBlob()}'s `quality` parameter.
+     * @param quality The quality of the image if lossy mimeType is used (e.g. image/jpeg, image/webp). See {@link https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob | HTMLCanvasElement.toBlob()}'s `quality` parameter.
      */
     static EncodeScreenshotCanvasData(
         canvas: HTMLCanvasElement | OffscreenCanvas,
         successCallback?: (data: string) => void,
-        mimeType: string = "image/png",
+        mimeType = "image/png",
         fileName?: string,
         quality?: number
     ): void {
@@ -886,12 +1011,23 @@ export class Tools {
      * src parameter of an <img> to display it
      * @param mimeType defines the MIME type of the screenshot image (default: image/png).
      * Check your browser for supported MIME types
+     * @param forceDownload force the system to download the image even if a successCallback is provided
+     * @param quality The quality of the image if lossy mimeType is used (e.g. image/jpeg, image/webp). See {@link https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob | HTMLCanvasElement.toBlob()}'s `quality` parameter.
      */
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    public static CreateScreenshot(engine: Engine, camera: Camera, size: IScreenshotSize | number, successCallback?: (data: string) => void, mimeType: string = "image/png"): void {
+    public static CreateScreenshot(
+        engine: AbstractEngine,
+        camera: Camera,
+        size: IScreenshotSize | number,
+        successCallback?: (data: string) => void,
+        mimeType = "image/png",
+        forceDownload = false,
+        quality?: number
+    ): void {
         throw _WarnImport("ScreenshotTools");
     }
 
+    // eslint-disable-next-line jsdoc/require-returns-check
     /**
      * Captures a screenshot of the current rendering
      * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/renderToPNG
@@ -904,11 +1040,12 @@ export class Tools {
      * rendering at a higher or lower resolution
      * @param mimeType defines the MIME type of the screenshot image (default: image/png).
      * Check your browser for supported MIME types
+     * @param quality The quality of the image if lossy mimeType is used (e.g. image/jpeg, image/webp). See {@link https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob | HTMLCanvasElement.toBlob()}'s `quality` parameter.
      * @returns screenshot as a string of base64-encoded characters. This string can be assigned
      * to the src parameter of an <img> to display it
      */
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    public static CreateScreenshotAsync(engine: Engine, camera: Camera, size: IScreenshotSize | number, mimeType: string = "image/png"): Promise<string> {
+    public static CreateScreenshotAsync(engine: AbstractEngine, camera: Camera, size: IScreenshotSize | number, mimeType = "image/png", quality?: number): Promise<string> {
         throw _WarnImport("ScreenshotTools");
     }
 
@@ -930,21 +1067,30 @@ export class Tools {
      * @param samples Texture samples (default: 1)
      * @param antialiasing Whether antialiasing should be turned on or not (default: false)
      * @param fileName A name for for the downloaded file.
+     * @param renderSprites Whether the sprites should be rendered or not (default: false)
+     * @param enableStencilBuffer Whether the stencil buffer should be enabled or not (default: false)
+     * @param useLayerMask if the camera's layer mask should be used to filter what should be rendered (default: true)
+     * @param quality The quality of the image if lossy mimeType is used (e.g. image/jpeg, image/webp). See {@link https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob | HTMLCanvasElement.toBlob()}'s `quality` parameter.
      */
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     public static CreateScreenshotUsingRenderTarget(
-        engine: Engine,
+        engine: AbstractEngine,
         camera: Camera,
         size: IScreenshotSize | number,
         successCallback?: (data: string) => void,
-        mimeType: string = "image/png",
-        samples: number = 1,
-        antialiasing: boolean = false,
-        fileName?: string
+        mimeType = "image/png",
+        samples = 1,
+        antialiasing = false,
+        fileName?: string,
+        renderSprites = false,
+        enableStencilBuffer = false,
+        useLayerMask = true,
+        quality?: number
     ): void {
         throw _WarnImport("ScreenshotTools");
     }
 
+    // eslint-disable-next-line jsdoc/require-returns-check
     /**
      * Generates an image screenshot from the specified camera.
      * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/renderToPNG
@@ -961,17 +1107,25 @@ export class Tools {
      * @param antialiasing Whether antialiasing should be turned on or not (default: false)
      * @param fileName A name for for the downloaded file.
      * @returns screenshot as a string of base64-encoded characters. This string can be assigned
+     * @param renderSprites Whether the sprites should be rendered or not (default: false)
+     * @param enableStencilBuffer Whether the stencil buffer should be enabled or not (default: false)
+     * @param useLayerMask if the camera's layer mask should be used to filter what should be rendered (default: true)
+     * @param quality The quality of the image if lossy mimeType is used (e.g. image/jpeg, image/webp). See {@link https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob | HTMLCanvasElement.toBlob()}'s `quality` parameter.
      * to the src parameter of an <img> to display it
      */
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     public static CreateScreenshotUsingRenderTargetAsync(
-        engine: Engine,
+        engine: AbstractEngine,
         camera: Camera,
         size: IScreenshotSize | number,
-        mimeType: string = "image/png",
-        samples: number = 1,
-        antialiasing: boolean = false,
-        fileName?: string
+        mimeType = "image/png",
+        samples = 1,
+        antialiasing = false,
+        fileName?: string,
+        renderSprites = false,
+        enableStencilBuffer = false,
+        useLayerMask = true,
+        quality?: number
     ): Promise<string> {
         throw _WarnImport("ScreenshotTools");
     }
@@ -1006,6 +1160,10 @@ export class Tools {
         return DecodeBase64UrlToBinary(uri);
     }
 
+    // eslint-disable-next-line jsdoc/require-returns-check, jsdoc/require-param
+    /**
+     * @returns the absolute URL of a given (relative) url
+     */
     public static GetAbsoluteUrl: (url: string) => string =
         typeof document === "object"
             ? (url) => {
@@ -1014,10 +1172,10 @@ export class Tools {
                   return a.href;
               }
             : typeof URL === "function" && typeof location === "object"
-            ? (url) => new URL(url, location.origin).href
-            : () => {
-                  throw new Error("Unable to get absolute URL. Override BABYLON.Tools.GetAbsoluteUrl to a custom implementation for the current context.");
-              };
+              ? (url) => new URL(url, location.origin).href
+              : () => {
+                    throw new Error("Unable to get absolute URL. Override BABYLON.Tools.GetAbsoluteUrl to a custom implementation for the current context.");
+                };
 
     // Logs
     /**
@@ -1217,7 +1375,7 @@ export class Tools {
      * @param isType defines if the object is actually a type
      * @returns the name of the class, will be "object" for a custom data type not using the @className decorator
      */
-    public static GetClassName(object: any, isType: boolean = false): string {
+    public static GetClassName(object: any, isType = false): string {
         let name = null;
 
         if (!isType && object.getClassName) {
@@ -1259,7 +1417,7 @@ export class Tools {
      * @ignorenaming
      */
     // eslint-disable-next-line @typescript-eslint/naming-convention
-    public static getFullClassName(object: any, isType: boolean = false): Nullable<string> {
+    public static getFullClassName(object: any, isType = false): Nullable<string> {
         let className = null;
         let moduleName = null;
 
@@ -1315,6 +1473,7 @@ export class Tools {
  * This method is the only way to get it done in all cases, even if the .js file declaring the class is minified
  * @param name The name of the class, case should be preserved
  * @param module The name of the Module hosting the class, optional, but strongly recommended to specify if possible. Case should be preserved.
+ * @returns a decorator function to apply on the class definition.
  */
 export function className(name: string, module?: string): (target: Object) => void {
     return (target: Object) => {
@@ -1349,7 +1508,7 @@ export class AsyncLoop {
         public iterations: number,
         func: (asyncLoop: AsyncLoop) => void,
         successCallback: () => void,
-        offset: number = 0
+        offset = 0
     ) {
         this.index = offset - 1;
         this._done = false;
@@ -1387,7 +1546,7 @@ export class AsyncLoop {
      * @param offset starting offset.
      * @returns the created async loop object
      */
-    public static Run(iterations: number, fn: (asyncLoop: AsyncLoop) => void, successCallback: () => void, offset: number = 0): AsyncLoop {
+    public static Run(iterations: number, fn: (asyncLoop: AsyncLoop) => void, successCallback: () => void, offset = 0): AsyncLoop {
         const loop = new AsyncLoop(iterations, fn, successCallback, offset);
 
         loop.executeNext();
@@ -1411,7 +1570,7 @@ export class AsyncLoop {
         fn: (iteration: number) => void,
         callback: () => void,
         breakFunction?: () => boolean,
-        timeout: number = 0
+        timeout = 0
     ): AsyncLoop {
         return AsyncLoop.Run(
             Math.ceil(iterations / syncedIterations),
@@ -1439,6 +1598,9 @@ export class AsyncLoop {
         );
     }
 }
+
+Tools.Mix = Mix;
+Tools.IsExponentOfTwo = IsExponentOfTwo;
 
 // Will only be define if Tools is imported freeing up some space when only engine is required
 EngineStore.FallbackTexture =

@@ -24,21 +24,6 @@ import { CompatibilityOptions } from "../../Compat/compatibilityOptions";
  * * sideOrientation optional and takes the values : Mesh.FRONTSIDE (default), Mesh.BACKSIDE or Mesh.DOUBLESIDE
  * * frontUvs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the front side, optional, default vector4 (0, 0, 1, 1)
  * * backUVs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the back side, optional, default vector4 (0, 0, 1, 1)
- * @param options.height
- * @param options.diameterTop
- * @param options.diameterBottom
- * @param options.diameter
- * @param options.tessellation
- * @param options.subdivisions
- * @param options.arc
- * @param options.faceColors
- * @param options.faceUV
- * @param options.hasRings
- * @param options.enclose
- * @param options.cap
- * @param options.sideOrientation
- * @param options.frontUVs
- * @param options.backUVs
  * @returns the VertexData of the cylinder, cone or prism
  */
 // eslint-disable-next-line @typescript-eslint/naming-convention
@@ -64,8 +49,8 @@ export function CreateCylinderVertexData(options: {
     let diameterBottom: number = options.diameterBottom === 0 ? 0 : options.diameterBottom || options.diameter || 1;
     diameterTop = diameterTop || 0.00001; // Prevent broken normals
     diameterBottom = diameterBottom || 0.00001; // Prevent broken normals
-    const tessellation: number = options.tessellation || 24;
-    const subdivisions: number = options.subdivisions || 1;
+    const tessellation: number = (options.tessellation || 24) | 0;
+    const subdivisions: number = (options.subdivisions || 1) | 0;
     const hasRings: boolean = options.hasRings ? true : false;
     const enclose: boolean = options.enclose ? true : false;
     const cap = options.cap === 0 ? 0 : options.cap || Mesh.CAP_ALL;
@@ -90,11 +75,11 @@ export function CreateCylinderVertexData(options: {
         }
     }
 
-    const indices = new Array<number>();
-    const positions = new Array<number>();
-    const normals = new Array<number>();
-    const uvs = new Array<number>();
-    const colors = new Array<number>();
+    const indices: number[] = [];
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const uvs: number[] = [];
+    const colors: number[] = [];
 
     const angleStep = (Math.PI * 2 * arc) / tessellation;
     let angle: number;
@@ -338,22 +323,6 @@ export function CreateCylinderVertexData(options: {
  * * The mesh can be set to updatable with the boolean parameter `updatable` (default false) if its internal geometry is supposed to change once created.
  * @param name defines the name of the mesh
  * @param options defines the options used to create the mesh
- * @param options.height
- * @param options.diameterTop
- * @param options.diameterBottom
- * @param options.diameter
- * @param options.tessellation
- * @param options.subdivisions
- * @param options.arc
- * @param options.faceColors
- * @param options.faceUV
- * @param options.updatable
- * @param options.hasRings
- * @param options.enclose
- * @param options.cap
- * @param options.sideOrientation
- * @param options.frontUVs
- * @param options.backUVs
  * @param scene defines the hosting scene
  * @returns the cylinder mesh
  * @see https://doc.babylonjs.com/features/featuresDeepDive/mesh/creation/set#cylinder-or-cone
@@ -403,7 +372,7 @@ export const CylinderBuilder = {
 
 VertexData.CreateCylinder = CreateCylinderVertexData;
 
-(Mesh as any).CreateCylinder = (
+Mesh.CreateCylinder = (
     name: string,
     height: number,
     diameterTop: number,

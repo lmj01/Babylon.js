@@ -28,6 +28,9 @@ interface IPBRMaterialPropertyGridComponentProps {
     onPropertyChangedObservable?: Observable<PropertyChangedEvent>;
 }
 
+/**
+ * @internal
+ */
 export class PBRMaterialPropertyGridComponent extends React.Component<IPBRMaterialPropertyGridComponentProps> {
     private _onDebugSelectionChangeObservable = new Observable<TextureLinkLineComponent>();
     constructor(props: IPBRMaterialPropertyGridComponentProps) {
@@ -165,7 +168,7 @@ export class PBRMaterialPropertyGridComponent extends React.Component<IPBRMateri
         );
     }
 
-    render() {
+    override render() {
         const material = this.props.material;
 
         const debugMode = [
@@ -197,6 +200,7 @@ export class PBRMaterialPropertyGridComponent extends React.Component<IPBRMateri
             { label: "Sheen Map", value: 29 },
             { label: "Anisotropic Map", value: 30 },
             { label: "Thickness Map", value: 31 },
+            { label: "Bump Map", value: 32 },
             // Env
             { label: "Env Refraction", value: 40 },
             { label: "Env Reflection", value: 41 },
@@ -233,6 +237,8 @@ export class PBRMaterialPropertyGridComponent extends React.Component<IPBRMateri
             { label: "Sheen Reflectance", value: 85 },
             { label: "Luminance Over Alpha", value: 86 },
             { label: "Alpha", value: 87 },
+            { label: "Albedo Alpha", value: 88 },
+            { label: "Ambient occlusion color", value: 89 },
         ];
 
         const realTimeFilteringQualityOptions = [
@@ -878,6 +884,27 @@ export class PBRMaterialPropertyGridComponent extends React.Component<IPBRMateri
                     )}
 
                     <CheckBoxLineComponent
+                        label="Dispersion Enabled"
+                        target={material.subSurface}
+                        propertyName="isDispersionEnabled"
+                        onValueChanged={() => this.forceUpdate()}
+                        onPropertyChangedObservable={this.props.onPropertyChangedObservable}
+                    />
+                    {material.subSurface.isDispersionEnabled && (
+                        <div className="fragment">
+                            <SliderLineComponent
+                                lockObject={this.props.lockObject}
+                                label="Intensity"
+                                target={material.subSurface}
+                                propertyName="dispersion"
+                                minimum={0}
+                                maximum={5}
+                                step={0.01}
+                                onPropertyChangedObservable={this.props.onPropertyChangedObservable}
+                            />
+                        </div>
+                    )}
+                    <CheckBoxLineComponent
                         label="Translucency Enabled"
                         target={material.subSurface}
                         propertyName="isTranslucencyEnabled"
@@ -896,6 +923,15 @@ export class PBRMaterialPropertyGridComponent extends React.Component<IPBRMateri
                                 step={0.01}
                                 onPropertyChangedObservable={this.props.onPropertyChangedObservable}
                             />
+                            <TextureLinkLineComponent
+                                label="Intensity"
+                                texture={material.subSurface.translucencyIntensityTexture}
+                                onTextureCreated={(texture) => (material.subSurface.translucencyIntensityTexture = texture)}
+                                onTextureRemoved={() => (material.subSurface.translucencyIntensityTexture = null)}
+                                material={material}
+                                onSelectionChangedObservable={this.props.onSelectionChangedObservable}
+                                onDebugSelectionChangeObservable={this._onDebugSelectionChangeObservable}
+                            />
                             <Color3LineComponent
                                 lockObject={this.props.lockObject}
                                 label="Diffusion Distance"
@@ -909,6 +945,23 @@ export class PBRMaterialPropertyGridComponent extends React.Component<IPBRMateri
                                 target={material.subSurface}
                                 propertyName="useAlbedoToTintTranslucency"
                                 onPropertyChangedObservable={this.props.onPropertyChangedObservable}
+                            />
+                            <Color3LineComponent
+                                lockObject={this.props.lockObject}
+                                label="Translucency Tint"
+                                target={material.subSurface}
+                                propertyName="translucencyColor"
+                                onPropertyChangedObservable={this.props.onPropertyChangedObservable}
+                                isLinear={true}
+                            />
+                            <TextureLinkLineComponent
+                                label="Translucency Tint"
+                                texture={material.subSurface.translucencyColorTexture}
+                                onTextureCreated={(texture) => (material.subSurface.translucencyColorTexture = texture)}
+                                onTextureRemoved={() => (material.subSurface.translucencyColorTexture = null)}
+                                material={material}
+                                onSelectionChangedObservable={this.props.onSelectionChangedObservable}
+                                onDebugSelectionChangeObservable={this._onDebugSelectionChangeObservable}
                             />
                         </div>
                     )}

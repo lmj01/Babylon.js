@@ -38,11 +38,11 @@ import { Axis } from "../Maths/math.axis";
 import type { IParticleSystem } from "../Particles/IParticleSystem";
 import { RegisterClass } from "../Misc/typeStore";
 
-declare type Ray = import("../Culling/ray").Ray;
-declare type Collider = import("../Collisions/collider").Collider;
-declare type TrianglePickingPredicate = import("../Culling/ray").TrianglePickingPredicate;
-declare type RenderingGroup = import("../Rendering/renderingGroup").RenderingGroup;
-declare type IEdgesRendererOptions = import("../Rendering/edgesRenderer").IEdgesRendererOptions;
+import type { Ray } from "../Culling/ray";
+import type { Collider } from "../Collisions/collider";
+import type { TrianglePickingPredicate } from "../Culling/ray";
+import type { RenderingGroup } from "../Rendering/renderingGroup";
+import type { IEdgesRendererOptions } from "../Rendering/edgesRenderer";
 
 /** @internal */
 // eslint-disable-next-line @typescript-eslint/naming-convention
@@ -171,32 +171,32 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
     /**
      * No billboard
      */
-    public static get BILLBOARDMODE_NONE(): number {
+    public static override get BILLBOARDMODE_NONE(): number {
         return TransformNode.BILLBOARDMODE_NONE;
     }
 
     /** Billboard on X axis */
-    public static get BILLBOARDMODE_X(): number {
+    public static override get BILLBOARDMODE_X(): number {
         return TransformNode.BILLBOARDMODE_X;
     }
 
     /** Billboard on Y axis */
-    public static get BILLBOARDMODE_Y(): number {
+    public static override get BILLBOARDMODE_Y(): number {
         return TransformNode.BILLBOARDMODE_Y;
     }
 
     /** Billboard on Z axis */
-    public static get BILLBOARDMODE_Z(): number {
+    public static override get BILLBOARDMODE_Z(): number {
         return TransformNode.BILLBOARDMODE_Z;
     }
 
     /** Billboard on all axes */
-    public static get BILLBOARDMODE_ALL(): number {
+    public static override get BILLBOARDMODE_ALL(): number {
         return TransformNode.BILLBOARDMODE_ALL;
     }
 
     /** Billboard on using position instead of orientation */
-    public static get BILLBOARDMODE_USE_POSITION(): number {
+    public static override get BILLBOARDMODE_USE_POSITION(): number {
         return TransformNode.BILLBOARDMODE_USE_POSITION;
     }
 
@@ -327,7 +327,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
     /**
      * @internal
      */
-    public _updateNonUniformScalingState(value: boolean): boolean {
+    public override _updateNonUniformScalingState(value: boolean): boolean {
         if (!super._updateNonUniformScalingState(value)) {
             return false;
         }
@@ -432,12 +432,15 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
     public isPickable = true;
 
     /**
-     * Gets or sets a boolean indicating if the mesh can be near picked. Default is false
+     * Gets or sets a boolean indicating if the mesh can be near picked (touched by the XR controller or hands). Default is false
      */
     public isNearPickable = false;
 
     /**
-     * Gets or sets a boolean indicating if the mesh can be near grabbed. Default is false
+     * Gets or sets a boolean indicating if the mesh can be grabbed. Default is false.
+     * Setting this to true, while using the XR near interaction feature, will trigger a pointer event when the mesh is grabbed.
+     * Grabbing means that the controller is using the squeeze or main trigger button to grab the mesh.
+     * This is different from nearPickable which only triggers the event when the mesh is touched by the controller
      */
     public isNearGrabbable = false;
 
@@ -587,7 +590,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
     }
 
     /**
-     * Gets or sets a boolean indicating that bone animations must be computed by the CPU (false by default)
+     * Gets or sets a boolean indicating that bone animations must be computed by the GPU (true by default)
      */
     public get computeBonesUsingShaders(): boolean {
         return this._internalAbstractMeshDataInfo._computeBonesUsingShaders;
@@ -903,7 +906,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
      * Returns the string "AbstractMesh"
      * @returns "AbstractMesh"
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "AbstractMesh";
     }
 
@@ -912,7 +915,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
      * @param fullDetails defines a boolean indicating if full details must be included
      * @returns a string representation of the current mesh
      */
-    public toString(fullDetails?: boolean): string {
+    public override toString(fullDetails?: boolean): string {
         let ret = "Name: " + this.name + ", isInstance: " + (this.getClassName() !== "InstancedMesh" ? "YES" : "NO");
         ret += ", # of submeshes: " + (this.subMeshes ? this.subMeshes.length : 0);
 
@@ -930,7 +933,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
     /**
      * @internal
      */
-    protected _getEffectiveParent(): Nullable<Node> {
+    protected override _getEffectiveParent(): Nullable<Node> {
         if (this._masterMesh && this.billboardMode !== TransformNode.BILLBOARDMODE_NONE) {
             return this._masterMesh;
         }
@@ -941,7 +944,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
     /**
      * @internal
      */
-    public _getActionManagerForTrigger(trigger?: number, initialCall = true): Nullable<AbstractActionManager> {
+    public override _getActionManagerForTrigger(trigger?: number, initialCall = true): Nullable<AbstractActionManager> {
         if (this.actionManager && (initialCall || this.actionManager.isRecursive)) {
             if (trigger) {
                 if (this.actionManager.hasSpecificTrigger(trigger)) {
@@ -977,6 +980,8 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
         for (const subMesh of this.subMeshes) {
             subMesh._rebuild();
         }
+
+        this.resetDrawCache();
     }
 
     /** @internal */
@@ -1080,7 +1085,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
      * @returns this AbstractMesh
      */
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    public markAsDirty(property?: string): AbstractMesh {
+    public override markAsDirty(property?: string): AbstractMesh {
         this._currentRenderId = Number.MAX_VALUE;
         this._isDirty = true;
         return this;
@@ -1293,7 +1298,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
      * @param predicate predicate that is passed in to getHierarchyBoundingVectors when selecting which object should be included when scaling
      * @returns the current mesh
      */
-    public normalizeToUnitCube(includeDescendants = true, ignoreRotation = false, predicate?: Nullable<(node: AbstractMesh) => boolean>): AbstractMesh {
+    public override normalizeToUnitCube(includeDescendants = true, ignoreRotation = false, predicate?: Nullable<(node: AbstractMesh) => boolean>): AbstractMesh {
         return <AbstractMesh>super.normalizeToUnitCube(includeDescendants, ignoreRotation, predicate);
     }
 
@@ -1344,7 +1349,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
      * Gets the current world matrix
      * @returns a Matrix
      */
-    public getWorldMatrix(): Matrix {
+    public override getWorldMatrix(): Matrix {
         if (this._masterMesh && this.billboardMode === TransformNode.BILLBOARDMODE_NONE) {
             return this._masterMesh.getWorldMatrix();
         }
@@ -1353,7 +1358,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
     }
 
     /** @internal */
-    public _getWorldMatrixDeterminant(): number {
+    public override _getWorldMatrixDeterminant(): number {
         if (this._masterMesh) {
             return this._masterMesh._getWorldMatrixDeterminant();
         }
@@ -1488,6 +1493,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
      * @param applyMorph
      * @param data
      * @param kind the kind of data you want. Can be Normal or Position
+     * @returns a FloatArray of the vertex data
      */
     private _getData(applySkeleton: boolean = false, applyMorph: boolean = false, data?: Nullable<FloatArray>, kind: string = VertexBuffer.PositionKind): Nullable<FloatArray> {
         data = data ?? this.getVerticesData(kind)!.slice();
@@ -1496,16 +1502,32 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
             let faceIndexCount = 0;
             let positionIndex = 0;
             for (let vertexCount = 0; vertexCount < data.length; vertexCount++) {
+                let value = data[vertexCount];
                 for (let targetCount = 0; targetCount < this.morphTargetManager.numTargets; targetCount++) {
                     const targetMorph = this.morphTargetManager.getTarget(targetCount);
                     const influence = targetMorph.influence;
-                    if (influence > 0.0) {
-                        const morphTargetPositions = targetMorph.getPositions();
-                        if (morphTargetPositions) {
-                            data[vertexCount] += (morphTargetPositions[vertexCount] - data[vertexCount]) * influence;
+                    if (influence !== 0.0) {
+                        let morphTargetData: Nullable<FloatArray> = null;
+                        switch (kind) {
+                            case VertexBuffer.PositionKind:
+                                morphTargetData = targetMorph.getPositions();
+                                break;
+                            case VertexBuffer.NormalKind:
+                                morphTargetData = targetMorph.getNormals();
+                                break;
+                            case VertexBuffer.TangentKind:
+                                morphTargetData = targetMorph.getTangents();
+                                break;
+                            case VertexBuffer.UVKind:
+                                morphTargetData = targetMorph.getUVs();
+                                break;
+                        }
+                        if (morphTargetData) {
+                            value += (morphTargetData[vertexCount] - data[vertexCount]) * influence;
                         }
                     }
                 }
+                data[vertexCount] = value;
 
                 faceIndexCount++;
                 if (kind === VertexBuffer.PositionKind) {
@@ -1649,7 +1671,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
     }
 
     /** @internal */
-    protected _afterComputeWorldMatrix(): void {
+    protected override _afterComputeWorldMatrix(): void {
         if (this.doNotSyncBoundingInfo) {
             return;
         }
@@ -1870,7 +1892,8 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
     }
 
     /**
-     * Checks if the passed Ray intersects with the mesh
+     * Checks if the passed Ray intersects with the mesh. A mesh triangle can be picked both from its front and back sides,
+     * irrespective of orientation.
      * @param ray defines the ray to use. It should be in the mesh's LOCAL coordinate space.
      * @param fastCheck defines if fast mode (but less precise) must be used (false by default)
      * @param trianglePredicate defines an optional predicate used to select faces when a mesh intersection is detected
@@ -1889,7 +1912,8 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
         skipBoundingInfo = false
     ): PickingInfo {
         const pickingInfo = new PickingInfo();
-        const intersectionThreshold = this.getClassName() === "InstancedLinesMesh" || this.getClassName() === "LinesMesh" ? (this as any).intersectionThreshold : 0;
+        const className = this.getClassName();
+        const intersectionThreshold = className === "InstancedLinesMesh" || className === "LinesMesh" || className === "GreasedLineMesh" ? (this as any).intersectionThreshold : 0;
         const boundingInfo = this.getBoundingInfo();
         if (!this.subMeshes) {
             return pickingInfo;
@@ -1953,7 +1977,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
             const subMesh = subMeshes.data[index];
 
             // Bounding test
-            if (len > 1 && !subMesh.canIntersects(ray)) {
+            if (len > 1 && !skipBoundingInfo && !subMesh.canIntersects(ray)) {
                 continue;
             }
 
@@ -2005,7 +2029,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
      * @returns the new mesh
      */
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    public clone(name: string, newParent: Nullable<Node>, doNotCloneChildren?: boolean): Nullable<AbstractMesh> {
+    public override clone(name: string, newParent: Nullable<Node>, doNotCloneChildren?: boolean): Nullable<AbstractMesh> {
         return null;
     }
 
@@ -2019,7 +2043,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
                 this.subMeshes[0].dispose();
             }
         } else {
-            this.subMeshes = new Array<SubMesh>();
+            this.subMeshes = [] as SubMesh[];
         }
         return this;
     }
@@ -2029,8 +2053,10 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
      * @param doNotRecurse Set to true to not recurse into each children (recurse into each children by default)
      * @param disposeMaterialAndTextures Set to true to also dispose referenced materials and textures (false by default)
      */
-    public dispose(doNotRecurse?: boolean, disposeMaterialAndTextures = false): void {
+    public override dispose(doNotRecurse?: boolean, disposeMaterialAndTextures = false): void {
         let index: number;
+
+        const scene = this.getScene();
 
         // mesh map release.
         if (this._scene.useMaterialMeshMap) {
@@ -2041,12 +2067,18 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
         }
 
         // Smart Array Retainers.
-        this.getScene().freeActiveMeshes();
-        this.getScene().freeRenderingGroups();
+        scene.freeActiveMeshes();
+        scene.freeRenderingGroups();
+        if (scene.renderingManager.maintainStateBetweenFrames) {
+            scene.renderingManager.restoreDispachedFlags();
+        }
 
         // Action manager
         if (this.actionManager !== undefined && this.actionManager !== null) {
-            this.actionManager.dispose();
+            // If it's the only mesh using the action manager, dispose of it.
+            if (!this._scene.meshes.some((m) => m !== this && m.actionManager === this.actionManager)) {
+                this.actionManager.dispose();
+            }
             this.actionManager = null;
         }
 
@@ -2069,7 +2101,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
         this._intersectionsInProgress.length = 0;
 
         // Lights
-        const lights = this.getScene().lights;
+        const lights = scene.lights;
 
         lights.forEach((light: Light) => {
             let meshIndex = light.includedOnlyMeshes.indexOf(this);
@@ -2109,7 +2141,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
         }
 
         // Query
-        const engine = this.getScene().getEngine();
+        const engine = scene.getEngine();
         if (this._occlusionQuery !== null) {
             this.isOcclusionQueryInProgress = false;
             engine.deleteQuery(this._occlusionQuery);
@@ -2120,7 +2152,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
         engine.wipeCaches();
 
         // Remove from scene
-        this.getScene().removeMesh(this);
+        scene.removeMesh(this);
 
         if (this._parentContainer) {
             const index = this._parentContainer.meshes.indexOf(this);
@@ -2142,9 +2174,9 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
 
         if (!doNotRecurse) {
             // Particles
-            for (index = 0; index < this.getScene().particleSystems.length; index++) {
-                if (this.getScene().particleSystems[index].emitter === this) {
-                    this.getScene().particleSystems[index].dispose();
+            for (index = 0; index < scene.particleSystems.length; index++) {
+                if (scene.particleSystems[index].emitter === this) {
+                    scene.particleSystems[index].dispose();
                     index--;
                 }
             }
@@ -2192,10 +2224,10 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
     private _initFacetData(): AbstractMesh {
         const data = this._internalAbstractMeshDataInfo._facetData;
         if (!data.facetNormals) {
-            data.facetNormals = new Array<Vector3>();
+            data.facetNormals = [] as Vector3[];
         }
         if (!data.facetPositions) {
-            data.facetPositions = new Array<Vector3>();
+            data.facetPositions = [] as Vector3[];
         }
         if (!data.facetPartitioning) {
             data.facetPartitioning = new Array<number[]>();
@@ -2539,8 +2571,8 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
         const facetData = this._internalAbstractMeshDataInfo._facetData;
         if (facetData.facetDataEnabled) {
             facetData.facetDataEnabled = false;
-            facetData.facetPositions = new Array<Vector3>();
-            facetData.facetNormals = new Array<Vector3>();
+            facetData.facetPositions = [] as Vector3[];
+            facetData.facetNormals = [] as Vector3[];
             facetData.facetPartitioning = new Array<number[]>();
             facetData.facetParameters = null;
             facetData.depthSortedIndices = new Uint32Array(0);
@@ -2611,6 +2643,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
         return false;
     }
 
+    // eslint-disable-next-line jsdoc/require-returns-check
     /**
      * Disables the mesh edge rendering mode
      * @returns the currentAbstractMesh
@@ -2619,6 +2652,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
         throw _WarnImport("EdgesRenderer");
     }
 
+    // eslint-disable-next-line jsdoc/require-returns-check
     /**
      * Enables the edge rendering mode on the mesh.
      * This mode makes the mesh edges visible

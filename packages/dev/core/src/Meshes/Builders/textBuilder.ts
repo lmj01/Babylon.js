@@ -1,8 +1,11 @@
+import type { Color4 } from "../../Maths/math.color";
 import { Path2 } from "../../Maths/math.path";
 import { Vector3 } from "../../Maths/math.vector";
+import type { Vector4 } from "../../Maths/math.vector";
 import type { Scene } from "../../scene";
 import type { Nullable } from "../../types";
 import { Mesh } from "../mesh";
+import { TransformNode } from "../transformNode";
 import { ExtrudePolygon } from "./polygonBuilder";
 
 declare let earcut: any;
@@ -51,28 +54,49 @@ class ShapePath {
     private _currentPath: Path2;
     private _resolution: number;
 
-    /** Create the ShapePath used to support glyphs */
+    /** Create the ShapePath used to support glyphs
+     * @param resolution defines the resolution used to determine the number of points per curve (default is 4)
+     */
     constructor(resolution: number) {
         this._resolution = resolution;
     }
 
-    /** Move the virtual cursor to a coordinate */
+    /** Move the virtual cursor to a coordinate
+     * @param x defines the x coordinate
+     * @param y defines the y coordinate
+     */
     moveTo(x: number, y: number) {
         this._currentPath = new Path2(x, y);
         this._tempPaths.push(this._currentPath);
     }
 
-    /** Draw a line from the virtual cursor to a given coordinate */
+    /** Draw a line from the virtual cursor to a given coordinate
+     * @param x defines the x coordinate
+     * @param y defines the y coordinate
+     */
     lineTo(x: number, y: number) {
         this._currentPath.addLineTo(x, y);
     }
 
-    /** Create a quadratic curve from the virtual cursor to a given coordinate */
+    /** Create a quadratic curve from the virtual cursor to a given coordinate
+     * @param cpx defines the x coordinate of the control point
+     * @param cpy defines the y coordinate of the control point
+     * @param x defines the x coordinate of the end point
+     * @param y defines the y coordinate of the end point
+     */
     quadraticCurveTo(cpx: number, cpy: number, x: number, y: number) {
         this._currentPath.addQuadraticCurveTo(cpx, cpy, x, y, this._resolution);
     }
 
-    /** Create a bezier curve from the virtual cursor to a given coordinate */
+    /**
+     * Create a bezier curve from the virtual cursor to a given coordinate
+     * @param cpx1 defines the x coordinate of the first control point
+     * @param cpy1 defines the y coordinate of the first control point
+     * @param cpx2 defines the x coordinate of the second control point
+     * @param cpy2 defines the y coordinate of the second control point
+     * @param x defines the x coordinate of the end point
+     * @param y defines the y coordinate of the end point
+     */
     bezierCurveTo(cpx1: number, cpy1: number, cpx2: number, cpy2: number, x: number, y: number) {
         this._currentPath.addBezierCurveTo(cpx1, cpy1, cpx2, cpy2, x, y, this._resolution);
     }
@@ -183,7 +207,15 @@ function CreateShapePath(
     return { offsetX: glyph.ha * scale, shapePath: shapePath };
 }
 
-function CreateShapePaths(text: string, size: number, resolution: number, fontData: IFontData) {
+/**
+ * Creates shape paths from a text and font
+ * @param text the text
+ * @param size size of the font
+ * @param resolution resolution of the font
+ * @param fontData defines the font data (can be generated with http://gero3.github.io/facetype.js/)
+ * @returns array of ShapePath objects
+ */
+export function CreateTextShapePaths(text: string, size: number, resolution: number, fontData: IFontData) {
     const chars = Array.from(text);
     const scale = size / fontData.resolution;
     const line_height = (fontData.boundingBox.yMax - fontData.boundingBox.yMin + fontData.underlineThickness) * scale;
@@ -232,6 +264,10 @@ export function CreateText(
         resolution?: number;
         depth?: number;
         sideOrientation?: number;
+        faceUV?: Vector4[];
+        faceColors?: Color4[];
+        perLetterFaceUV?: (letterIndex: number) => Vector4[];
+        perLetterFaceColors?: (letterIndex: number) => Color4[];
     } = {
         size: 50,
         resolution: 8,
@@ -241,10 +277,11 @@ export function CreateText(
     earcutInjection = earcut
 ): Nullable<Mesh> {
     // First we need to generate the paths
-    const shapePaths = CreateShapePaths(text, options.size || 50, options.resolution || 8, fontData);
+    const shapePaths = CreateTextShapePaths(text, options.size || 50, options.resolution || 8, fontData);
 
     // And extrude them
     const meshes: Mesh[] = [];
+    let letterIndex = 0;
     for (const shapePath of shapePaths) {
         if (!shapePath.paths.length) {
             continue;
@@ -305,12 +342,15 @@ export function CreateText(
                     shape: shapeVectors,
                     holes: holeVectors.length ? holeVectors : undefined,
                     depth: options.depth || 1.0,
+                    faceUV: options.faceUV || options.perLetterFaceUV?.(letterIndex),
+                    faceColors: options.faceColors || options.perLetterFaceColors?.(letterIndex),
                     sideOrientation: Mesh._GetDefaultSideOrientation(options.sideOrientation || Mesh.DOUBLESIDE),
                 },
                 scene,
                 earcutInjection
             );
             meshes.push(mesh);
+            letterIndex++;
         }
     }
 
@@ -318,16 +358,23 @@ export function CreateText(
     const newMesh = Mesh.MergeMeshes(meshes, true, true);
 
     if (newMesh) {
-        // Move pivot to center
-        const bbox = newMesh?.getBoundingInfo();
-        newMesh.position.x = -bbox?.boundingBox.extendSizeWorld._x;
-        newMesh.position.y = -bbox?.boundingBox.extendSizeWorld._y;
-        newMesh.position.z = -bbox?.boundingBox.extendSizeWorld._z;
+        // Move pivot to desired center / bottom / center position
+        const bbox = newMesh.getBoundingInfo().boundingBox;
+        newMesh.position.x += -(bbox.minimumWorld.x + bbox.maximumWorld.x) / 2; // Mid X
+        newMesh.position.y += -(bbox.minimumWorld.y + bbox.maximumWorld.y) / 2; // Mid Z as it will rotate
+        newMesh.position.z += -(bbox.minimumWorld.z + bbox.maximumWorld.z) / 2 + bbox.extendSize.z; // Bottom Y as it will rotate
         newMesh.name = name;
 
-        newMesh.rotation.x = -Math.PI / 2;
+        // Rotate 90° Up
+        const pivot = new TransformNode("pivot", scene);
+        pivot.rotation.x = -Math.PI / 2;
+        newMesh.parent = pivot;
 
         newMesh.bakeCurrentTransformIntoVertices();
+
+        // Remove the pivot
+        newMesh.parent = null;
+        pivot.dispose();
     }
 
     return newMesh;

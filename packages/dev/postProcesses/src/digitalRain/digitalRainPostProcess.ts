@@ -1,5 +1,6 @@
 import type { Nullable } from "core/types";
-import { serialize, SerializationHelper } from "core/Misc/decorators";
+import { serialize } from "core/Misc/decorators";
+import { SerializationHelper } from "core/Misc/decorators.serialization";
 import { Matrix } from "core/Maths/math.vector";
 import type { Camera } from "core/Cameras/camera";
 import { BaseTexture } from "core/Materials/Textures/baseTexture";
@@ -145,7 +146,7 @@ export class DigitalRainFontTexture extends BaseTexture {
      * Clones the current DigitalRainFontTexture.
      * @returns the clone of the texture.
      */
-    public clone(): DigitalRainFontTexture {
+    public override clone(): DigitalRainFontTexture {
         return new DigitalRainFontTexture(this.name, this._font, this._text, this.getScene());
     }
 

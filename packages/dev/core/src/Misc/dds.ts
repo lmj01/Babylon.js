@@ -8,10 +8,12 @@ import { Logger } from "../Misc/logger";
 import { CubeMapToSphericalPolynomialTools } from "../Misc/HighDynamicRange/cubemapToSphericalPolynomial";
 import type { Scene } from "../scene";
 import { BaseTexture } from "../Materials/Textures/baseTexture";
-import { ThinEngine } from "../Engines/thinEngine";
+import type { AbstractEngine } from "../Engines/abstractEngine";
 import { FromHalfFloat, ToHalfFloat } from "./textureTools";
 
+import "../Engines/AbstractEngine/abstractEngine.cubeTexture";
 import "../Engines/Extensions/engine.cubeTexture";
+import { ThinEngine } from "../Engines/thinEngine";
 
 // Based on demo done by Brandon Jones - http://media.tojicode.com/webgl-samples/dds.html
 // All values and structures referenced from:
@@ -419,7 +421,7 @@ export class DDSTools {
      * @internal
      */
     public static UploadDDSLevels(
-        engine: ThinEngine,
+        engine: AbstractEngine,
         texture: InternalTexture,
         data: ArrayBufferView,
         info: DDSInfo,
@@ -431,7 +433,7 @@ export class DDSTools {
     ) {
         let sphericalPolynomialFaces: Nullable<Array<ArrayBufferView>> = null;
         if (info.sphericalPolynomial) {
-            sphericalPolynomialFaces = new Array<ArrayBufferView>();
+            sphericalPolynomialFaces = [] as ArrayBufferView[];
         }
         const ext = !!engine.getCaps().s3tc;
 
@@ -521,7 +523,7 @@ export class DDSTools {
                 }
                 // eslint-disable-next-line no-fallthrough
                 default:
-                    console.error("Unsupported FourCC code:", Int32ToFourCC(fourCC));
+                    Logger.Error(["Unsupported FourCC code:", Int32ToFourCC(fourCC)]);
                     return;
             }
         }
@@ -581,8 +583,8 @@ export class DDSTools {
                                 (bpp === 128 || (bpp === 64 && !halfFloatAvailable)) && floatAvailable
                                     ? Constants.TEXTURETYPE_FLOAT
                                     : (bpp === 64 || (bpp === 128 && !floatAvailable)) && halfFloatAvailable
-                                    ? Constants.TEXTURETYPE_HALF_FLOAT
-                                    : Constants.TEXTURETYPE_UNSIGNED_BYTE;
+                                      ? Constants.TEXTURETYPE_HALF_FLOAT
+                                      : Constants.TEXTURETYPE_UNSIGNED_BYTE;
 
                             let dataGetter: (width: number, height: number, dataOffset: number, dataLength: number, arrayBuffer: ArrayBuffer, lod: number) => ArrayBufferView;
                             let dataGetterPolynomial: Nullable<

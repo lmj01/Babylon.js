@@ -400,7 +400,10 @@ class PhysicsRadialExplosionEvent {
      * @param _scene BabylonJS scene
      * @param _options The options for the vortex event
      */
-    constructor(private _scene: Scene, private _options: PhysicsRadialExplosionEventOptions) {
+    constructor(
+        private _scene: Scene,
+        private _options: PhysicsRadialExplosionEventOptions
+    ) {
         this._options = { ...new PhysicsRadialExplosionEventOptions(), ...this._options };
     }
 
@@ -467,6 +470,7 @@ class PhysicsRadialExplosionEvent {
      * Returns the force and contact point of the impostor or false, if the impostor is not affected by the force/impulse.
      * @param impostor A physics imposter
      * @param origin the origin of the explosion
+     * @param data the data of the hit
      * @returns A physics force and contact point, or null
      */
     public getImpostorHitData(impostor: PhysicsImpostor, origin: Vector3, data: PhysicsHitData): boolean {
@@ -562,10 +566,15 @@ class PhysicsGravitationalFieldEvent {
      * @param _origin The origin position of the gravitational field event
      * @param _options The options for the vortex event
      */
-    constructor(private _physicsHelper: PhysicsHelper, private _scene: Scene, private _origin: Vector3, private _options: PhysicsRadialExplosionEventOptions) {
+    constructor(
+        private _physicsHelper: PhysicsHelper,
+        private _scene: Scene,
+        private _origin: Vector3,
+        private _options: PhysicsRadialExplosionEventOptions
+    ) {
         this._options = { ...new PhysicsRadialExplosionEventOptions(), ...this._options };
 
-        this._tickCallback = this._tick.bind(this);
+        this._tickCallback = () => this._tick();
 
         this._options.strength = this._options.strength * -1;
     }
@@ -647,7 +656,11 @@ class PhysicsUpdraftEvent {
      * @param _origin The origin position of the updraft
      * @param _options The options for the updraft event
      */
-    constructor(private _scene: Scene, private _origin: Vector3, private _options: PhysicsUpdraftEventOptions) {
+    constructor(
+        private _scene: Scene,
+        private _origin: Vector3,
+        private _options: PhysicsUpdraftEventOptions
+    ) {
         this._physicsEngine = this._scene.getPhysicsEngine() as PhysicsEngineV1 | PhysicsEngineV2;
         this._options = { ...new PhysicsUpdraftEventOptions(), ...this._options };
 
@@ -658,7 +671,7 @@ class PhysicsUpdraftEvent {
             this._originDirection = this._origin.subtract(this._originTop).normalize();
         }
 
-        this._tickCallback = this._tick.bind(this);
+        this._tickCallback = () => this._tick();
 
         if (this._physicsEngine.getPluginVersion() === 1) {
             this._prepareCylinder();
@@ -822,8 +835,8 @@ class PhysicsVortexEvent {
     private _cylinder: Mesh;
     private _cylinderPosition: Vector3 = Vector3.Zero(); // to keep the cylinders position, because normally the origin is in the center and not on the bottom
     private _dataFetched: boolean = false; // check if the has been fetched the data. If not, do cleanup
-    private static originOnPlane: Vector3 = Vector3.Zero();
-    private static hitData: PhysicsHitData = { force: new Vector3(), contactPoint: new Vector3(), distanceFromOrigin: 0 };
+    private static _OriginOnPlane: Vector3 = Vector3.Zero();
+    private static _HitData: PhysicsHitData = { force: new Vector3(), contactPoint: new Vector3(), distanceFromOrigin: 0 };
 
     /**
      * Initializes the physics vortex event
@@ -831,14 +844,18 @@ class PhysicsVortexEvent {
      * @param _origin The origin position of the vortex
      * @param _options The options for the vortex event
      */
-    constructor(private _scene: Scene, private _origin: Vector3, private _options: PhysicsVortexEventOptions) {
+    constructor(
+        private _scene: Scene,
+        private _origin: Vector3,
+        private _options: PhysicsVortexEventOptions
+    ) {
         this._physicsEngine = this._scene.getPhysicsEngine() as PhysicsEngineV1 | PhysicsEngineV2;
         this._options = { ...new PhysicsVortexEventOptions(), ...this._options };
 
         this._origin.addToRef(new Vector3(0, this._options.height / 2, 0), this._cylinderPosition);
         this._origin.addToRef(new Vector3(0, this._options.height, 0), this._originTop);
 
-        this._tickCallback = this._tick.bind(this);
+        this._tickCallback = () => this._tick();
 
         if (this._physicsEngine.getPluginVersion() === 1) {
             this._prepareCylinder();
@@ -892,7 +909,7 @@ class PhysicsVortexEvent {
     }
 
     private _getHitData(mesh: AbstractMesh, center: Vector3, data: PhysicsHitData): boolean {
-        const originOnPlane = PhysicsVortexEvent.originOnPlane;
+        const originOnPlane = PhysicsVortexEvent._OriginOnPlane;
         originOnPlane.set(this._origin.x, center.y, this._origin.z); // the distance to the origin as if both objects were on a plane (Y-axis)
         const originToImpostorDirection = TmpVectors.Vector3[0];
         center.subtractToRef(originOnPlane, originToImpostorDirection);
@@ -973,7 +990,7 @@ class PhysicsVortexEvent {
     }
 
     private _tick() {
-        const hitData = PhysicsVortexEvent.hitData;
+        const hitData = PhysicsVortexEvent._HitData;
         if (this._physicsEngine.getPluginVersion() === 1) {
             (<PhysicsEngineV1>this._physicsEngine).getImpostors().forEach((impostor: PhysicsImpostor) => {
                 if (!this._getImpostorHitData(impostor, hitData)) {
@@ -1075,7 +1092,7 @@ export class PhysicsUpdraftEventOptions {
     height: number = 10;
 
     /**
-     * The mode for the the updraft.
+     * The mode for the updraft.
      */
     updraftMode: PhysicsUpdraftMode = PhysicsUpdraftMode.Center;
 }
