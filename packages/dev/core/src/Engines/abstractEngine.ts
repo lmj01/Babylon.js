@@ -887,6 +887,7 @@ export abstract class AbstractEngine {
 
     /** @internal */
     public _renderLoop(): void {
+        // Reset the frame handler before rendering a frame to determine if a new frame has been queued.
         this._frameHandler = 0;
 
         if (!this._contextWasLost) {
@@ -910,7 +911,10 @@ export abstract class AbstractEngine {
             }
         }
 
-        if (this._frameHandler === 0) {
+        // The first condition prevents queuing another frame if we no longer have active render loops (e.g., if
+        // `stopRenderLoop` is called mid frame). The second condition prevents queuing another frame if one has
+        // already been queued (e.g., if `stopRenderLoop` and `runRenderLoop` is called mid frame).
+        if (this._activeRenderLoops.length > 0 && this._frameHandler === 0) {
             this._frameHandler = this._queueNewFrame(this._boundRenderFunction, this.getHostWindow());
         }
     }
@@ -1940,14 +1944,14 @@ export abstract class AbstractEngine {
      */
     // Not mixed with Version for tooling purpose.
     public static get NpmPackage(): string {
-        return "babylonjs@7.6.0";
+        return "babylonjs@7.7.0";
     }
 
     /**
      * Returns the current version of the framework
      */
     public static get Version(): string {
-        return "7.6.0";
+        return "7.7.0";
     }
 
     /**
