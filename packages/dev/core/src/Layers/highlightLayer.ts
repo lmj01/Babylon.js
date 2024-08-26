@@ -1,12 +1,12 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { serialize, SerializationHelper } from "../Misc/decorators";
+import { serialize } from "../Misc/decorators";
 import type { Observer } from "../Misc/observable";
 import { Observable } from "../Misc/observable";
 import type { Nullable } from "../types";
 import type { Camera } from "../Cameras/camera";
 import type { Scene } from "../scene";
 import { Vector2 } from "../Maths/math.vector";
-import { Engine } from "../Engines/engine";
+import type { AbstractEngine } from "../Engines/abstractEngine";
 import { VertexBuffer } from "../Buffers/buffer";
 import type { SubMesh } from "../Meshes/subMesh";
 import type { AbstractMesh } from "../Meshes/abstractMesh";
@@ -26,10 +26,9 @@ import { Logger } from "../Misc/logger";
 import { RegisterClass } from "../Misc/typeStore";
 import { Color4, Color3 } from "../Maths/math.color";
 
-import "../Shaders/glowMapMerge.fragment";
-import "../Shaders/glowMapMerge.vertex";
-import "../Shaders/glowBlurPostProcess.fragment";
-import "../Layers/effectLayerSceneComponent";
+import { SerializationHelper } from "../Misc/decorators.serialization";
+import { GetExponentOfTwo } from "../Misc/tools.functions";
+import { ShaderLanguage } from "core/Materials/shaderLanguage";
 
 declare module "../abstractScene" {
     export interface AbstractScene {
@@ -52,6 +51,10 @@ AbstractScene.prototype.getHighlightLayerByName = function (name: string): Nulla
     return null;
 };
 
+interface IBlurPostProcess extends PostProcess {
+    kernel: number;
+}
+
 /**
  * Special Glow Blur post process only blurring the alpha channel
  * It enforces keeping the most luminous color in the color channel.
@@ -64,7 +67,7 @@ class GlowBlurPostProcess extends PostProcess {
         options: number | PostProcessOptions,
         camera: Nullable<Camera>,
         samplingMode: number = Texture.BILINEAR_SAMPLINGMODE,
-        engine?: Engine,
+        engine?: AbstractEngine,
         reusable?: boolean
     ) {
         super(name, "glowBlurPostProcess", ["screenSize", "direction", "blurWidth"], null, options, camera, samplingMode, engine, reusable);
@@ -74,6 +77,17 @@ class GlowBlurPostProcess extends PostProcess {
             effect.setVector2("direction", this.direction);
             effect.setFloat("blurWidth", this.kernel);
         });
+    }
+
+    protected override _gatherImports(useWebGPU: boolean, list: Promise<any>[]) {
+        if (useWebGPU) {
+            this._webGPUReady = true;
+            list.push(import("../ShadersWGSL/glowBlurPostProcess.fragment"));
+        } else {
+            list.push(import("../Shaders/glowBlurPostProcess.fragment"));
+        }
+
+        super._gatherImports(useWebGPU, list);
     }
 }
 
@@ -133,6 +147,11 @@ export interface IHighlightLayerOptions {
      * The type of the main texture. Default: TEXTURETYPE_UNSIGNED_INT
      */
     mainTextureType: number;
+
+    /**
+     * Use the GLSL code generation for the shader (even on WebGPU). Default is false
+     */
+    forceGLSL: boolean;
 }
 
 /**
@@ -273,8 +292,8 @@ export class HighlightLayer extends EffectLayer {
     @serialize("options")
     private _options: IHighlightLayerOptions;
     private _downSamplePostprocess: PassPostProcess;
-    private _horizontalBlurPostprocess: GlowBlurPostProcess;
-    private _verticalBlurPostprocess: GlowBlurPostProcess;
+    private _horizontalBlurPostprocess: IBlurPostProcess;
+    private _verticalBlurPostprocess: IBlurPostProcess;
     private _blurTexture: RenderTargetTexture;
 
     private _meshes: Nullable<{ [id: string]: Nullable<IHighlightLayerMesh> }> = {};
@@ -286,8 +305,13 @@ export class HighlightLayer extends EffectLayer {
      * @param scene The scene to use the layer in
      * @param options Sets of none mandatory options to use with the layer (see IHighlightLayerOptions for more information)
      */
-    constructor(public name: string, scene?: Scene, options?: Partial<IHighlightLayerOptions>) {
-        super(name, scene);
+    constructor(
+        public override name: string,
+        scene?: Scene,
+        options?: Partial<IHighlightLayerOptions>
+    ) {
+        super(name, scene, options !== undefined ? !!options.forceGLSL : false);
+
         this.neutralColor = HighlightLayer.NeutralColor;
 
         // Warn on stencil
@@ -305,6 +329,7 @@ export class HighlightLayer extends EffectLayer {
             camera: null,
             renderingGroupId: -1,
             mainTextureType: Constants.TEXTURETYPE_UNSIGNED_INT,
+            forceGLSL: false,
             ...options,
         };
 
@@ -322,6 +347,20 @@ export class HighlightLayer extends EffectLayer {
         this._shouldRender = false;
     }
 
+    protected override async _importShadersAsync() {
+        if (this._shaderLanguage === ShaderLanguage.WGSL) {
+            await Promise.all([
+                import("../ShadersWGSL/glowMapMerge.fragment"),
+                import("../ShadersWGSL/glowMapMerge.vertex"),
+                import("../ShadersWGSL/glowBlurPostProcess.fragment"),
+            ]);
+        } else {
+            await Promise.all([import("../Shaders/glowMapMerge.fragment"), import("../Shaders/glowMapMerge.vertex"), import("../Shaders/glowBlurPostProcess.fragment")]);
+        }
+
+        await super._importShadersAsync();
+    }
+
     /**
      * Get the effect name of the layer.
      * @returns The effect name
@@ -330,17 +369,29 @@ export class HighlightLayer extends EffectLayer {
         return HighlightLayer.EffectName;
     }
 
-    protected _numInternalDraws(): number {
+    protected override _numInternalDraws(): number {
         return 2; // we need two rendering, one for the inner glow and the other for the outer glow
     }
 
     /**
      * Create the merge effect. This is the shader use to blit the information back
      * to the main canvas at the end of the scene rendering.
+     * @returns The effect created
      */
     protected _createMergeEffect(): Effect {
         // Effect
-        return this._engine.createEffect("glowMapMerge", [VertexBuffer.PositionKind], ["offset"], ["textureSampler"], this._options.isStroke ? "#define STROKE \n" : undefined);
+        return this._engine.createEffect(
+            "glowMapMerge",
+            [VertexBuffer.PositionKind],
+            ["offset"],
+            ["textureSampler"],
+            this._options.isStroke ? "#define STROKE \n" : undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            this._shaderLanguage
+        );
     }
 
     /**
@@ -349,8 +400,8 @@ export class HighlightLayer extends EffectLayer {
     protected _createTextureAndPostProcesses(): void {
         let blurTextureWidth = this._mainTextureDesiredSize.width * this._options.blurTextureSizeRatio;
         let blurTextureHeight = this._mainTextureDesiredSize.height * this._options.blurTextureSizeRatio;
-        blurTextureWidth = this._engine.needPOTTextures ? Engine.GetExponentOfTwo(blurTextureWidth, this._maxSize) : blurTextureWidth;
-        blurTextureHeight = this._engine.needPOTTextures ? Engine.GetExponentOfTwo(blurTextureHeight, this._maxSize) : blurTextureHeight;
+        blurTextureWidth = this._engine.needPOTTextures ? GetExponentOfTwo(blurTextureWidth, this._maxSize) : blurTextureWidth;
+        blurTextureHeight = this._engine.needPOTTextures ? GetExponentOfTwo(blurTextureHeight, this._maxSize) : blurTextureHeight;
 
         let textureType = 0;
         if (this._engine.getCaps().textureHalfFloatRender) {
@@ -434,10 +485,11 @@ export class HighlightLayer extends EffectLayer {
                 false,
                 textureType
             );
-            this._horizontalBlurPostprocess.width = blurTextureWidth;
-            this._horizontalBlurPostprocess.height = blurTextureHeight;
-            this._horizontalBlurPostprocess.externalTextureSamplerBinding = true;
-            this._horizontalBlurPostprocess.onApplyObservable.add((effect) => {
+            const horizontalBlurPostprocess = this._horizontalBlurPostprocess as BlurPostProcess;
+            horizontalBlurPostprocess.width = blurTextureWidth;
+            horizontalBlurPostprocess.height = blurTextureHeight;
+            horizontalBlurPostprocess.externalTextureSamplerBinding = true;
+            horizontalBlurPostprocess.onApplyObservable.add((effect) => {
                 effect.setTexture("textureSampler", this._mainTexture);
             });
 
@@ -478,7 +530,7 @@ export class HighlightLayer extends EffectLayer {
     }
 
     /**
-     * Returns whether or not the layer needs stencil enabled during the mesh rendering.
+     * @returns whether or not the layer needs stencil enabled during the mesh rendering.
      */
     public needStencil(): boolean {
         return true;
@@ -549,9 +601,9 @@ export class HighlightLayer extends EffectLayer {
     }
 
     /**
-     * Returns true if the layer contains information to display, otherwise false.
+     * @returns true if the layer contains information to display, otherwise false.
      */
-    public shouldRender(): boolean {
+    public override shouldRender(): boolean {
         if (super.shouldRender()) {
             return this._meshes ? true : false;
         }
@@ -564,7 +616,7 @@ export class HighlightLayer extends EffectLayer {
      * @param mesh The mesh to render
      * @returns true if it should render otherwise false
      */
-    protected _shouldRenderMesh(mesh: Mesh): boolean {
+    protected override _shouldRenderMesh(mesh: Mesh): boolean {
         // Excluded Mesh
         if (this._excludedMeshes && this._excludedMeshes[mesh.uniqueId]) {
             return false;
@@ -583,7 +635,7 @@ export class HighlightLayer extends EffectLayer {
      * @param material The material used on the mesh
      * @returns true if it can be rendered otherwise false
      */
-    protected _canRenderMesh(mesh: AbstractMesh, material: Material): boolean {
+    protected override _canRenderMesh(mesh: AbstractMesh, material: Material): boolean {
         // all meshes can be rendered in the highlight layer, even transparent ones
         return true;
     }
@@ -592,7 +644,7 @@ export class HighlightLayer extends EffectLayer {
      * Adds specific effects defines.
      * @param defines The defines to add specifics to.
      */
-    protected _addCustomEffectDefines(defines: string[]): void {
+    protected override _addCustomEffectDefines(defines: string[]): void {
         defines.push("#define HIGHLIGHT");
     }
 
@@ -677,7 +729,7 @@ export class HighlightLayer extends EffectLayer {
      * @param mesh mesh to test
      * @returns true if the mesh will be highlighted by the current HighlightLayer
      */
-    public hasMesh(mesh: AbstractMesh): boolean {
+    public override hasMesh(mesh: AbstractMesh): boolean {
         if (!this._meshes) {
             return false;
         }
@@ -803,7 +855,7 @@ export class HighlightLayer extends EffectLayer {
     /**
      * Dispose the highlight layer and free resources.
      */
-    public dispose(): void {
+    public override dispose(): void {
         if (this._meshes) {
             // Clean mesh references
             for (const id in this._meshes) {
@@ -844,7 +896,7 @@ export class HighlightLayer extends EffectLayer {
      * Gets the class name of the effect layer
      * @returns the string with the class name of the effect layer
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "HighlightLayer";
     }
 
@@ -896,7 +948,7 @@ export class HighlightLayer extends EffectLayer {
      * @param rootUrl defines the root URL containing the Highlight layer information
      * @returns a parsed Highlight layer
      */
-    public static Parse(parsedHightlightLayer: any, scene: Scene, rootUrl: string): HighlightLayer {
+    public static override Parse(parsedHightlightLayer: any, scene: Scene, rootUrl: string): HighlightLayer {
         const hl = SerializationHelper.Parse(() => new HighlightLayer(parsedHightlightLayer.name, scene, parsedHightlightLayer.options), parsedHightlightLayer, scene, rootUrl);
         let index;
 

@@ -41,6 +41,15 @@ export class EXT_mesh_gpu_instancing implements IGLTFExporterExtensionV2 {
         return this._wasUsed;
     }
 
+    /**
+     * After node is exported
+     * @param context the GLTF context when loading the asset
+     * @param node the node exported
+     * @param babylonNode the corresponding babylon node
+     * @param nodeMap map from babylon node id to node index
+     * @param binaryWriter binary writer
+     * @returns nullable promise, resolves with the node
+     */
     public postExportNodeAsync(
         context: string,
         node: Nullable<INode>,
@@ -57,7 +66,7 @@ export class EXT_mesh_gpu_instancing implements IGLTFExporterExtensionV2 {
                     const noRotation = Quaternion.Identity();
                     const noScale = Vector3.One();
 
-                    // retreive all the instance world matrix
+                    // retrieve all the instance world matrix
                     const matrix = babylonNode.thinInstanceGetWorldMatrices();
 
                     const iwt = TmpVectors.Vector3[2];

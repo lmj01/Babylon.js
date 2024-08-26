@@ -1,6 +1,6 @@
 import { Camera } from "../Cameras/camera";
 import type { Scene } from "../scene";
-import type { Engine } from "../Engines/engine";
+import type { AbstractEngine } from "../Engines/abstractEngine";
 import type { AbstractMesh } from "../Meshes/abstractMesh";
 import type { RenderTargetTexture } from "../Materials/Textures/renderTargetTexture";
 import type { ISceneSerializableComponent } from "../sceneComponent";
@@ -13,7 +13,7 @@ import { EngineStore } from "../Engines/engineStore";
 AbstractScene.AddParser(SceneComponentConstants.NAME_EFFECTLAYER, (parsedData: any, scene: Scene, container: AssetContainer, rootUrl: string) => {
     if (parsedData.effectLayers) {
         if (!container.effectLayers) {
-            container.effectLayers = new Array<EffectLayer>();
+            container.effectLayers = [] as EffectLayer[];
         }
 
         for (let index = 0; index < parsedData.effectLayers.length; index++) {
@@ -75,7 +75,7 @@ export class EffectLayerSceneComponent implements ISceneSerializableComponent {
      */
     public scene: Scene;
 
-    private _engine: Engine;
+    private _engine: AbstractEngine;
     private _renderEffects = false;
     private _needStencil = false;
     private _previousStencilState = false;
@@ -90,7 +90,7 @@ export class EffectLayerSceneComponent implements ISceneSerializableComponent {
             return;
         }
         this._engine = this.scene.getEngine();
-        this.scene.effectLayers = new Array<EffectLayer>();
+        this.scene.effectLayers = [] as EffectLayer[];
     }
 
     /**

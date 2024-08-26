@@ -8,7 +8,9 @@ import type { Effect } from "../Materials/effect";
 import { PostProcess } from "../PostProcesses/postProcess";
 import { PostProcessManager } from "../PostProcesses/postProcessManager";
 
-import type { ThinEngine } from "../Engines/thinEngine";
+import type { AbstractEngine } from "../Engines/abstractEngine";
+
+import "../Engines/Extensions/engine.readTexture";
 
 import "../Shaders/minmaxRedux.fragment";
 
@@ -30,7 +32,7 @@ export class MinMaxReducer {
     protected _postProcessManager: PostProcessManager;
     protected _onAfterUnbindObserver: Nullable<Observer<RenderTargetTexture>>;
     protected _forceFullscreenViewport = true;
-    protected _onContextRestoredObserver: Nullable<Observer<ThinEngine>>;
+    protected _onContextRestoredObserver: Nullable<Observer<AbstractEngine>>;
 
     /**
      * Creates a min/max reducer

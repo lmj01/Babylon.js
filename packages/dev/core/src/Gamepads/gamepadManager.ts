@@ -2,12 +2,11 @@ import { Observable } from "../Misc/observable";
 import { IsWindowObjectExist } from "../Misc/domManagement";
 import type { Nullable } from "../types";
 import type { Scene } from "../scene";
-import { PoseEnabledControllerHelper } from "../Gamepads/Controllers/poseEnabledController";
 import { Xbox360Pad } from "./xboxGamepad";
 import { Gamepad, GenericPad } from "./gamepad";
-import { Engine } from "../Engines/engine";
 import { DualShockPad } from "./dualShockGamepad";
 import { Tools } from "../Misc/tools";
+import { AbstractEngine } from "core/Engines/abstractEngine";
 /**
  * Manager for handling gamepads
  */
@@ -181,10 +180,6 @@ export class GamepadManager {
             newGamepad = new Xbox360Pad(gamepad.id, gamepad.index, gamepad, xboxOne);
         } else if (dualShock) {
             newGamepad = new DualShockPad(gamepad.id, gamepad.index, gamepad);
-        }
-        // if pose is supported, use the (WebVR) pose enabled controller
-        else if (gamepad.pose) {
-            newGamepad = PoseEnabledControllerHelper.InitiateController(gamepad);
         } else {
             newGamepad = new GenericPad(gamepad.id, gamepad.index, gamepad);
         }
@@ -227,7 +222,7 @@ export class GamepadManager {
         }
 
         if (this._isMonitoring) {
-            Engine.QueueNewFrame(() => {
+            AbstractEngine.QueueNewFrame(() => {
                 this._checkGamepadsStatus();
             });
         }

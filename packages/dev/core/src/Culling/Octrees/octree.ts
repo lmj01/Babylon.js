@@ -19,7 +19,7 @@ export class Octree<T> {
     /**
      * Content stored in the octree
      */
-    public dynamicContent = new Array<T>();
+    public dynamicContent: T[] = [];
 
     private _maxBlockCapacity: number;
     private _selectionContent: SmartArrayNoDuplicate<T>;
@@ -35,7 +35,7 @@ export class Octree<T> {
     constructor(
         creationFunc: (entry: T, block: OctreeBlock<T>) => void,
         maxBlockCapacity?: number,
-        /** Defines the maximum depth (sub-levels) for your octree. Default value is 2, which means 8 8 8 = 512 blocks :) (This parameter takes precedence over capacity.) */
+        /** [2] Defines the maximum depth (sub-levels) for your octree. Default value is 2, which means 8 8 8 = 512 blocks :) (This parameter takes precedence over capacity.) */
         public maxDepth = 2
     ) {
         this._maxBlockCapacity = maxBlockCapacity || 64;
@@ -143,8 +143,8 @@ export class Octree<T> {
 
     /**
      * Adds a mesh into the octree block if it intersects the block
-     * @param entry
-     * @param block
+     * @param entry defines the mesh to try to add to the block
+     * @param block defines the block where the mesh should be added
      */
     public static CreationFuncForMeshes = (entry: AbstractMesh, block: OctreeBlock<AbstractMesh>): void => {
         const boundingInfo = entry.getBoundingInfo();
@@ -155,8 +155,8 @@ export class Octree<T> {
 
     /**
      * Adds a submesh into the octree block if it intersects the block
-     * @param entry
-     * @param block
+     * @param entry defines the submesh to try to add to the block
+     * @param block defines the block where the submesh should be added
      */
     public static CreationFuncForSubMeshes = (entry: SubMesh, block: OctreeBlock<SubMesh>): void => {
         const boundingInfo = entry.getBoundingInfo();

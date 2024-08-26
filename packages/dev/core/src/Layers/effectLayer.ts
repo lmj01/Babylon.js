@@ -7,7 +7,7 @@ import type { Camera } from "../Cameras/camera";
 import type { Scene } from "../scene";
 import type { ISize } from "../Maths/math.size";
 import { Color4 } from "../Maths/math.color";
-import { Engine } from "../Engines/engine";
+import type { AbstractEngine } from "../Engines/abstractEngine";
 import { EngineStore } from "../Engines/engineStore";
 import { VertexBuffer } from "../Buffers/buffer";
 import type { SubMesh } from "../Meshes/subMesh";
@@ -19,16 +19,16 @@ import { Texture } from "../Materials/Textures/texture";
 import { RenderTargetTexture } from "../Materials/Textures/renderTargetTexture";
 import type { Effect } from "../Materials/effect";
 import { Material } from "../Materials/material";
-import { MaterialHelper } from "../Materials/materialHelper";
 import { Constants } from "../Engines/constants";
 
-import "../Shaders/glowMapGeneration.fragment";
-import "../Shaders/glowMapGeneration.vertex";
 import { _WarnImport } from "../Misc/devTools";
 import type { DataBuffer } from "../Buffers/dataBuffer";
 import { EffectFallbacks } from "../Materials/effectFallbacks";
 import { DrawWrapper } from "../Materials/drawWrapper";
 import { addClipPlaneUniforms, bindClipPlane, prepareStringDefinesForClipPlanes } from "../Materials/clipPlaneMaterialHelper";
+import { BindMorphTargetParameters, PrepareAttributesForMorphTargetsInfluencers, PushAttributesForInstances } from "../Materials/materialHelper.functions";
+import { GetExponentOfTwo } from "../Misc/tools.functions";
+import { ShaderLanguage } from "core/Materials/shaderLanguage";
 
 /**
  * Effect layer options. This helps customizing the behaviour
@@ -65,6 +65,11 @@ export interface IEffectLayerOptions {
      * The type of the main texture. Default: TEXTURETYPE_UNSIGNED_INT
      */
     mainTextureType: number;
+
+    /**
+     * Whether or not to generate a stencil buffer. Default: false
+     */
+    generateStencilBuffer: boolean;
 }
 
 /**
@@ -82,7 +87,7 @@ export abstract class EffectLayer {
     private _mergeDrawWrapper: DrawWrapper[];
 
     protected _scene: Scene;
-    protected _engine: Engine;
+    protected _engine: AbstractEngine;
     protected _maxSize: number = 0;
     protected _mainTextureDesiredSize: ISize = { width: 0, height: 0 };
     protected _mainTexture: RenderTargetTexture;
@@ -91,6 +96,12 @@ export abstract class EffectLayer {
     protected _textures: BaseTexture[] = [];
     protected _emissiveTextureAndColor: { texture: Nullable<BaseTexture>; color: Color4 } = { texture: null, color: new Color4() };
     protected _effectIntensity: { [meshUniqueId: number]: number } = {};
+
+    /**
+     * Force all the effect layers to compile to glsl even on WebGPU engines.
+     * False by default. This is mostly meant for backward compatibility.
+     */
+    public static ForceGLSL = false;
 
     /**
      * The name of the layer
@@ -177,6 +188,16 @@ export abstract class EffectLayer {
         return this._mainTexture;
     }
 
+    /** Shader language used by the material */
+    protected _shaderLanguage = ShaderLanguage.GLSL;
+
+    /**
+     * Gets the shader language used in this material.
+     */
+    public get shaderLanguage(): ShaderLanguage {
+        return this._shaderLanguage;
+    }
+
     /**
      * @internal
      */
@@ -233,16 +254,24 @@ export abstract class EffectLayer {
      * Instantiates a new effect Layer and references it in the scene.
      * @param name The name of the layer
      * @param scene The scene to use the layer in
+     * @param forceGLSL Use the GLSL code generation for the shader (even on WebGPU). Default is false
      */
     constructor(
         /** The Friendly of the effect in the scene */
         name: string,
-        scene?: Scene
+        scene?: Scene,
+        forceGLSL = false
     ) {
         this.name = name;
 
         this._scene = scene || <Scene>EngineStore.LastCreatedScene;
         EffectLayer._SceneComponentInitialization(this._scene);
+
+        const engine = this._scene.getEngine();
+
+        if (engine.isWebGPU && !forceGLSL && !EffectLayer.ForceGLSL) {
+            this._shaderLanguage = ShaderLanguage.WGSL;
+        }
 
         this._engine = this._scene.getEngine();
         this._maxSize = this._engine.getCaps().maxTextureSize;
@@ -254,6 +283,8 @@ export abstract class EffectLayer {
         this._generateIndexBuffer();
         this._generateVertexBuffer();
     }
+
+    private _shadersLoaded = false;
 
     /**
      * Get the effect name of the layer.
@@ -332,6 +363,7 @@ export abstract class EffectLayer {
             camera: null,
             renderingGroupId: -1,
             mainTextureType: Constants.TEXTURETYPE_UNSIGNED_INT,
+            generateStencilBuffer: false,
             ...options,
         };
 
@@ -385,10 +417,10 @@ export abstract class EffectLayer {
             this._mainTextureDesiredSize.height = this._engine.getRenderHeight() * this._effectLayerOptions.mainTextureRatio;
 
             this._mainTextureDesiredSize.width = this._engine.needPOTTextures
-                ? Engine.GetExponentOfTwo(this._mainTextureDesiredSize.width, this._maxSize)
+                ? GetExponentOfTwo(this._mainTextureDesiredSize.width, this._maxSize)
                 : this._mainTextureDesiredSize.width;
             this._mainTextureDesiredSize.height = this._engine.needPOTTextures
-                ? Engine.GetExponentOfTwo(this._mainTextureDesiredSize.height, this._maxSize)
+                ? GetExponentOfTwo(this._mainTextureDesiredSize.height, this._maxSize)
                 : this._mainTextureDesiredSize.height;
         }
 
@@ -409,7 +441,11 @@ export abstract class EffectLayer {
             this._scene,
             false,
             true,
-            this._effectLayerOptions.mainTextureType
+            this._effectLayerOptions.mainTextureType,
+            false,
+            Texture.TRILINEAR_SAMPLINGMODE,
+            true,
+            this._effectLayerOptions.generateStencilBuffer
         );
         this._mainTexture.activeCamera = this._effectLayerOptions.camera;
         this._mainTexture.wrapU = Texture.CLAMP_ADDRESSMODE;
@@ -482,13 +518,21 @@ export abstract class EffectLayer {
             const previousAlphaMode = engine.getAlphaMode();
 
             for (index = 0; index < transparentSubMeshes.length; index++) {
-                this._renderSubMesh(transparentSubMeshes.data[index], true);
+                const subMesh = transparentSubMeshes.data[index];
+                const material = subMesh.getMaterial();
+                if (material && material.needDepthPrePass) {
+                    const engine = material.getScene().getEngine();
+                    engine.setColorWrite(false);
+                    this._renderSubMesh(subMesh);
+                    engine.setColorWrite(true);
+                }
+                this._renderSubMesh(subMesh, true);
             }
 
             engine.setAlphaMode(previousAlphaMode);
         };
 
-        this._mainTexture.onClearObservable.add((engine: Engine) => {
+        this._mainTexture.onClearObservable.add((engine: AbstractEngine) => {
             engine.clear(this.neutralColor, true, true, true);
         });
 
@@ -649,21 +693,21 @@ export abstract class EffectLayer {
         const manager = (<Mesh>mesh).morphTargetManager;
         let morphInfluencers = 0;
         if (manager) {
-            if (manager.numInfluencers > 0) {
+            morphInfluencers = manager.numMaxInfluencers || manager.numInfluencers;
+            if (morphInfluencers > 0) {
                 defines.push("#define MORPHTARGETS");
-                morphInfluencers = manager.numInfluencers;
                 defines.push("#define NUM_MORPH_INFLUENCERS " + morphInfluencers);
                 if (manager.isUsingTextureForTargets) {
                     defines.push("#define MORPHTARGETS_TEXTURE");
                 }
-                MaterialHelper.PrepareAttributesForMorphTargetsInfluencers(attribs, mesh, morphInfluencers);
+                PrepareAttributesForMorphTargetsInfluencers(attribs, mesh, morphInfluencers);
             }
         }
 
         // Instances
         if (useInstances) {
             defines.push("#define INSTANCES");
-            MaterialHelper.PushAttributesForInstances(attribs);
+            PushAttributesForInstances(attribs);
             if (subMesh.getRenderingMesh().hasThinInstances) {
                 defines.push("#define THIN_INSTANCES");
             }
@@ -685,6 +729,7 @@ export abstract class EffectLayer {
                 "viewProjection",
                 "glowColor",
                 "morphTargetInfluences",
+                "morphTargetCount",
                 "boneTextureWidth",
                 "diffuseMatrix",
                 "emissiveMatrix",
@@ -707,13 +752,28 @@ export abstract class EffectLayer {
                     fallbacks,
                     undefined,
                     undefined,
-                    { maxSimultaneousMorphTargets: morphInfluencers }
+                    { maxSimultaneousMorphTargets: morphInfluencers },
+                    this._shaderLanguage,
+                    this._shadersLoaded
+                        ? undefined
+                        : async () => {
+                              await this._importShadersAsync();
+                              this._shadersLoaded = true;
+                          }
                 ),
                 join
             );
         }
 
         return drawWrapper.effect!.isReady();
+    }
+
+    protected async _importShadersAsync(): Promise<void> {
+        if (this._shaderLanguage === ShaderLanguage.WGSL) {
+            await Promise.all([import("../ShadersWGSL/glowMapGeneration.vertex"), import("../ShadersWGSL/glowMapGeneration.fragment")]);
+        } else {
+            await Promise.all([import("../Shaders/glowMapGeneration.vertex"), import("../Shaders/glowMapGeneration.fragment")]);
+        }
     }
 
     /**
@@ -864,7 +924,7 @@ export abstract class EffectLayer {
         }
 
         // Culling
-        let sideOrientation = renderingMesh.overrideMaterialSideOrientation ?? material.sideOrientation;
+        let sideOrientation = material._getEffectiveOrientation(renderingMesh);
         const mainDeterminant = effectiveMesh._getWorldMatrixDeterminant();
         if (mainDeterminant < 0) {
             sideOrientation = sideOrientation === Material.ClockWiseSideOrientation ? Material.CounterClockWiseSideOrientation : Material.ClockWiseSideOrientation;
@@ -975,7 +1035,7 @@ export abstract class EffectLayer {
                 }
 
                 // Morph targets
-                MaterialHelper.BindMorphTargetParameters(renderingMesh, effect);
+                BindMorphTargetParameters(renderingMesh, effect);
                 if (renderingMesh.morphTargetManager && renderingMesh.morphTargetManager.isUsingTextureForTargets) {
                     renderingMesh.morphTargetManager._bind(effect);
                 }
@@ -1007,6 +1067,7 @@ export abstract class EffectLayer {
     /**
      * Defines whether the current material of the mesh should be use to render the effect.
      * @param mesh defines the current mesh to render
+     * @returns true if the mesh material should be use
      */
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     protected _useMeshMaterial(mesh: AbstractMesh): boolean {

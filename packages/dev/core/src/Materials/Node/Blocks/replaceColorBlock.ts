@@ -37,7 +37,7 @@ export class ReplaceColorBlock extends NodeMaterialBlock {
      * Gets the current class name
      * @returns the class name
      */
-    public getClassName() {
+    public override getClassName() {
         return "ReplaceColorBlock";
     }
 
@@ -76,17 +76,17 @@ export class ReplaceColorBlock extends NodeMaterialBlock {
         return this._outputs[0];
     }
 
-    protected _buildBlock(state: NodeMaterialBuildState) {
+    protected override _buildBlock(state: NodeMaterialBuildState) {
         super._buildBlock(state);
 
         const output = this._outputs[0];
 
-        state.compilationString += this._declareOutput(output, state) + `;\r\n`;
-        state.compilationString += `if (length(${this.value.associatedVariableName} - ${this.reference.associatedVariableName}) < ${this.distance.associatedVariableName}) {\r\n`;
-        state.compilationString += `${output.associatedVariableName} = ${this.replacement.associatedVariableName};\r\n`;
-        state.compilationString += `} else {\r\n`;
-        state.compilationString += `${output.associatedVariableName} = ${this.value.associatedVariableName};\r\n`;
-        state.compilationString += `}\r\n`;
+        state.compilationString += state._declareOutput(output) + `;\n`;
+        state.compilationString += `if (length(${this.value.associatedVariableName} - ${this.reference.associatedVariableName}) < ${this.distance.associatedVariableName}) {\n`;
+        state.compilationString += `${output.associatedVariableName} = ${this.replacement.associatedVariableName};\n`;
+        state.compilationString += `} else {\n`;
+        state.compilationString += `${output.associatedVariableName} = ${this.value.associatedVariableName};\n`;
+        state.compilationString += `}\n`;
         return this;
     }
 }

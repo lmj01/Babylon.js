@@ -1,6 +1,6 @@
 import { PrePassRenderTarget } from "../Materials/Textures/prePassRenderTarget";
 import type { Scene } from "../scene";
-import type { Engine } from "../Engines/engine";
+import type { AbstractEngine } from "../Engines/abstractEngine";
 import { Constants } from "../Engines/constants";
 import type { PostProcess } from "../PostProcesses/postProcess";
 import type { Effect } from "../Materials/effect";
@@ -14,6 +14,8 @@ import type { SubMesh } from "../Meshes/subMesh";
 import type { PrePassEffectConfiguration } from "./prePassEffectConfiguration";
 import type { RenderTargetTexture } from "../Materials/Textures/renderTargetTexture";
 import { GeometryBufferRenderer } from "../Rendering/geometryBufferRenderer";
+
+import "../Engines/Extensions/engine.multiRender";
 
 /**
  * Renders a pre pass of the scene
@@ -42,7 +44,7 @@ export class PrePassRenderer {
     public excludedMaterials: Material[] = [];
 
     private _scene: Scene;
-    private _engine: Engine;
+    private _engine: AbstractEngine;
 
     /**
      * Number of textures in the multi render target texture where the scene is directly rendered
@@ -59,6 +61,23 @@ export class PrePassRenderer {
     private _defaultAttachments: number[];
     private _clearAttachments: number[];
     private _clearDepthAttachments: number[];
+    private _generateNormalsInWorldSpace = false;
+
+    /**
+     * Indicates if the prepass renderer is generating normals in world space or camera space (default: camera space)
+     */
+    public get generateNormalsInWorldSpace() {
+        return this._generateNormalsInWorldSpace;
+    }
+
+    public set generateNormalsInWorldSpace(value: boolean) {
+        if (this._generateNormalsInWorldSpace === value) {
+            return;
+        }
+
+        this._generateNormalsInWorldSpace = value;
+        this._markAllMaterialsAsPrePassDirty();
+    }
 
     /**
      * Returns the index of a texture in the multi render target texture array.
@@ -267,10 +286,16 @@ export class PrePassRenderer {
             type = Constants.TEXTURETYPE_HALF_FLOAT;
         }
 
-        if (type !== Constants.TEXTURETYPE_FLOAT) {
-            for (let i = 0; i < PrePassRenderer.TextureFormats.length; ++i) {
-                if (PrePassRenderer.TextureFormats[i].type === Constants.TEXTURETYPE_FLOAT) {
-                    PrePassRenderer.TextureFormats[Constants.PREPASS_DEPTH_TEXTURE_TYPE].type = type;
+        for (let i = 0; i < PrePassRenderer.TextureFormats.length; ++i) {
+            const format = PrePassRenderer.TextureFormats[i].format;
+            if (PrePassRenderer.TextureFormats[i].type === Constants.TEXTURETYPE_FLOAT) {
+                PrePassRenderer.TextureFormats[Constants.PREPASS_DEPTH_TEXTURE_TYPE].type = type;
+                if (
+                    (format === Constants.TEXTUREFORMAT_R || format === Constants.TEXTUREFORMAT_RG || format === Constants.TEXTUREFORMAT_RGBA) &&
+                    !this._engine._caps.supportFloatTexturesResolve
+                ) {
+                    // We don't know in advance if the texture will be used as a resolve target, so we revert to half_float if the extension to resolve full float textures is not supported
+                    PrePassRenderer.TextureFormats[Constants.PREPASS_DEPTH_TEXTURE_TYPE].type = Constants.TEXTURETYPE_HALF_FLOAT;
                 }
             }
         }
@@ -479,7 +504,7 @@ export class PrePassRenderer {
     /**
      * Sets an intermediary texture between prepass and postprocesses. This texture
      * will be used as input for post processes
-     * @param rt
+     * @param rt The render target texture to use
      * @returns true if there are postprocesses that will use this texture,
      * false if there is no postprocesses - and the function has no effect
      */
@@ -527,8 +552,12 @@ export class PrePassRenderer {
      * @internal
      */
     public _clear() {
+        if (this._isDirty) {
+            this._update();
+        }
+
         if (this._enabled && this._currentTarget.enabled) {
-            this._bindFrameBuffer(this._currentTarget);
+            this._bindFrameBuffer();
 
             // Clearing other attachment with 0 on all other attachments
             this._engine.bindAttachments(this._clearAttachments);
@@ -543,7 +572,7 @@ export class PrePassRenderer {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    private _bindFrameBuffer(prePassRenderTarget: PrePassRenderTarget) {
+    private _bindFrameBuffer() {
         if (this._enabled && this._currentTarget.enabled) {
             this._currentTarget._checkSize();
             const internalTexture = this._currentTarget.renderTarget;
@@ -581,6 +610,21 @@ export class PrePassRenderer {
 
         this._effectConfigurations.push(cfg);
         return cfg;
+    }
+
+    /**
+     * Retrieves an effect configuration by name
+     * @param name the name of the effect configuration
+     * @returns the effect configuration, or null if not present
+     */
+    public getEffectConfiguration(name: string): Nullable<PrePassEffectConfiguration> {
+        for (let i = 0; i < this._effectConfigurations.length; i++) {
+            if (this._effectConfigurations[i].name === name) {
+                return this._effectConfigurations[i];
+            }
+        }
+
+        return null;
     }
 
     private _enable() {
@@ -684,7 +728,7 @@ export class PrePassRenderer {
             firstPP = firstCameraPP;
         }
 
-        this._bindFrameBuffer(prePassRenderTarget);
+        this._bindFrameBuffer();
         this._linkInternalTexture(prePassRenderTarget, firstPP);
     }
 

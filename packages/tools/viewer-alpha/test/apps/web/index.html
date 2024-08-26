@@ -1,0 +1,49 @@
+<!doctype html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Viewer Local Development</title>
+
+        <style>
+            html,
+            body {
+                width: 100%;
+                height: 100%;
+                padding: 0;
+                margin: 0;
+                overflow: hidden;
+            }
+        </style>
+    </head>
+
+    <body ondragover="event.preventDefault()" ondrop="onDrop(event)">
+        <babylon-viewer src="https://playground.babylonjs.com/scenes/BoomBox.glb" env="https://assets.babylonjs.com/environments/ulmerMuenster.env"> </babylon-viewer>
+        <script type="module" src="/packages/tools/viewer-alpha/src/index.ts"></script>
+        <script>
+            const viewerElement = document.querySelector("babylon-viewer");
+
+            (async () => {
+                // The module referenced in the script tag above is loaded asynchronously, so we need to wait for it to load and for the custom element to be defined.
+                // Alternatively, we could just await import("/packages/tools/viewer-alpha/src/index.ts") here instead.
+                await customElements.whenDefined("babylon-viewer");
+                // "BabylonViewer" is defined as the "library" in webpack.config.js and can be used to access the Viewer as needed.
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+                viewerElement.src = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/main/2.0/BrainStem/glTF-Binary/BrainStem.glb";
+                // error case
+                //viewerElement.src = 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/main/2.0/BrainStem/glTF-Binary/BrainStem2.glb';
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+                viewerElement.src = "https://playground.babylonjs.com/scenes/BoomBox.glb";
+            })();
+
+            async function onDrop(event) {
+                const file = event.dataTransfer.files[0];
+                if (file) {
+                    event.preventDefault();
+                    await customElements.whenDefined("babylon-viewer");
+                    await viewerElement.viewer.loadModelAsync(file);
+                }
+            }
+        </script>
+    </body>
+</html>

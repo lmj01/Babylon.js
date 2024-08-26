@@ -6,7 +6,7 @@ The viewer automatically interacts with the DOM, searching for HTML elements nam
 
 for basic and advanced usage instructions please read the doc at https://doc.babylonjs.com/features/featuresDeepDive/babylonViewer/viewerExamples
 
-The source code can be found at https://github.com/BabylonJS/Babylon.js/tree/master/Viewer
+The source code can be found at https://github.com/BabylonJS/Babylon.js/tree/master/packages/tools/viewer
 
 ## Basic usage
 
@@ -31,6 +31,8 @@ babylon {
 ## Installation instructions
 
 ### CDN
+
+> ⚠️ WARNING: The CDN should not be used in production environments. The purpose of our CDN is to serve Babylon packages to users learning how to use the platform or running small experiments. Once you've built an application and are ready to share it with the world at large, you should serve all packages from your own CDN.
 
 Compiled js files are offered on our public CDN here:
 

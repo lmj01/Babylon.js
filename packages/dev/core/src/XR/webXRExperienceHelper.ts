@@ -10,6 +10,8 @@ import { WebXRFeatureName, WebXRFeaturesManager } from "./webXRFeaturesManager";
 import { Logger } from "../Misc/logger";
 import { UniversalCamera } from "../Cameras/universalCamera";
 import { Quaternion, Vector3 } from "../Maths/math.vector";
+import type { ThinEngine } from "../Engines/thinEngine";
+import { AbstractEngine } from "core/Engines/abstractEngine";
 
 /**
  * Options for setting up XR spectator camera.
@@ -127,6 +129,7 @@ export class WebXRExperienceHelper implements IDisposable {
         sessionCreationOptions: XRSessionInit = {}
     ): Promise<WebXRSessionManager> {
         if (!this._supported) {
+            // eslint-disable-next-line no-throw-literal
             throw "WebXR not supported in this browser or environment";
         }
         this._setState(WebXRState.ENTERING_XR);
@@ -143,7 +146,6 @@ export class WebXRExperienceHelper implements IDisposable {
         try {
             await this.sessionManager.initializeSessionAsync(sessionMode, sessionCreationOptions);
             await this.sessionManager.setReferenceSpaceTypeAsync(referenceSpaceType);
-            const baseLayer = await renderTarget.initializeXRLayerAsync(this.sessionManager.session);
 
             const xrRenderState: XRRenderStateInit = {
                 // if maxZ is 0 it should be "Infinity", but it doesn't work with the WebXR API. Setting to a large number.
@@ -153,6 +155,7 @@ export class WebXRExperienceHelper implements IDisposable {
 
             // The layers feature will have already initialized the xr session's layers on session init.
             if (!this.featuresManager.getEnabledFeature(WebXRFeatureName.LAYERS)) {
+                const baseLayer = await renderTarget.initializeXRLayerAsync(this.sessionManager.session);
                 xrRenderState.baseLayer = baseLayer;
             }
 
@@ -176,7 +179,11 @@ export class WebXRExperienceHelper implements IDisposable {
                 // reset the camera's position to the origin
                 this.camera.position.set(0, 0, 0);
                 this.camera.rotationQuaternion.set(0, 0, 0, 1);
+                this.onInitialXRPoseSetObservable.notifyObservers(this.camera);
             }
+
+            // Vision Pro suspends the audio context when entering XR, so we resume it here if needed.
+            AbstractEngine.audioEngine?._resumeAudioContextOnStateChange();
 
             this.sessionManager.onXRSessionEnded.addOnce(() => {
                 // when using the back button and not the exit button (default on mobile), the session is ending but the EXITING state was not set
@@ -211,8 +218,8 @@ export class WebXRExperienceHelper implements IDisposable {
             });
             return this.sessionManager;
         } catch (e) {
-            console.log(e);
-            console.log(e.message);
+            Logger.Log(e);
+            Logger.Log(e.message);
             this._setState(WebXRState.NOT_IN_XR);
             throw e;
         }
@@ -284,7 +291,7 @@ export class WebXRExperienceHelper implements IDisposable {
                     this._scene.onAfterRenderCameraObservable.add((camera) => {
                         if (camera === this.camera) {
                             // reset the dimensions object for correct resizing
-                            this._scene.getEngine().framebufferDimensionsObject = null;
+                            (this._scene.getEngine() as ThinEngine).framebufferDimensionsObject = null;
                         }
                     });
                 } else if (this.state === WebXRState.EXITING_XR) {

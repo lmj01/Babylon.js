@@ -1,12 +1,9 @@
-import { Observable } from "../Misc/observable";
 import type { Nullable } from "../types";
 import type { Scene } from "../scene";
 import { InternalTexture, InternalTextureSource } from "../Materials/Textures/internalTexture";
 import type { IOfflineProvider } from "../Offline/IOfflineProvider";
 import type { ILoadingScreen } from "../Loading/loadingScreen";
-import { IsDocumentAvailable, IsWindowObjectExist } from "../Misc/domManagement";
 import { EngineStore } from "./engineStore";
-import { _WarnImport } from "../Misc/devTools";
 import type { WebGLPipelineContext } from "./WebGL/webGLPipelineContext";
 import type { IPipelineContext } from "./IPipelineContext";
 import type { ICustomAnimationFrameRequester } from "../Misc/customAnimationFrameRequester";
@@ -14,10 +11,8 @@ import type { EngineOptions } from "./thinEngine";
 import { ThinEngine } from "./thinEngine";
 import { Constants } from "./constants";
 import type { IViewportLike, IColor4Like } from "../Maths/math.like";
-import type { RenderTargetTexture } from "../Materials/Textures/renderTargetTexture";
 import { PerformanceMonitor } from "../Misc/performanceMonitor";
 import type { DataBuffer } from "../Buffers/dataBuffer";
-import { PerfCounter } from "../Misc/perfCounter";
 import { WebGLDataBuffer } from "../Meshes/WebGL/webGLDataBuffer";
 import { Logger } from "../Misc/logger";
 import type { RenderTargetWrapper } from "./renderTargetWrapper";
@@ -26,30 +21,27 @@ import { WebGLHardwareTexture } from "./WebGL/webGLHardwareTexture";
 import "./Extensions/engine.alpha";
 import "./Extensions/engine.readTexture";
 import "./Extensions/engine.dynamicBuffer";
-import type { IAudioEngine } from "../Audio/Interfaces/IAudioEngine";
+import "./AbstractEngine/abstractEngine.loadingScreen";
+import "./AbstractEngine/abstractEngine.dom";
+import "./AbstractEngine/abstractEngine.states";
+import "./AbstractEngine/abstractEngine.renderPass";
+import "./AbstractEngine/abstractEngine.texture";
 
-declare type Material = import("../Materials/material").Material;
-declare type PostProcess = import("../PostProcesses/postProcess").PostProcess;
-
-/**
- * Defines the interface used by display changed events
- */
-export interface IDisplayChangedEventArgs {
-    /** Gets the vrDisplay object (if any) */
-    vrDisplay: Nullable<any>;
-    /** Gets a boolean indicating if webVR is supported */
-    vrSupported: boolean;
-}
-
-/**
- * Defines the interface used by objects containing a viewport (like a camera)
- */
-interface IViewportOwnerLike {
-    /**
-     * Gets or sets the viewport
-     */
-    viewport: IViewportLike;
-}
+import type { PostProcess } from "../PostProcesses/postProcess";
+import { AbstractEngine } from "./abstractEngine";
+import {
+    CreateImageBitmapFromSource,
+    ExitFullscreen,
+    ExitPointerlock,
+    GetFontOffset,
+    RequestFullscreen,
+    RequestPointerlock,
+    ResizeImageBitmap,
+    _CommonDispose,
+    _CommonInit,
+} from "./engine.common";
+import { PerfCounter } from "../Misc/perfCounter";
+import "../Audio/audioEngine";
 
 /**
  * The engine class is responsible for interfacing with all lower-level APIs such as WebGL and Audio
@@ -262,26 +254,26 @@ export class Engine extends ThinEngine {
      * Returns the current npm package of the sdk
      */
     // Not mixed with Version for tooling purpose.
-    public static get NpmPackage(): string {
-        return ThinEngine.NpmPackage;
+    public static override get NpmPackage(): string {
+        return AbstractEngine.NpmPackage;
     }
 
     /**
      * Returns the current version of the framework
      */
-    public static get Version(): string {
-        return ThinEngine.Version;
+    public static override get Version(): string {
+        return AbstractEngine.Version;
     }
 
     /** Gets the list of created engines */
-    public static get Instances(): Engine[] {
+    public static get Instances(): AbstractEngine[] {
         return EngineStore.Instances;
     }
 
     /**
      * Gets the latest created engine
      */
-    public static get LastCreatedEngine(): Nullable<Engine> {
+    public static get LastCreatedEngine(): Nullable<AbstractEngine> {
         return EngineStore.LastCreatedEngine;
     }
 
@@ -293,80 +285,8 @@ export class Engine extends ThinEngine {
     }
 
     /** @internal */
-    /**
-     * Engine abstraction for loading and creating an image bitmap from a given source string.
-     * @param imageSource source to load the image from.
-     * @param options An object that sets options for the image's extraction.
-     * @returns ImageBitmap.
-     */
-    public _createImageBitmapFromSource(imageSource: string, options?: ImageBitmapOptions): Promise<ImageBitmap> {
-        const promise = new Promise<ImageBitmap>((resolve, reject) => {
-            const image = new Image();
-            image.onload = () => {
-                image.decode().then(() => {
-                    this.createImageBitmap(image, options).then((imageBitmap) => {
-                        resolve(imageBitmap);
-                    });
-                });
-            };
-            image.onerror = () => {
-                reject(`Error loading image ${image.src}`);
-            };
 
-            image.src = imageSource;
-        });
-
-        return promise;
-    }
-
-    /**
-     * Engine abstraction for createImageBitmap
-     * @param image source for image
-     * @param options An object that sets options for the image's extraction.
-     * @returns ImageBitmap
-     */
-    public createImageBitmap(image: ImageBitmapSource, options?: ImageBitmapOptions): Promise<ImageBitmap> {
-        return createImageBitmap(image, options);
-    }
-
-    /**
-     * Resize an image and returns the image data as an uint8array
-     * @param image image to resize
-     * @param bufferWidth destination buffer width
-     * @param bufferHeight destination buffer height
-     * @returns an uint8array containing RGBA values of bufferWidth * bufferHeight size
-     */
-    public resizeImageBitmap(image: HTMLImageElement | ImageBitmap, bufferWidth: number, bufferHeight: number): Uint8Array {
-        const canvas = this.createCanvas(bufferWidth, bufferHeight);
-        const context = canvas.getContext("2d");
-
-        if (!context) {
-            throw new Error("Unable to get 2d context for resizeImageBitmap");
-        }
-
-        context.drawImage(image, 0, 0);
-
-        // Create VertexData from map data
-        // Cast is due to wrong definition in lib.d.ts from ts 1.3 - https://github.com/Microsoft/TypeScript/issues/949
-        const buffer = <Uint8Array>(<any>context.getImageData(0, 0, bufferWidth, bufferHeight).data);
-        return buffer;
-    }
-
-    /**
-     * Will flag all materials in all scenes in all engines as dirty to trigger new shader compilation
-     * @param flag defines which part of the materials must be marked as dirty
-     * @param predicate defines a predicate used to filter which materials should be affected
-     */
-    public static MarkAllMaterialsAsDirty(flag: number, predicate?: (mat: Material) => boolean): void {
-        for (let engineIndex = 0; engineIndex < Engine.Instances.length; engineIndex++) {
-            const engine = Engine.Instances[engineIndex];
-
-            for (let sceneIndex = 0; sceneIndex < engine.scenes.length; sceneIndex++) {
-                engine.scenes[sceneIndex].markAllMaterialsAsDirty(flag, predicate);
-            }
-        }
-    }
-
+    // eslint-disable-next-line jsdoc/require-returns-check
     /**
      * Method called to create the default loading screen.
      * This can be overridden in your own app.
@@ -374,199 +294,39 @@ export class Engine extends ThinEngine {
      * @returns The loading screen
      */
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    public static DefaultLoadingScreenFactory(canvas: HTMLCanvasElement): ILoadingScreen {
-        throw _WarnImport("LoadingScreen");
+    public static override DefaultLoadingScreenFactory(canvas: HTMLCanvasElement): ILoadingScreen {
+        return AbstractEngine.DefaultLoadingScreenFactory(canvas);
     }
 
-    /**
-     * Method called to create the default rescale post process on each engine.
-     */
-    public static _RescalePostProcessFactory: Nullable<(engine: Engine) => PostProcess> = null;
-
     // Members
-
-    /**
-     * Gets or sets a boolean to enable/disable IndexedDB support and avoid XHR on .manifest
-     **/
-    public enableOfflineSupport = false;
-
-    /**
-     * Gets or sets a boolean to enable/disable checking manifest if IndexedDB support is enabled (js will always consider the database is up to date)
-     **/
-    public disableManifestCheck = false;
-
-    /**
-     * Gets or sets a boolean to enable/disable the context menu (right-click) from appearing on the main canvas
-     */
-    public disableContextMenu: boolean = true;
-
-    /**
-     * Gets the list of created scenes
-     */
-    public scenes = new Array<Scene>();
-
-    /** @internal */
-    public _virtualScenes = new Array<Scene>();
-
-    /**
-     * Event raised when a new scene is created
-     */
-    public onNewSceneAddedObservable = new Observable<Scene>();
-
-    /**
-     * Gets the list of created postprocesses
-     */
-    public postProcesses = new Array<PostProcess>();
-
-    /**
-     * Gets a boolean indicating if the pointer is currently locked
-     */
-    public isPointerLock = false;
-
-    // Observables
-
-    /**
-     * Observable event triggered each time the rendering canvas is resized
-     */
-    public onResizeObservable = new Observable<Engine>();
-
-    /**
-     * Observable event triggered each time the canvas loses focus
-     */
-    public onCanvasBlurObservable = new Observable<Engine>();
-
-    /**
-     * Observable event triggered each time the canvas gains focus
-     */
-    public onCanvasFocusObservable = new Observable<Engine>();
-
-    /**
-     * Observable event triggered each time the canvas receives pointerout event
-     */
-    public onCanvasPointerOutObservable = new Observable<PointerEvent>();
-
-    /**
-     * Observable raised when the engine begins a new frame
-     */
-    public onBeginFrameObservable = new Observable<Engine>();
 
     /**
      * If set, will be used to request the next animation frame for the render loop
      */
     public customAnimationFrameRequester: Nullable<ICustomAnimationFrameRequester> = null;
 
-    /**
-     * Observable raised when the engine ends the current frame
-     */
-    public onEndFrameObservable = new Observable<Engine>();
-
-    /**
-     * Observable raised when the engine is about to compile a shader
-     */
-    public onBeforeShaderCompilationObservable = new Observable<Engine>();
-
-    /**
-     * Observable raised when the engine has just compiled a shader
-     */
-    public onAfterShaderCompilationObservable = new Observable<Engine>();
-
-    /**
-     * Gets the audio engine
-     * @see https://doc.babylonjs.com/features/featuresDeepDive/audio/playingSoundsMusic
-     * @ignorenaming
-     */
-    // eslint-disable-next-line @typescript-eslint/naming-convention
-    public static audioEngine: Nullable<IAudioEngine>;
-
-    /**
-     * Default AudioEngine factory responsible of creating the Audio Engine.
-     * By default, this will create a BabylonJS Audio Engine if the workload has been embedded.
-     */
-    public static AudioEngineFactory: (
-        hostElement: Nullable<HTMLElement>,
-        audioContext: Nullable<AudioContext>,
-        audioDestination: Nullable<AudioDestinationNode | MediaStreamAudioDestinationNode>
-    ) => IAudioEngine;
-
-    /**
-     * Default offline support factory responsible of creating a tool used to store data locally.
-     * By default, this will create a Database object if the workload has been embedded.
-     */
-    public static OfflineProviderFactory: (urlToScene: string, callbackManifestChecked: (checked: boolean) => any, disableManifestCheck: boolean) => IOfflineProvider;
-
-    private _loadingScreen: ILoadingScreen;
-    private _pointerLockRequested: boolean;
     private _rescalePostProcess: Nullable<PostProcess>;
 
-    // Deterministic lockstepMaxSteps
-    protected _deterministicLockstep: boolean = false;
-    protected _lockstepMaxSteps: number = 4;
-    protected _timeStep: number = 1 / 60;
-
-    protected get _supportsHardwareTextureRescaling() {
+    protected override get _supportsHardwareTextureRescaling() {
         return !!Engine._RescalePostProcessFactory;
     }
 
-    // FPS
-    private _fps = 60;
-    private _deltaTime = 0;
-
-    /** @internal */
-    public _drawCalls = new PerfCounter();
-
-    /** Gets or sets the tab index to set to the rendering canvas. 1 is the minimum value to set to be able to capture keyboard events */
-    public canvasTabIndex = 1;
-
-    /**
-     * Turn this value on if you want to pause FPS computation when in background
-     */
-    public disablePerformanceMonitorInBackground = false;
+    private _measureFps(): void {
+        this._performanceMonitor.sampleFrame();
+        this._fps = this._performanceMonitor.averageFPS;
+        this._deltaTime = this._performanceMonitor.instantaneousFrameTime || 0;
+    }
 
     private _performanceMonitor = new PerformanceMonitor();
     /**
      * Gets the performance monitor attached to this engine
      * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/optimize_your_scene#engineinstrumentation
      */
-    public get performanceMonitor(): PerformanceMonitor {
+    public override get performanceMonitor(): PerformanceMonitor {
         return this._performanceMonitor;
     }
 
-    // Focus
-    private _onFocus: () => void;
-    private _onBlur: () => void;
-    private _onCanvasPointerOut: (event: PointerEvent) => void;
-    private _onCanvasBlur: () => void;
-    private _onCanvasFocus: () => void;
-    private _onCanvasContextMenu: (evt: Event) => void;
-
-    private _onFullscreenChange: () => void;
-    private _onPointerLockChange: () => void;
-
-    protected _compatibilityMode = true;
-
-    /**
-     * (WebGPU only) True (default) to be in compatibility mode, meaning rendering all existing scenes without artifacts (same rendering than WebGL).
-     * Setting the property to false will improve performances but may not work in some scenes if some precautions are not taken.
-     * See https://doc.babylonjs.com/setup/support/webGPU/webGPUOptimization/webGPUNonCompatibilityMode for more details
-     */
-    public get compatibilityMode() {
-        return this._compatibilityMode;
-    }
-
-    public set compatibilityMode(mode: boolean) {
-        // not supported in WebGL
-        this._compatibilityMode = true;
-    }
-
     // Events
-
-    /**
-     * Gets the HTML element used to attach event listeners
-     * @returns a HTML element
-     */
-    public getInputElement(): Nullable<HTMLElement> {
-        return this._renderingCanvas;
-    }
 
     /**
      * Creates a new engine
@@ -583,7 +343,7 @@ export class Engine extends ThinEngine {
     ) {
         super(canvasOrContext, antialias, options, adaptToDeviceRatio);
 
-        Engine.Instances.push(this);
+        this._drawCalls = new PerfCounter();
 
         if (!canvasOrContext) {
             return;
@@ -597,18 +357,10 @@ export class Engine extends ThinEngine {
             const canvas = <HTMLCanvasElement>canvasOrContext;
 
             this._sharedInit(canvas);
-
-            this._connectVREvents();
-        }
-
-        // Load WebVR Devices
-        this._prepareVRComponent();
-        if (options.autoEnableWebVR) {
-            this.initWebVR();
         }
     }
 
-    protected _initGLContext(): void {
+    protected override _initGLContext(): void {
         super._initGLContext();
 
         this._rescalePostProcess = null;
@@ -618,328 +370,68 @@ export class Engine extends ThinEngine {
      * Shared initialization across engines types.
      * @param canvas The canvas associated with this instance of the engine.
      */
-    protected _sharedInit(canvas: HTMLCanvasElement) {
+    protected override _sharedInit(canvas: HTMLCanvasElement) {
         super._sharedInit(canvas);
 
-        this._onCanvasFocus = () => {
-            this.onCanvasFocusObservable.notifyObservers(this);
-        };
+        _CommonInit(this, canvas, this._creationOptions);
+    }
 
-        this._onCanvasBlur = () => {
-            this.onCanvasBlurObservable.notifyObservers(this);
-        };
+    /**
+     * Resize an image and returns the image data as an uint8array
+     * @param image image to resize
+     * @param bufferWidth destination buffer width
+     * @param bufferHeight destination buffer height
+     * @returns an uint8array containing RGBA values of bufferWidth * bufferHeight size
+     */
+    public override resizeImageBitmap(image: HTMLImageElement | ImageBitmap, bufferWidth: number, bufferHeight: number): Uint8Array {
+        return ResizeImageBitmap(this, image, bufferWidth, bufferHeight);
+    }
 
-        this._onCanvasContextMenu = (evt: Event) => {
-            if (this.disableContextMenu) {
-                evt.preventDefault();
+    /**
+     * Engine abstraction for loading and creating an image bitmap from a given source string.
+     * @param imageSource source to load the image from.
+     * @param options An object that sets options for the image's extraction.
+     * @returns ImageBitmap
+     */
+    public override _createImageBitmapFromSource(imageSource: string, options?: ImageBitmapOptions): Promise<ImageBitmap> {
+        return CreateImageBitmapFromSource(this, imageSource, options);
+    }
+
+    /**
+     * Toggle full screen mode
+     * @param requestPointerLock defines if a pointer lock should be requested from the user
+     */
+    public override switchFullscreen(requestPointerLock: boolean): void {
+        if (this.isFullscreen) {
+            this.exitFullscreen();
+        } else {
+            this.enterFullscreen(requestPointerLock);
+        }
+    }
+
+    /**
+     * Enters full screen mode
+     * @param requestPointerLock defines if a pointer lock should be requested from the user
+     */
+    public override enterFullscreen(requestPointerLock: boolean): void {
+        if (!this.isFullscreen) {
+            this._pointerLockRequested = requestPointerLock;
+            if (this._renderingCanvas) {
+                RequestFullscreen(this._renderingCanvas);
             }
-        };
-
-        canvas.addEventListener("focus", this._onCanvasFocus);
-        canvas.addEventListener("blur", this._onCanvasBlur);
-        canvas.addEventListener("contextmenu", this._onCanvasContextMenu);
-
-        this._onBlur = () => {
-            if (this.disablePerformanceMonitorInBackground) {
-                this._performanceMonitor.disable();
-            }
-            this._windowIsBackground = true;
-        };
-
-        this._onFocus = () => {
-            if (this.disablePerformanceMonitorInBackground) {
-                this._performanceMonitor.enable();
-            }
-            this._windowIsBackground = false;
-        };
-
-        this._onCanvasPointerOut = (ev) => {
-            // Check that the element at the point of the pointer out isn't the canvas and if it isn't, notify observers
-            // Note: This is a workaround for a bug with Safari
-            if (document.elementFromPoint(ev.clientX, ev.clientY) !== canvas) {
-                this.onCanvasPointerOutObservable.notifyObservers(ev);
-            }
-        };
-
-        const hostWindow = this.getHostWindow(); // it calls IsWindowObjectExist()
-        if (hostWindow && typeof hostWindow.addEventListener === "function") {
-            hostWindow.addEventListener("blur", this._onBlur);
-            hostWindow.addEventListener("focus", this._onFocus);
         }
-
-        canvas.addEventListener("pointerout", this._onCanvasPointerOut);
-
-        if (!this._creationOptions.doNotHandleTouchAction) {
-            this._disableTouchAction();
-        }
-
-        // Create Audio Engine if needed.
-        if (!Engine.audioEngine && this._creationOptions.audioEngine && Engine.AudioEngineFactory) {
-            Engine.audioEngine = Engine.AudioEngineFactory(this.getRenderingCanvas(), this.getAudioContext(), this.getAudioDestination());
-        }
-        if (IsDocumentAvailable()) {
-            // Fullscreen
-            this._onFullscreenChange = () => {
-                this.isFullscreen = !!document.fullscreenElement;
-
-                // Pointer lock
-                if (this.isFullscreen && this._pointerLockRequested && canvas) {
-                    Engine._RequestPointerlock(canvas);
-                }
-            };
-
-            document.addEventListener("fullscreenchange", this._onFullscreenChange, false);
-            document.addEventListener("webkitfullscreenchange", this._onFullscreenChange, false);
-
-            // Pointer lock
-            this._onPointerLockChange = () => {
-                this.isPointerLock = document.pointerLockElement === canvas;
-            };
-
-            document.addEventListener("pointerlockchange", this._onPointerLockChange, false);
-            document.addEventListener("webkitpointerlockchange", this._onPointerLockChange, false);
-        }
-
-        this.enableOfflineSupport = Engine.OfflineProviderFactory !== undefined;
-
-        this._deterministicLockstep = !!this._creationOptions.deterministicLockstep;
-        this._lockstepMaxSteps = this._creationOptions.lockstepMaxSteps || 0;
-        this._timeStep = this._creationOptions.timeStep || 1 / 60;
-    }
-
-    /** @internal */
-    public _verifyPointerLock(): void {
-        this._onPointerLockChange?.();
     }
 
     /**
-     * Gets current aspect ratio
-     * @param viewportOwner defines the camera to use to get the aspect ratio
-     * @param useScreen defines if screen size must be used (or the current render target if any)
-     * @returns a number defining the aspect ratio
+     * Exits full screen mode
      */
-    public getAspectRatio(viewportOwner: IViewportOwnerLike, useScreen = false): number {
-        const viewport = viewportOwner.viewport;
-        return (this.getRenderWidth(useScreen) * viewport.width) / (this.getRenderHeight(useScreen) * viewport.height);
-    }
-
-    /**
-     * Gets current screen aspect ratio
-     * @returns a number defining the aspect ratio
-     */
-    public getScreenAspectRatio(): number {
-        return this.getRenderWidth(true) / this.getRenderHeight(true);
-    }
-
-    /**
-     * Gets the client rect of the HTML canvas attached with the current webGL context
-     * @returns a client rectangle
-     */
-    public getRenderingCanvasClientRect(): Nullable<ClientRect> {
-        if (!this._renderingCanvas) {
-            return null;
-        }
-        return this._renderingCanvas.getBoundingClientRect();
-    }
-
-    /**
-     * Gets the client rect of the HTML element used for events
-     * @returns a client rectangle
-     */
-    public getInputElementClientRect(): Nullable<ClientRect> {
-        if (!this._renderingCanvas) {
-            return null;
-        }
-        return this.getInputElement()!.getBoundingClientRect();
-    }
-
-    /**
-     * Gets a boolean indicating that the engine is running in deterministic lock step mode
-     * @see https://doc.babylonjs.com/features/featuresDeepDive/animation/advanced_animations#deterministic-lockstep
-     * @returns true if engine is in deterministic lock step mode
-     */
-    public isDeterministicLockStep(): boolean {
-        return this._deterministicLockstep;
-    }
-
-    /**
-     * Gets the max steps when engine is running in deterministic lock step
-     * @see https://doc.babylonjs.com/features/featuresDeepDive/animation/advanced_animations#deterministic-lockstep
-     * @returns the max steps
-     */
-    public getLockstepMaxSteps(): number {
-        return this._lockstepMaxSteps;
-    }
-
-    /**
-     * Returns the time in ms between steps when using deterministic lock step.
-     * @returns time step in (ms)
-     */
-    public getTimeStep(): number {
-        return this._timeStep * 1000;
-    }
-
-    /**
-     * Force the mipmap generation for the given render target texture
-     * @param texture defines the render target texture to use
-     * @param unbind defines whether or not to unbind the texture after generation. Defaults to true.
-     */
-    public generateMipMapsForCubemap(texture: InternalTexture, unbind = true) {
-        if (texture.generateMipMaps) {
-            const gl = this._gl;
-            this._bindTextureDirectly(gl.TEXTURE_CUBE_MAP, texture, true);
-            gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
-            if (unbind) {
-                this._bindTextureDirectly(gl.TEXTURE_CUBE_MAP, null);
-            }
+    public override exitFullscreen(): void {
+        if (this.isFullscreen) {
+            ExitFullscreen();
         }
     }
 
     /** States */
-
-    /**
-     * Gets a boolean indicating if depth writing is enabled
-     * @returns the current depth writing state
-     */
-    public getDepthWrite(): boolean {
-        return this._depthCullingState.depthMask;
-    }
-
-    /**
-     * Enable or disable depth writing
-     * @param enable defines the state to set
-     */
-    public setDepthWrite(enable: boolean): void {
-        this._depthCullingState.depthMask = enable;
-    }
-
-    /**
-     * Gets a boolean indicating if stencil buffer is enabled
-     * @returns the current stencil buffer state
-     */
-    public getStencilBuffer(): boolean {
-        return this._stencilState.stencilTest;
-    }
-
-    /**
-     * Enable or disable the stencil buffer
-     * @param enable defines if the stencil buffer must be enabled or disabled
-     */
-    public setStencilBuffer(enable: boolean): void {
-        this._stencilState.stencilTest = enable;
-    }
-
-    /**
-     * Gets the current stencil mask
-     * @returns a number defining the new stencil mask to use
-     */
-    public getStencilMask(): number {
-        return this._stencilState.stencilMask;
-    }
-
-    /**
-     * Sets the current stencil mask
-     * @param mask defines the new stencil mask to use
-     */
-    public setStencilMask(mask: number): void {
-        this._stencilState.stencilMask = mask;
-    }
-
-    /**
-     * Gets the current stencil function
-     * @returns a number defining the stencil function to use
-     */
-    public getStencilFunction(): number {
-        return this._stencilState.stencilFunc;
-    }
-
-    /**
-     * Gets the current stencil reference value
-     * @returns a number defining the stencil reference value to use
-     */
-    public getStencilFunctionReference(): number {
-        return this._stencilState.stencilFuncRef;
-    }
-
-    /**
-     * Gets the current stencil mask
-     * @returns a number defining the stencil mask to use
-     */
-    public getStencilFunctionMask(): number {
-        return this._stencilState.stencilFuncMask;
-    }
-
-    /**
-     * Sets the current stencil function
-     * @param stencilFunc defines the new stencil function to use
-     */
-    public setStencilFunction(stencilFunc: number) {
-        this._stencilState.stencilFunc = stencilFunc;
-    }
-
-    /**
-     * Sets the current stencil reference
-     * @param reference defines the new stencil reference to use
-     */
-    public setStencilFunctionReference(reference: number) {
-        this._stencilState.stencilFuncRef = reference;
-    }
-
-    /**
-     * Sets the current stencil mask
-     * @param mask defines the new stencil mask to use
-     */
-    public setStencilFunctionMask(mask: number) {
-        this._stencilState.stencilFuncMask = mask;
-    }
-
-    /**
-     * Gets the current stencil operation when stencil fails
-     * @returns a number defining stencil operation to use when stencil fails
-     */
-    public getStencilOperationFail(): number {
-        return this._stencilState.stencilOpStencilFail;
-    }
-
-    /**
-     * Gets the current stencil operation when depth fails
-     * @returns a number defining stencil operation to use when depth fails
-     */
-    public getStencilOperationDepthFail(): number {
-        return this._stencilState.stencilOpDepthFail;
-    }
-
-    /**
-     * Gets the current stencil operation when stencil passes
-     * @returns a number defining stencil operation to use when stencil passes
-     */
-    public getStencilOperationPass(): number {
-        return this._stencilState.stencilOpStencilDepthPass;
-    }
-
-    /**
-     * Sets the stencil operation to use when stencil fails
-     * @param operation defines the stencil operation to use when stencil fails
-     */
-    public setStencilOperationFail(operation: number): void {
-        this._stencilState.stencilOpStencilFail = operation;
-    }
-
-    /**
-     * Sets the stencil operation to use when depth fails
-     * @param operation defines the stencil operation to use when depth fails
-     */
-    public setStencilOperationDepthFail(operation: number): void {
-        this._stencilState.stencilOpDepthFail = operation;
-    }
-
-    /**
-     * Sets the stencil operation to use when stencil passes
-     * @param operation defines the stencil operation to use when stencil passes
-     */
-    public setStencilOperationPass(operation: number): void {
-        this._stencilState.stencilOpStencilDepthPass = operation;
-    }
 
     /**
      * Sets a boolean indicating if the dithering state is enabled or disabled
@@ -963,84 +455,6 @@ export class Engine extends ThinEngine {
         } else {
             this._gl.enable(this._gl.RASTERIZER_DISCARD);
         }
-    }
-
-    /**
-     * Gets the current depth function
-     * @returns a number defining the depth function
-     */
-    public getDepthFunction(): Nullable<number> {
-        return this._depthCullingState.depthFunc;
-    }
-
-    /**
-     * Sets the current depth function
-     * @param depthFunc defines the function to use
-     */
-    public setDepthFunction(depthFunc: number) {
-        this._depthCullingState.depthFunc = depthFunc;
-    }
-
-    /**
-     * Sets the current depth function to GREATER
-     */
-    public setDepthFunctionToGreater(): void {
-        this.setDepthFunction(Constants.GREATER);
-    }
-
-    /**
-     * Sets the current depth function to GEQUAL
-     */
-    public setDepthFunctionToGreaterOrEqual(): void {
-        this.setDepthFunction(Constants.GEQUAL);
-    }
-
-    /**
-     * Sets the current depth function to LESS
-     */
-    public setDepthFunctionToLess(): void {
-        this.setDepthFunction(Constants.LESS);
-    }
-
-    /**
-     * Sets the current depth function to LEQUAL
-     */
-    public setDepthFunctionToLessOrEqual(): void {
-        this.setDepthFunction(Constants.LEQUAL);
-    }
-
-    private _cachedStencilBuffer: boolean;
-    private _cachedStencilFunction: number;
-    private _cachedStencilMask: number;
-    private _cachedStencilOperationPass: number;
-    private _cachedStencilOperationFail: number;
-    private _cachedStencilOperationDepthFail: number;
-    private _cachedStencilReference: number;
-
-    /**
-     * Caches the the state of the stencil buffer
-     */
-    public cacheStencilState() {
-        this._cachedStencilBuffer = this.getStencilBuffer();
-        this._cachedStencilFunction = this.getStencilFunction();
-        this._cachedStencilMask = this.getStencilMask();
-        this._cachedStencilOperationPass = this.getStencilOperationPass();
-        this._cachedStencilOperationFail = this.getStencilOperationFail();
-        this._cachedStencilOperationDepthFail = this.getStencilOperationDepthFail();
-        this._cachedStencilReference = this.getStencilFunctionReference();
-    }
-
-    /**
-     * Restores the state of the stencil buffer
-     */
-    public restoreStencilState() {
-        this.setStencilFunction(this._cachedStencilFunction);
-        this.setStencilMask(this._cachedStencilMask);
-        this.setStencilBuffer(this._cachedStencilBuffer);
-        this.setStencilOperationPass(this._cachedStencilOperationPass);
-        this.setStencilOperationFail(this._cachedStencilOperationFail);
-        this.setStencilOperationDepthFail(this._cachedStencilOperationDepthFail);
-        this.setStencilFunctionReference(this._cachedStencilReference);
     }
 
     /**
@@ -1101,57 +515,8 @@ export class Engine extends ThinEngine {
     /**
      * @internal
      */
-    public _reportDrawCall(numDrawCalls = 1) {
-        this._drawCalls.addCount(numDrawCalls, false);
-    }
-
-    /**
-     * Initializes a webVR display and starts listening to display change events
-     * The onVRDisplayChangedObservable will be notified upon these changes
-     * @returns The onVRDisplayChangedObservable
-     */
-    public initWebVR(): Observable<IDisplayChangedEventArgs> {
-        throw _WarnImport("WebVRCamera");
-    }
-
-    /** @internal */
-    public _prepareVRComponent() {
-        // Do nothing as the engine side effect will overload it
-    }
-
-    /**
-     * @internal
-     */
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    public _connectVREvents(canvas?: HTMLCanvasElement, document?: any) {
-        // Do nothing as the engine side effect will overload it
-    }
-
-    /** @internal */
-    public _submitVRFrame() {
-        // Do nothing as the engine side effect will overload it
-    }
-    /**
-     * Call this function to leave webVR mode
-     * Will do nothing if webVR is not supported or if there is no webVR device
-     * @see https://doc.babylonjs.com/features/featuresDeepDive/cameras/webVRCamera
-     */
-    public disableVR() {
-        // Do nothing as the engine side effect will overload it
-    }
-
-    /**
-     * Gets a boolean indicating that the system is in VR mode and is presenting
-     * @returns true if VR mode is engaged
-     */
-    public isVRPresenting() {
-        return false;
-    }
-
-    /** @internal */
-    public _requestVRFrame() {
-        // Do nothing as the engine side effect will overload it
-    }
+    public _loadFileAsync(url: string, offlineProvider?: IOfflineProvider, useArrayBuffer?: false): Promise<string>;
+    public _loadFileAsync(url: string, offlineProvider?: IOfflineProvider, useArrayBuffer?: true): Promise<ArrayBuffer>;
 
     /**
      * @internal
@@ -1204,84 +569,59 @@ export class Engine extends ThinEngine {
     }
 
     /**
-     * Sets a depth stencil texture from a render target to the according uniform.
-     * @param channel The texture channel
-     * @param uniform The uniform to set
-     * @param texture The render target texture containing the depth stencil texture to apply
-     * @param name The texture name
+     * sets the object from which width and height will be taken from when getting render width and height
+     * Will fallback to the gl object
+     * @param dimensions the framebuffer width and height that will be used.
      */
-    public setDepthStencilTexture(channel: number, uniform: Nullable<WebGLUniformLocation>, texture: Nullable<RenderTargetTexture>, name?: string): void {
-        if (channel === undefined) {
-            return;
-        }
-
-        if (uniform) {
-            this._boundUniforms[channel] = uniform;
-        }
-
-        if (!texture || !texture.depthStencilTexture) {
-            this._setTexture(channel, null, undefined, undefined, name);
-        } else {
-            this._setTexture(channel, texture, false, true, name);
+    public override set framebufferDimensionsObject(dimensions: Nullable<{ framebufferWidth: number; framebufferHeight: number }>) {
+        this._framebufferDimensionsObject = dimensions;
+        if (this._framebufferDimensionsObject) {
+            this.onResizeObservable.notifyObservers(this);
         }
     }
 
-    /**
-     * Sets a texture to the webGL context from a postprocess
-     * @param channel defines the channel to use
-     * @param postProcess defines the source postprocess
-     * @param name name of the channel
-     */
-    public setTextureFromPostProcess(channel: number, postProcess: Nullable<PostProcess>, name: string): void {
-        let postProcessInput = null;
-        if (postProcess) {
-            if (postProcess._forcedOutputTexture) {
-                postProcessInput = postProcess._forcedOutputTexture;
-            } else if (postProcess._textures.data[postProcess._currentRenderTextureInd]) {
-                postProcessInput = postProcess._textures.data[postProcess._currentRenderTextureInd];
-            }
-        }
-
-        this._bindTexture(channel, postProcessInput?.texture ?? null, name);
-    }
-
-    /**
-     * Binds the output of the passed in post process to the texture channel specified
-     * @param channel The channel the texture should be bound to
-     * @param postProcess The post process which's output should be bound
-     * @param name name of the channel
-     */
-    public setTextureFromPostProcessOutput(channel: number, postProcess: Nullable<PostProcess>, name: string): void {
-        this._bindTexture(channel, postProcess?._outputTexture?.texture ?? null, name);
-    }
-
-    protected _rebuildBuffers(): void {
+    protected override _rebuildBuffers(): void {
         // Index / Vertex
         for (const scene of this.scenes) {
             scene.resetCachedMaterial();
             scene._rebuildGeometries();
-            scene._rebuildTextures();
         }
 
         for (const scene of this._virtualScenes) {
             scene.resetCachedMaterial();
             scene._rebuildGeometries();
-            scene._rebuildTextures();
         }
 
         super._rebuildBuffers();
     }
 
-    /** @internal */
-    public _renderFrame() {
-        for (let index = 0; index < this._activeRenderLoops.length; index++) {
-            const renderFunction = this._activeRenderLoops[index];
+    /**
+     * Get Font size information
+     * @param font font name
+     * @returns an object containing ascent, height and descent
+     */
+    public override getFontOffset(font: string): { ascent: number; height: number; descent: number } {
+        return GetFontOffset(font);
+    }
 
-            renderFunction();
+    protected override _cancelFrame() {
+        if (this.customAnimationFrameRequester) {
+            if (this._frameHandler !== 0) {
+                this._frameHandler = 0;
+                const { cancelAnimationFrame } = this.customAnimationFrameRequester;
+                if (cancelAnimationFrame) {
+                    cancelAnimationFrame(this.customAnimationFrameRequester.requestID);
+                }
+            }
+        } else {
+            super._cancelFrame();
         }
     }
 
-    public _renderLoop(): void {
+    public override _renderLoop(): void {
+        // Reset the frame handler before rendering a frame to determine if a new frame has been queued.
+        this._frameHandler = 0;
+
         if (!this._contextWasLost) {
             let shouldRender = true;
             if (this.isDisposed || (!this.renderEvenInBackground && this._windowIsBackground)) {
@@ -1303,60 +643,19 @@ export class Engine extends ThinEngine {
             }
         }
 
-        if (this._activeRenderLoops.length > 0) {
-            // Register new frame
+        // The first condition prevents queuing another frame if we no longer have active render loops (e.g., if
+        // `stopRenderLoop` is called mid frame). The second condition prevents queuing another frame if one has
+        // already been queued (e.g., if `stopRenderLoop` and `runRenderLoop` is called mid frame).
+        if (this._activeRenderLoops.length > 0 && this._frameHandler === 0) {
             if (this.customAnimationFrameRequester) {
                 this.customAnimationFrameRequester.requestID = this._queueNewFrame(
                     this.customAnimationFrameRequester.renderFunction || this._boundRenderFunction,
                     this.customAnimationFrameRequester
                 );
                 this._frameHandler = this.customAnimationFrameRequester.requestID;
-            } else if (this.isVRPresenting()) {
-                this._requestVRFrame();
             } else {
                 this._frameHandler = this._queueNewFrame(this._boundRenderFunction, this.getHostWindow());
             }
-        } else {
-            this._renderingQueueLaunched = false;
-        }
-    }
-
-    /** @internal */
-    public _renderViews() {
-        return false;
-    }
-
-    /**
-     * Toggle full screen mode
-     * @param requestPointerLock defines if a pointer lock should be requested from the user
-     */
-    public switchFullscreen(requestPointerLock: boolean): void {
-        if (this.isFullscreen) {
-            this.exitFullscreen();
-        } else {
-            this.enterFullscreen(requestPointerLock);
-        }
-    }
-
-    /**
-     * Enters full screen mode
-     * @param requestPointerLock defines if a pointer lock should be requested from the user
-     */
-    public enterFullscreen(requestPointerLock: boolean): void {
-        if (!this.isFullscreen) {
-            this._pointerLockRequested = requestPointerLock;
-            if (this._renderingCanvas) {
-                Engine._RequestFullscreen(this._renderingCanvas);
-            }
-        }
-    }
-
-    /**
-     * Exits full screen mode
-     */
-    public exitFullscreen(): void {
-        if (this.isFullscreen) {
-            Engine._ExitFullscreen();
         }
     }
 
@@ -1365,7 +664,7 @@ export class Engine extends ThinEngine {
      */
     public enterPointerlock(): void {
         if (this._renderingCanvas) {
-            Engine._RequestPointerlock(this._renderingCanvas);
+            RequestPointerlock(this._renderingCanvas);
         }
     }
 
@@ -1373,78 +672,18 @@ export class Engine extends ThinEngine {
      * Exits Pointerlock mode
      */
     public exitPointerlock(): void {
-        Engine._ExitPointerlock();
+        ExitPointerlock();
     }
 
     /**
      * Begin a new frame
      */
-    public beginFrame(): void {
+    public override beginFrame(): void {
         this._measureFps();
-
-        this.onBeginFrameObservable.notifyObservers(this);
         super.beginFrame();
     }
 
-    /**
-     * End the current frame
-     */
-    public endFrame(): void {
-        super.endFrame();
-        this._submitVRFrame();
-
-        this.onEndFrameObservable.notifyObservers(this);
-    }
-
-    /**
-     * Resize the view according to the canvas' size
-     * @param forceSetSize true to force setting the sizes of the underlying canvas
-     */
-    public resize(forceSetSize = false): void {
-        // We're not resizing the size of the canvas while in VR mode & presenting
-        if (this.isVRPresenting()) {
-            return;
-        }
-
-        super.resize(forceSetSize);
-    }
-
-    /**
-     * Force a specific size of the canvas
-     * @param width defines the new canvas' width
-     * @param height defines the new canvas' height
-     * @param forceSetSize true to force setting the sizes of the underlying canvas
-     * @returns true if the size was changed
-     */
-    public setSize(width: number, height: number, forceSetSize = false): boolean {
-        if (!this._renderingCanvas) {
-            return false;
-        }
-
-        if (!super.setSize(width, height, forceSetSize)) {
-            return false;
-        }
-
-        if (this.scenes) {
-            for (let index = 0; index < this.scenes.length; index++) {
-                const scene = this.scenes[index];
-
-                for (let camIndex = 0; camIndex < scene.cameras.length; camIndex++) {
-                    const cam = scene.cameras[camIndex];
-
-                    cam._currentRenderId = 0;
-                }
-            }
-
-            if (this.onResizeObservable.hasObservers()) {
-                this.onResizeObservable.notifyObservers(this);
-            }
-        }
-
-        return true;
-    }
-
-    public _deletePipelineContext(pipelineContext: IPipelineContext): void {
+    public override _deletePipelineContext(pipelineContext: IPipelineContext): void {
         const webGLPipelineContext = pipelineContext as WebGLPipelineContext;
         if (webGLPipelineContext && webGLPipelineContext.program) {
             if (webGLPipelineContext.transformFeedback) {
@@ -1455,7 +694,7 @@ export class Engine extends ThinEngine {
         super._deletePipelineContext(pipelineContext);
     }
 
-    public createShaderProgram(
+    public override createShaderProgram(
         pipelineContext: IPipelineContext,
         vertexCode: string,
         fragmentCode: string,
@@ -1473,7 +712,7 @@ export class Engine extends ThinEngine {
         return program;
     }
 
-    protected _createShaderProgram(
+    protected override _createShaderProgram(
         pipelineContext: WebGLPipelineContext,
         vertexShader: WebGLShader,
         fragmentShader: WebGLShader,
@@ -1518,14 +757,14 @@ export class Engine extends ThinEngine {
     /**
      * @internal
      */
-    public _releaseTexture(texture: InternalTexture): void {
+    public override _releaseTexture(texture: InternalTexture): void {
         super._releaseTexture(texture);
     }
 
     /**
      * @internal
      */
-    public _releaseRenderTargetWrapper(rtWrapper: RenderTargetWrapper): void {
+    public override _releaseRenderTargetWrapper(rtWrapper: RenderTargetWrapper): void {
         super._releaseRenderTargetWrapper(rtWrapper);
 
         // Set output texture of post process to null if the framebuffer has been released/disposed
@@ -1547,63 +786,6 @@ export class Engine extends ThinEngine {
         });
     }
 
-    // eslint-disable-next-line @typescript-eslint/naming-convention
-    protected static _RenderPassIdCounter = 0;
-    /**
-     * Gets or sets the current render pass id
-     */
-    public currentRenderPassId = Constants.RENDERPASS_MAIN;
-
-    private _renderPassNames: string[] = ["main"];
-    /**
-     * Gets the names of the render passes that are currently created
-     * @returns list of the render pass names
-     */
-    public getRenderPassNames(): string[] {
-        return this._renderPassNames;
-    }
-
-    /**
-     * Gets the name of the current render pass
-     * @returns name of the current render pass
-     */
-    public getCurrentRenderPassName(): string {
-        return this._renderPassNames[this.currentRenderPassId];
-    }
-
-    /**
-     * Creates a render pass id
-     * @param name Name of the render pass (for debug purpose only)
-     * @returns the id of the new render pass
-     */
-    public createRenderPassId(name?: string) {
-        // Note: render pass id == 0 is always for the main render pass
-        const id = ++Engine._RenderPassIdCounter;
-        this._renderPassNames[id] = name ?? "NONAME";
-        return id;
-    }
-
-    /**
-     * Releases a render pass id
-     * @param id id of the render pass to release
-     */
-    public releaseRenderPassId(id: number): void {
-        this._renderPassNames[id] = undefined as any;
-
-        for (let s = 0; s < this.scenes.length; ++s) {
-            const scene = this.scenes[s];
-            for (let m = 0; m < scene.meshes.length; ++m) {
-                const mesh = scene.meshes[m];
-                if (mesh.subMeshes) {
-                    for (let b = 0; b < mesh.subMeshes.length; ++b) {
-                        const subMesh = mesh.subMeshes[b];
-                        subMesh._removeDrawWrapper(id);
-                    }
-                }
-            }
-        }
-    }
-
     /**
      * @internal
      * Rescales a texture
@@ -1613,7 +795,7 @@ export class Engine extends ThinEngine {
      * @param internalFormat format to use when resizing
      * @param onComplete callback to be called when resize has completed
      */
-    public _rescaleTexture(source: InternalTexture, destination: InternalTexture, scene: Nullable<any>, internalFormat: number, onComplete: () => void): void {
+    public override _rescaleTexture(source: InternalTexture, destination: InternalTexture, scene: Nullable<any>, internalFormat: number, onComplete: () => void): void {
         this._gl.texParameteri(this._gl.TEXTURE_2D, this._gl.TEXTURE_MAG_FILTER, this._gl.LINEAR);
         this._gl.texParameteri(this._gl.TEXTURE_2D, this._gl.TEXTURE_MIN_FILTER, this._gl.LINEAR);
         this._gl.texParameteri(this._gl.TEXTURE_2D, this._gl.TEXTURE_WRAP_S, this._gl.CLAMP_TO_EDGE);
@@ -1639,7 +821,7 @@ export class Engine extends ThinEngine {
 
         if (this._rescalePostProcess) {
             this._rescalePostProcess.externalTextureSamplerBinding = true;
-            this._rescalePostProcess.getEffect().executeWhenCompiled(() => {
+            const onCompiled = () => {
                 this._rescalePostProcess!.onApply = function (effect) {
                     effect._bindTexture("textureSampler", source);
                 };
@@ -1660,32 +842,16 @@ export class Engine extends ThinEngine {
                 if (onComplete) {
                     onComplete();
                 }
-            });
+            };
+            const effect = this._rescalePostProcess.getEffect();
+            if (effect) {
+                effect.executeWhenCompiled(onCompiled);
+            } else {
+                this._rescalePostProcess.onEffectCreatedObservable.addOnce((effect) => {
+                    effect.executeWhenCompiled(onCompiled);
+                });
+            }
         }
-    }
-
-    // FPS
-
-    /**
-     * Gets the current framerate
-     * @returns a number representing the framerate
-     */
-    public getFps(): number {
-        return this._fps;
-    }
-
-    /**
-     * Gets the time spent between current and previous frame
-     * @returns a number representing the delta time in ms
-     */
-    public getDeltaTime(): number {
-        return this._deltaTime;
-    }
-
-    private _measureFps(): void {
-        this._performanceMonitor.sampleFrame();
-        this._fps = this._performanceMonitor.averageFPS;
-        this._deltaTime = this._performanceMonitor.instantaneousFrameTime || 0;
     }
 
     /**
@@ -1693,12 +859,24 @@ export class Engine extends ThinEngine {
      * @param texture defines the external texture
      * @param hasMipMaps defines whether the external texture has mip maps (default: false)
      * @param samplingMode defines the sampling mode for the external texture (default: Constants.TEXTURE_TRILINEAR_SAMPLINGMODE)
+     * @param width defines the width for the external texture (default: 0)
+     * @param height defines the height for the external texture (default: 0)
      * @returns the babylon internal texture
      */
-    public wrapWebGLTexture(texture: WebGLTexture, hasMipMaps: boolean = false, samplingMode: number = Constants.TEXTURE_TRILINEAR_SAMPLINGMODE): InternalTexture {
+    public wrapWebGLTexture(
+        texture: WebGLTexture,
+        hasMipMaps: boolean = false,
+        samplingMode: number = Constants.TEXTURE_TRILINEAR_SAMPLINGMODE,
+        width: number = 0,
+        height: number = 0
+    ): InternalTexture {
         const hardwareTexture = new WebGLHardwareTexture(texture, this._gl);
         const internalTexture = new InternalTexture(this, InternalTextureSource.Unknown, true);
         internalTexture._hardwareTexture = hardwareTexture;
+        internalTexture.baseWidth = width;
+        internalTexture.baseHeight = height;
+        internalTexture.width = width;
+        internalTexture.height = height;
         internalTexture.isReady = true;
         internalTexture.useMipMaps = hasMipMaps;
         this.updateTextureSamplingMode(samplingMode, internalTexture);
@@ -1720,7 +898,7 @@ export class Engine extends ThinEngine {
         this._bindTextureDirectly(bindTarget, texture, true);
         this._unpackFlipY(texture.invertY);
 
-        let target = gl.TEXTURE_2D;
+        let target: GLenum = gl.TEXTURE_2D;
         if (texture.isCube) {
             target = gl.TEXTURE_CUBE_MAP_POSITIVE_X + faceIndex;
         }
@@ -1858,259 +1036,16 @@ export class Engine extends ThinEngine {
         });
     }
 
-    public dispose(): void {
+    public override dispose(): void {
         this.hideLoadingUI();
-
-        this.onNewSceneAddedObservable.clear();
-
-        // Release postProcesses
-        while (this.postProcesses.length) {
-            this.postProcesses[0].dispose();
-        }
 
         // Rescale PP
         if (this._rescalePostProcess) {
             this._rescalePostProcess.dispose();
         }
 
-        // Release scenes
-        while (this.scenes.length) {
-            this.scenes[0].dispose();
-        }
-
-        while (this._virtualScenes.length) {
-            this._virtualScenes[0].dispose();
-        }
-
-        // Release audio engine
-        if (EngineStore.Instances.length === 1 && Engine.audioEngine) {
-            Engine.audioEngine.dispose();
-            Engine.audioEngine = null;
-        }
-
-        //WebVR
-        this.disableVR();
-
-        // Events
-        const hostWindow = this.getHostWindow(); // it calls IsWindowObjectExist()
-        if (hostWindow && typeof hostWindow.removeEventListener === "function") {
-            hostWindow.removeEventListener("blur", this._onBlur);
-            hostWindow.removeEventListener("focus", this._onFocus);
-        }
-
-        if (this._renderingCanvas) {
-            this._renderingCanvas.removeEventListener("focus", this._onCanvasFocus);
-            this._renderingCanvas.removeEventListener("blur", this._onCanvasBlur);
-            this._renderingCanvas.removeEventListener("pointerout", this._onCanvasPointerOut);
-            this._renderingCanvas.removeEventListener("contextmenu", this._onCanvasContextMenu);
-        }
-
-        if (IsDocumentAvailable()) {
-            document.removeEventListener("fullscreenchange", this._onFullscreenChange);
-            document.removeEventListener("mozfullscreenchange", this._onFullscreenChange);
-            document.removeEventListener("webkitfullscreenchange", this._onFullscreenChange);
-            document.removeEventListener("msfullscreenchange", this._onFullscreenChange);
-            document.removeEventListener("pointerlockchange", this._onPointerLockChange);
-            document.removeEventListener("mspointerlockchange", this._onPointerLockChange);
-            document.removeEventListener("mozpointerlockchange", this._onPointerLockChange);
-            document.removeEventListener("webkitpointerlockchange", this._onPointerLockChange);
-        }
+        _CommonDispose(this, this._renderingCanvas);
 
         super.dispose();
-
-        // Remove from Instances
-        const index = EngineStore.Instances.indexOf(this);
-
-        if (index >= 0) {
-            EngineStore.Instances.splice(index, 1);
-        }
-
-        // no more engines left in the engine store? Notify!
-        if (!Engine.Instances.length) {
-            EngineStore.OnEnginesDisposedObservable.notifyObservers(this);
-        }
-
-        // Observables
-        this.onResizeObservable.clear();
-        this.onCanvasBlurObservable.clear();
-        this.onCanvasFocusObservable.clear();
-        this.onCanvasPointerOutObservable.clear();
-        this.onBeginFrameObservable.clear();
-        this.onEndFrameObservable.clear();
-    }
-
-    private _disableTouchAction(): void {
-        if (!this._renderingCanvas || !this._renderingCanvas.setAttribute) {
-            return;
-        }
-
-        this._renderingCanvas.setAttribute("touch-action", "none");
-        this._renderingCanvas.style.touchAction = "none";
-        (this._renderingCanvas.style as any).webkitTapHighlightColor = "transparent";
-    }
-
-    // Loading screen
-
-    /**
-     * Display the loading screen
-     * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/customLoadingScreen
-     */
-    public displayLoadingUI(): void {
-        if (!IsWindowObjectExist()) {
-            return;
-        }
-        const loadingScreen = this.loadingScreen;
-        if (loadingScreen) {
-            loadingScreen.displayLoadingUI();
-        }
-    }
-
-    /**
-     * Hide the loading screen
-     * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/customLoadingScreen
-     */
-    public hideLoadingUI(): void {
-        if (!IsWindowObjectExist()) {
-            return;
-        }
-        const loadingScreen = this._loadingScreen;
-        if (loadingScreen) {
-            loadingScreen.hideLoadingUI();
-        }
-    }
-
-    /**
-     * Gets the current loading screen object
-     * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/customLoadingScreen
-     */
-    public get loadingScreen(): ILoadingScreen {
-        if (!this._loadingScreen && this._renderingCanvas) {
-            this._loadingScreen = Engine.DefaultLoadingScreenFactory(this._renderingCanvas);
-        }
-        return this._loadingScreen;
-    }
-
-    /**
-     * Sets the current loading screen object
-     * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/customLoadingScreen
-     */
-    public set loadingScreen(loadingScreen: ILoadingScreen) {
-        this._loadingScreen = loadingScreen;
-    }
-
-    /**
-     * Sets the current loading screen text
-     * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/customLoadingScreen
-     */
-    public set loadingUIText(text: string) {
-        this.loadingScreen.loadingUIText = text;
-    }
-
-    /**
-     * Sets the current loading screen background color
-     * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/customLoadingScreen
-     */
-    public set loadingUIBackgroundColor(color: string) {
-        this.loadingScreen.loadingUIBackgroundColor = color;
-    }
-
-    /**
-     * creates and returns a new video element
-     * @param constraints video constraints
-     * @returns video element
-     */
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    public createVideoElement(constraints: MediaTrackConstraints): any {
-        return document.createElement("video");
-    }
-
-    /** Pointerlock and fullscreen */
-
-    /**
-     * Ask the browser to promote the current element to pointerlock mode
-     * @param element defines the DOM element to promote
-     */
-    static _RequestPointerlock(element: HTMLElement): void {
-        if (element.requestPointerLock) {
-            // In some browsers, requestPointerLock returns a promise.
-            // Handle possible rejections to avoid an unhandled top-level exception.
-            const promise: unknown = element.requestPointerLock();
-            if (promise instanceof Promise)
-                promise
-                    .then(() => {
-                        element.focus();
-                    })
-                    .catch(() => {});
-            else element.focus();
-        }
-    }
-
-    /**
-     * Asks the browser to exit pointerlock mode
-     */
-    static _ExitPointerlock(): void {
-        if (document.exitPointerLock) {
-            document.exitPointerLock();
-        }
-    }
-
-    /**
-     * Ask the browser to promote the current element to fullscreen rendering mode
-     * @param element defines the DOM element to promote
-     */
-    static _RequestFullscreen(element: HTMLElement): void {
-        const requestFunction = element.requestFullscreen || (<any>element).webkitRequestFullscreen;
-        if (!requestFunction) {
-            return;
-        }
-        requestFunction.call(element);
-    }
-
-    /**
-     * Asks the browser to exit fullscreen mode
-     */
-    static _ExitFullscreen(): void {
-        const anyDoc = document as any;
-
-        if (document.exitFullscreen) {
-            document.exitFullscreen();
-        } else if (anyDoc.webkitCancelFullScreen) {
-            anyDoc.webkitCancelFullScreen();
-        }
-    }
-
-    /**
-     * Get Font size information
-     * @param font font name
-     * @returns an object containing ascent, height and descent
-     */
-    public getFontOffset(font: string): { ascent: number; height: number; descent: number } {
-        const text = document.createElement("span");
-        text.innerHTML = "Hg";
-        text.setAttribute("style", `font: ${font} !important`);
-
-        const block = document.createElement("div");
-        block.style.display = "inline-block";
-        block.style.width = "1px";
-        block.style.height = "0px";
-        block.style.verticalAlign = "bottom";
-
-        const div = document.createElement("div");
-        div.style.whiteSpace = "nowrap";
-        div.appendChild(text);
-        div.appendChild(block);
-
-        document.body.appendChild(div);
-
-        let fontAscent = 0;
-        let fontHeight = 0;
-        try {
-            fontHeight = block.getBoundingClientRect().top - text.getBoundingClientRect().top;
-            block.style.verticalAlign = "baseline";
-            fontAscent = block.getBoundingClientRect().top - text.getBoundingClientRect().top;
-        } finally {
-            document.body.removeChild(div);
-        }
-        return { ascent: fontAscent, height: fontHeight, descent: fontHeight - fontAscent };
     }
 }

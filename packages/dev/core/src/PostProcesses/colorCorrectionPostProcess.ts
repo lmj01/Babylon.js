@@ -2,15 +2,15 @@ import type { PostProcessOptions } from "./postProcess";
 import { PostProcess } from "./postProcess";
 import type { Effect } from "../Materials/effect";
 import { Texture } from "../Materials/Textures/texture";
-import type { Engine } from "../Engines/engine";
+import type { AbstractEngine } from "../Engines/abstractEngine";
 import type { Camera } from "../Cameras/camera";
 
-import "../Shaders/colorCorrection.fragment";
 import { RegisterClass } from "../Misc/typeStore";
-import { SerializationHelper, serialize } from "../Misc/decorators";
+import { serialize } from "../Misc/decorators";
+import { SerializationHelper } from "../Misc/decorators.serialization";
 import type { Nullable } from "../types";
 
-declare type Scene = import("../scene").Scene;
+import type { Scene } from "../scene";
 
 /**
  *
@@ -40,11 +40,19 @@ export class ColorCorrectionPostProcess extends PostProcess {
      * Gets a string identifying the name of the class
      * @returns "ColorCorrectionPostProcess" string
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "ColorCorrectionPostProcess";
     }
 
-    constructor(name: string, colorTableUrl: string, options: number | PostProcessOptions, camera: Nullable<Camera>, samplingMode?: number, engine?: Engine, reusable?: boolean) {
+    constructor(
+        name: string,
+        colorTableUrl: string,
+        options: number | PostProcessOptions,
+        camera: Nullable<Camera>,
+        samplingMode?: number,
+        engine?: AbstractEngine,
+        reusable?: boolean
+    ) {
         super(name, "colorCorrection", null, ["colorTable"], options, camera, samplingMode, engine, reusable);
 
         const scene = camera?.getScene() || null;
@@ -60,10 +68,21 @@ export class ColorCorrectionPostProcess extends PostProcess {
         };
     }
 
+    protected override _gatherImports(useWebGPU: boolean, list: Promise<any>[]) {
+        if (useWebGPU) {
+            this._webGPUReady = true;
+            list.push(Promise.all([import("../ShadersWGSL/colorCorrection.fragment")]));
+        } else {
+            list.push(Promise.all([import("../Shaders/colorCorrection.fragment")]));
+        }
+
+        super._gatherImports(useWebGPU, list);
+    }
+
     /**
      * @internal
      */
-    public static _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string): Nullable<ColorCorrectionPostProcess> {
+    public static override _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string): Nullable<ColorCorrectionPostProcess> {
         return SerializationHelper.Parse(
             () => {
                 return new ColorCorrectionPostProcess(

@@ -24,19 +24,36 @@ export class Ellipse extends Container {
         this._markAsDirty();
     }
 
+    private _arc = 1;
+
+    /** Gets or sets arcing of the ellipse (ratio of the circumference between 0 and 1) */
+    @serialize()
+    public get arc(): number {
+        return this._arc;
+    }
+
+    public set arc(value: number) {
+        if (this._arc === value) {
+            return;
+        }
+
+        this._arc = value;
+        this._markAsDirty();
+    }
+
     /**
      * Creates a new Ellipse
      * @param name defines the control name
      */
-    constructor(public name?: string) {
+    constructor(public override name?: string) {
         super(name);
     }
 
-    protected _getTypeName(): string {
+    protected override _getTypeName(): string {
         return "Ellipse";
     }
 
-    protected _localDraw(context: ICanvasRenderingContext): void {
+    protected override _localDraw(context: ICanvasRenderingContext): void {
         context.save();
 
         if (this.shadowBlur || this.shadowOffsetX || this.shadowOffsetY) {
@@ -51,6 +68,7 @@ export class Ellipse extends Container {
             this._currentMeasure.top + this._currentMeasure.height / 2,
             this._currentMeasure.width / 2 - this._thickness / 2,
             this._currentMeasure.height / 2 - this._thickness / 2,
+            this._arc,
             context
         );
 
@@ -78,7 +96,7 @@ export class Ellipse extends Container {
         context.restore();
     }
 
-    protected _additionalProcessing(parentMeasure: Measure, context: ICanvasRenderingContext): void {
+    protected override _additionalProcessing(parentMeasure: Measure, context: ICanvasRenderingContext): void {
         super._additionalProcessing(parentMeasure, context);
 
         this._measureForChildren.width -= 2 * this._thickness;
@@ -87,24 +105,26 @@ export class Ellipse extends Container {
         this._measureForChildren.top += this._thickness;
     }
 
-    protected _clipForChildren(context: ICanvasRenderingContext) {
+    protected override _clipForChildren(context: ICanvasRenderingContext) {
         Control.drawEllipse(
             this._currentMeasure.left + this._currentMeasure.width / 2,
             this._currentMeasure.top + this._currentMeasure.height / 2,
             this._currentMeasure.width / 2,
             this._currentMeasure.height / 2,
+            this._arc,
             context
         );
 
         context.clip();
     }
 
-    public _renderHighlightSpecific(context: ICanvasRenderingContext): void {
+    public override _renderHighlightSpecific(context: ICanvasRenderingContext): void {
         Control.drawEllipse(
             this._currentMeasure.left + this._currentMeasure.width / 2,
             this._currentMeasure.top + this._currentMeasure.height / 2,
             this._currentMeasure.width / 2 - this._highlightLineWidth / 2,
             this._currentMeasure.height / 2 - this._highlightLineWidth / 2,
+            this._arc,
             context
         );
         context.stroke();

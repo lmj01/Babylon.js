@@ -11,6 +11,7 @@ import type { ShadowGenerator } from "../Lights/Shadows/shadowGenerator";
 import { RandomGUID } from "../Misc/guid";
 import { DrawWrapper } from "./drawWrapper";
 import { EngineStore } from "../Engines/engineStore";
+import { ShaderLanguage } from "./shaderLanguage";
 
 /**
  * Options to be used when creating a shadow depth material
@@ -116,16 +117,29 @@ export class ShadowDepthWrapper {
                             const subMesh = key.value;
                             if (subMesh?.getMesh() === (mesh as AbstractMesh)) {
                                 this._subMeshToEffect.delete(subMesh);
-                                this._subMeshToDepthWrapper.mm.delete(subMesh);
+                                this._deleteDepthWrapperEffect(subMesh);
                             }
                         }
                     })
                 );
             }
 
-            this._subMeshToEffect.set(params.subMesh, [params.effect, this._scene.getEngine().currentRenderPassId]);
-            this._subMeshToDepthWrapper.mm.delete(params.subMesh); // trigger a depth effect recreation
+            if (this._subMeshToEffect.get(params.subMesh)?.[0] !== params.effect) {
+                this._subMeshToEffect.set(params.subMesh, [params.effect, this._scene.getEngine().currentRenderPassId]);
+                this._deleteDepthWrapperEffect(params.subMesh);
+            }
         });
+    }
+
+    private _deleteDepthWrapperEffect(subMesh: Nullable<SubMesh>): void {
+        const depthWrapperEntries = this._subMeshToDepthWrapper.mm.get(subMesh);
+        if (depthWrapperEntries) {
+            // find and release the previous depth effect
+            depthWrapperEntries.forEach((depthWrapper) => {
+                depthWrapper.mainDrawWrapper.effect?.dispose();
+            });
+            this._subMeshToDepthWrapper.mm.delete(subMesh); // trigger a depth effect recreation
+        }
     }
 
     /**
@@ -227,28 +241,34 @@ export class ShadowDepthWrapper {
             fragmentCode = origEffect.fragmentSourceCodeBeforeMigration;
 
         if (!this.doNotInjectCode) {
-            // vertex code
+            // Declare the shadow map includes
             const vertexNormalBiasCode =
                     this._options && this._options.remappedVariables
                         ? `#include<shadowMapVertexNormalBias>(${this._options.remappedVariables.join(",")})`
-                        : Effect.IncludesShadersStore["shadowMapVertexNormalBias"],
+                        : `#include<shadowMapVertexNormalBias>`,
                 vertexMetricCode =
                     this._options && this._options.remappedVariables
                         ? `#include<shadowMapVertexMetric>(${this._options.remappedVariables.join(",")})`
-                        : Effect.IncludesShadersStore["shadowMapVertexMetric"],
+                        : `#include<shadowMapVertexMetric>`,
                 fragmentSoftTransparentShadow =
                     this._options && this._options.remappedVariables
                         ? `#include<shadowMapFragmentSoftTransparentShadow>(${this._options.remappedVariables.join(",")})`
-                        : Effect.IncludesShadersStore["shadowMapFragmentSoftTransparentShadow"],
-                fragmentBlockCode = Effect.IncludesShadersStore["shadowMapFragment"];
+                        : `#include<shadowMapFragmentSoftTransparentShadow>`,
+                fragmentBlockCode = `#include<shadowMapFragment>`,
+                vertexExtraDeclartion = `#include<shadowMapVertexExtraDeclaration>`;
 
-            vertexCode = vertexCode.replace(/void\s+?main/g, Effect.IncludesShadersStore["shadowMapVertexExtraDeclaration"] + "\r\nvoid main");
+            // vertex code
+            if (origEffect.shaderLanguage === ShaderLanguage.GLSL) {
+                vertexCode = vertexCode.replace(/void\s+?main/g, `\n${vertexExtraDeclartion}\nvoid main`);
+            } else {
+                vertexCode = vertexCode.replace(/@vertex/g, `\n${vertexExtraDeclartion}\n@vertex`);
+            }
             vertexCode = vertexCode.replace(/#define SHADOWDEPTH_NORMALBIAS|#define CUSTOM_VERTEX_UPDATE_WORLDPOS/g, vertexNormalBiasCode);
 
             if (vertexCode.indexOf("#define SHADOWDEPTH_METRIC") !== -1) {
                 vertexCode = vertexCode.replace(/#define SHADOWDEPTH_METRIC/g, vertexMetricCode);
             } else {
-                vertexCode = vertexCode.replace(/}\s*$/g, vertexMetricCode + "\r\n}");
+                vertexCode = vertexCode.replace(/}\s*$/g, vertexMetricCode + "\n}");
             }
             vertexCode = vertexCode.replace(/#define SHADER_NAME.*?\n|out vec4 glFragColor;\n/g, "");
 
@@ -260,17 +280,17 @@ export class ShadowDepthWrapper {
             let fragmentCodeToInjectAtEnd = "";
 
             if (!hasLocationForSoftTransparentShadow) {
-                fragmentCodeToInjectAtEnd = fragmentSoftTransparentShadow + "\r\n";
+                fragmentCodeToInjectAtEnd = fragmentSoftTransparentShadow + "\n";
             } else {
                 fragmentCode = fragmentCode.replace(/#define SHADOWDEPTH_SOFTTRANSPARENTSHADOW|#define CUSTOM_FRAGMENT_BEFORE_FOG/g, fragmentSoftTransparentShadow);
             }
 
-            fragmentCode = fragmentCode.replace(/void\s+?main/g, Effect.IncludesShadersStore["shadowMapFragmentExtraDeclaration"] + "\r\nvoid main");
+            fragmentCode = fragmentCode.replace(/void\s+?main/g, Effect.IncludesShadersStore["shadowMapFragmentExtraDeclaration"] + "\nvoid main");
 
             if (hasLocationForFragment) {
                 fragmentCode = fragmentCode.replace(/#define SHADOWDEPTH_FRAGMENT/g, fragmentBlockCode);
             } else {
-                fragmentCodeToInjectAtEnd += fragmentBlockCode + "\r\n";
+                fragmentCodeToInjectAtEnd += fragmentBlockCode + "\n";
             }
             if (fragmentCodeToInjectAtEnd) {
                 fragmentCode = fragmentCode.replace(/}\s*$/g, fragmentCodeToInjectAtEnd + "}");
@@ -293,6 +313,7 @@ export class ShadowDepthWrapper {
                 samplers: origEffect.getSamplers(),
                 defines: join + "\n" + origEffect.defines.replace("#define SHADOWS", "").replace(/#define SHADOW\d/g, ""),
                 indexParameters: origEffect.getIndexParameters(),
+                shaderLanguage: origEffect.shaderLanguage,
             },
             engine
         );

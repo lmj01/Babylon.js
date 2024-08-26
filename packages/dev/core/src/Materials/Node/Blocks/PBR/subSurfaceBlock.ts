@@ -12,6 +12,7 @@ import type { AbstractMesh } from "../../../../Meshes/abstractMesh";
 import type { ReflectionBlock } from "./reflectionBlock";
 import type { Nullable } from "../../../../types";
 import { RefractionBlock } from "./refractionBlock";
+import { ShaderLanguage } from "core/Materials/shaderLanguage";
 
 /**
  * Block used to implement the sub surface module of the PBR material
@@ -37,6 +38,7 @@ export class SubSurfaceBlock extends NodeMaterialBlock {
             NodeMaterialBlockTargets.Fragment,
             new NodeMaterialConnectionPointCustomObject("refraction", this, NodeMaterialConnectionPointDirection.Input, RefractionBlock, "RefractionBlock")
         );
+        this.registerInput("dispersion", NodeMaterialBlockConnectionPointTypes.Float, true, NodeMaterialBlockTargets.Fragment);
 
         this.registerOutput(
             "subsurface",
@@ -50,18 +52,20 @@ export class SubSurfaceBlock extends NodeMaterialBlock {
      * Initialize the block and prepare the context for build
      * @param state defines the state that will be used for the build
      */
-    public initialize(state: NodeMaterialBuildState) {
+    public override initialize(state: NodeMaterialBuildState) {
         state._excludeVariableName("subSurfaceOut");
         state._excludeVariableName("vThicknessParam");
         state._excludeVariableName("vTintColor");
+        state._excludeVariableName("vTranslucencyColor");
         state._excludeVariableName("vSubSurfaceIntensity");
+        state._excludeVariableName("dispersion");
     }
 
     /**
      * Gets the current class name
      * @returns the class name
      */
-    public getClassName() {
+    public override getClassName() {
         return "SubSurfaceBlock";
     }
 
@@ -101,13 +105,20 @@ export class SubSurfaceBlock extends NodeMaterialBlock {
     }
 
     /**
+     * Gets the dispersion input component
+     */
+    public get dispersion(): NodeMaterialConnectionPoint {
+        return this._inputs[5];
+    }
+
+    /**
      * Gets the sub surface object output component
      */
     public get subsurface(): NodeMaterialConnectionPoint {
         return this._outputs[0];
     }
 
-    public autoConfigure() {
+    public override autoConfigure() {
         if (!this.thickness.isConnected) {
             const thicknessInput = new InputBlock("SubSurface thickness", NodeMaterialBlockTargets.Fragment, NodeMaterialBlockConnectionPointTypes.Float);
             thicknessInput.value = 0;
@@ -115,7 +126,7 @@ export class SubSurfaceBlock extends NodeMaterialBlock {
         }
     }
 
-    public prepareDefines(mesh: AbstractMesh, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines) {
+    public override prepareDefines(mesh: AbstractMesh, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines) {
         super.prepareDefines(mesh, nodeMaterial, defines);
 
         const translucencyEnabled = this.translucencyDiffusionDist.isConnected || this.translucencyIntensity.isConnected;
@@ -125,8 +136,8 @@ export class SubSurfaceBlock extends NodeMaterialBlock {
         defines.setValue("SS_THICKNESSANDMASK_TEXTURE", false, true);
         defines.setValue("SS_REFRACTIONINTENSITY_TEXTURE", false, true);
         defines.setValue("SS_TRANSLUCENCYINTENSITY_TEXTURE", false, true);
-        defines.setValue("SS_MASK_FROM_THICKNESS_TEXTURE", false, true);
         defines.setValue("SS_USE_GLTF_TEXTURES", false, true);
+        defines.setValue("SS_DISPERSION", this.dispersion.isConnected, true);
     }
 
     /**
@@ -151,91 +162,108 @@ export class SubSurfaceBlock extends NodeMaterialBlock {
         const refractionIntensity = refractionBlock?.intensity.isConnected ? refractionBlock.intensity.associatedVariableName : "1.";
         const refractionView = refractionBlock?.view.isConnected ? refractionBlock.view.associatedVariableName : "";
 
+        const dispersion = ssBlock?.dispersion.isConnected ? ssBlock?.dispersion.associatedVariableName : "0.0";
+        const isWebGPU = state.shaderLanguage === ShaderLanguage.WGSL;
+
         code += refractionBlock?.getCode(state) ?? "";
 
-        code += `subSurfaceOutParams subSurfaceOut;
+        code += `${isWebGPU ? "var subSurfaceOut: subSurfaceOutParams" : "subSurfaceOutParams subSurfaceOut"};
 
         #ifdef SUBSURFACE
-            vec2 vThicknessParam = vec2(0., ${thickness});
-            vec4 vTintColor = vec4(${tintColor}, ${refractionTintAtDistance});
-            vec3 vSubSurfaceIntensity = vec3(${refractionIntensity}, ${translucencyIntensity}, 0.);
-
-            subSurfaceBlock(
-                vSubSurfaceIntensity,
-                vThicknessParam,
-                vTintColor,
-                normalW,
-                specularEnvironmentReflectance,
+            ${state._declareLocalVar("vThicknessParam", NodeMaterialBlockConnectionPointTypes.Vector2)} = vec2${state.fSuffix}(0., ${thickness});
+            ${state._declareLocalVar("vTintColor", NodeMaterialBlockConnectionPointTypes.Vector4)} = vec4${state.fSuffix}(${tintColor}, ${refractionTintAtDistance});
+            ${state._declareLocalVar("vSubSurfaceIntensity", NodeMaterialBlockConnectionPointTypes.Vector3)} = vec3(${refractionIntensity}, ${translucencyIntensity}, 0.);
+            ${state._declareLocalVar("dispersion", NodeMaterialBlockConnectionPointTypes.Float)} = ${dispersion};
+            subSurfaceOut = subSurfaceBlock(
+                vSubSurfaceIntensity
+                , vThicknessParam
+                , vTintColor
+                , normalW
+                , specularEnvironmentReflectance
             #ifdef SS_THICKNESSANDMASK_TEXTURE
-                vec4(0.),
+                , vec4${state.fSuffix}(0.)
             #endif
             #ifdef REFLECTION
                 #ifdef SS_TRANSLUCENCY
-                    ${reflectionBlock?._reflectionMatrixName},
+                    , ${(isWebGPU ? "uniforms." : "") + reflectionBlock?._reflectionMatrixName}
                     #ifdef USESPHERICALFROMREFLECTIONMAP
                         #if !defined(NORMAL) || !defined(USESPHERICALINVERTEX)
-                            reflectionOut.irradianceVector,
+                            , reflectionOut.irradianceVector
                         #endif
                         #if defined(REALTIME_FILTERING)
-                            ${reflectionBlock?._cubeSamplerName},
-                            ${reflectionBlock?._vReflectionFilteringInfoName},
+                            , ${reflectionBlock?._cubeSamplerName}
+                            ${isWebGPU ? `, ${reflectionBlock?._cubeSamplerName}Sampler` : ""}
+                            , ${reflectionBlock?._vReflectionFilteringInfoName}
                         #endif
                         #endif
                     #ifdef USEIRRADIANCEMAP
-                        irradianceSampler,
+                        , irradianceSampler
+                        ${isWebGPU ? `, irradianceSamplerSampler` : ""}
                     #endif
                 #endif
             #endif
             #if defined(SS_REFRACTION) || defined(SS_TRANSLUCENCY)
-                surfaceAlbedo,
+                , surfaceAlbedo
             #endif
             #ifdef SS_REFRACTION
-                ${worldPosVarName}.xyz,
-                viewDirectionW,
-                ${refractionView},
-                ${refractionBlock?._vRefractionInfosName ?? ""},
-                ${refractionBlock?._refractionMatrixName ?? ""},
-                ${refractionBlock?._vRefractionMicrosurfaceInfosName ?? ""},
-                vLightingIntensity,
+                , ${worldPosVarName}.xyz
+                , viewDirectionW
+                , ${refractionView}
+                , ${(isWebGPU ? "uniforms." : "") + refractionBlock?._vRefractionInfosName ?? ""}
+                , ${(isWebGPU ? "uniforms." : "") + refractionBlock?._refractionMatrixName ?? ""}
+                , ${(isWebGPU ? "uniforms." : "") + refractionBlock?._vRefractionMicrosurfaceInfosName ?? ""}
+                , ${isWebGPU ? "uniforms." : ""}vLightingIntensity
                 #ifdef SS_LINKREFRACTIONTOTRANSPARENCY
-                    alpha,
+                    , alpha
                 #endif
                 #ifdef ${refractionBlock?._defineLODRefractionAlpha ?? "IGNORE"}
-                    NdotVUnclamped,
+                    , NdotVUnclamped
                 #endif
                 #ifdef ${refractionBlock?._defineLinearSpecularRefraction ?? "IGNORE"}
-                    roughness,
+                    , roughness
                 #endif
-                alphaG,
+                , alphaG
                 #ifdef ${refractionBlock?._define3DName ?? "IGNORE"}
-                    ${refractionBlock?._cubeSamplerName ?? ""},
+                    , ${refractionBlock?._cubeSamplerName ?? ""}
+                    ${isWebGPU ? `, ${refractionBlock?._cubeSamplerName}Sampler` : ""}
                 #else
-                    ${refractionBlock?._2DSamplerName ?? ""},
+                    , ${refractionBlock?._2DSamplerName ?? ""}
+                    ${isWebGPU ? `, ${refractionBlock?._2DSamplerName}Sampler` : ""}
                 #endif
                 #ifndef LODBASEDMICROSFURACE
                     #ifdef ${refractionBlock?._define3DName ?? "IGNORE"}
-                        ${refractionBlock?._cubeSamplerName ?? ""},
-                        ${refractionBlock?._cubeSamplerName ?? ""},
+                        , ${refractionBlock?._cubeSamplerName ?? ""}                        
+                        ${isWebGPU ? `, ${refractionBlock?._cubeSamplerName}Sampler` : ""}
+                        , ${refractionBlock?._cubeSamplerName ?? ""}                        
+                        ${isWebGPU ? `, ${refractionBlock?._cubeSamplerName}Sampler` : ""}
                     #else
-                        ${refractionBlock?._2DSamplerName ?? ""},
-                        ${refractionBlock?._2DSamplerName ?? ""},
+                        , ${refractionBlock?._2DSamplerName ?? ""}
+                        ${isWebGPU ? `, ${refractionBlock?._2DSamplerName}Sampler` : ""}
+                        , ${refractionBlock?._2DSamplerName ?? ""}
+                        ${isWebGPU ? `, ${refractionBlock?._2DSamplerName}Sampler` : ""}
                     #endif
                 #endif
                 #ifdef ANISOTROPIC
-                    anisotropicOut,
+                    , anisotropicOut
                 #endif
                 #ifdef REALTIME_FILTERING
-                    ${refractionBlock?._vRefractionFilteringInfoName ?? ""},
+                    , ${refractionBlock?._vRefractionFilteringInfoName ?? ""}
                 #endif
                 #ifdef SS_USE_LOCAL_REFRACTIONMAP_CUBIC
-                    vRefractionPosition,
-                    vRefractionSize,
+                    , vRefractionPosition
+                    , vRefractionSize
+                #endif
+                #ifdef SS_DISPERSION
+                    , dispersion
                 #endif
             #endif
             #ifdef SS_TRANSLUCENCY
-                ${translucencyDiffusionDistance},
-            #endif
-                subSurfaceOut
+                , ${translucencyDiffusionDistance}
+                , vTintColor
+                #ifdef SS_TRANSLUCENCYCOLOR_TEXTURE
+                    , vec4${state.fSuffix}(0.)
+                #endif
+            #endif                
             );
 
             #ifdef SS_REFRACTION
@@ -246,12 +274,12 @@ export class SubSurfaceBlock extends NodeMaterialBlock {
             #endif
         #else
             subSurfaceOut.specularEnvironmentReflectance = specularEnvironmentReflectance;
-        #endif\r\n`;
+        #endif\n`;
 
         return code;
     }
 
-    protected _buildBlock(state: NodeMaterialBuildState) {
+    protected override _buildBlock(state: NodeMaterialBuildState) {
         if (state.target === NodeMaterialBlockTargets.Fragment) {
             state.sharedData.blocksWithDefines.push(this);
         }

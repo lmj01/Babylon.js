@@ -1,4 +1,6 @@
-﻿#include<instancesDeclaration>
+﻿#include<__decl__lineVertex>
+
+#include<instancesDeclaration>
 
 #include<clipPlaneVertexDeclaration>
 
@@ -6,12 +8,10 @@
 attribute vec3 position;
 attribute vec4 normal;
 
-// Uniforms
-uniform mat4 viewProjection;
-
 uniform float width;
 uniform float aspectRatio;
 
+#include<logDepthDeclaration>
 
 #define CUSTOM_VERTEX_DEFINITIONS
 
@@ -45,6 +45,8 @@ void main(void) {
     vec4 worldPos = finalWorld * vec4(position, 1.0);
     #include<clipPlaneVertex>
 #endif
+
+	#include<logDepthVertex>
 
 #define CUSTOM_VERTEX_MAIN_END
 

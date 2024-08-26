@@ -4,7 +4,7 @@ import { Vector3, Vector2 } from "../../Maths/math.vector";
 import { Mesh } from "../mesh";
 import { VertexData } from "../mesh.vertexData";
 import type { Nullable } from "../../types";
-import { CompatibilityOptions } from "../../Compat/compatibilityOptions";
+import { useOpenGLOrientationForUV } from "../../Compat/compatibilityOptions";
 
 /**
  * Creates the VertexData of the IcoSphere
@@ -18,15 +18,6 @@ import { CompatibilityOptions } from "../../Compat/compatibilityOptions";
  * * sideOrientation optional and takes the values : Mesh.FRONTSIDE (default), Mesh.BACKSIDE or Mesh.DOUBLESIDE
  * * frontUvs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the front side, optional, default vector4 (0, 0, 1, 1)
  * * backUVs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the back side, optional, default vector4 (0, 0, 1, 1)
- * @param options.radius
- * @param options.radiusX
- * @param options.radiusY
- * @param options.radiusZ
- * @param options.flat
- * @param options.subdivisions
- * @param options.sideOrientation
- * @param options.frontUVs
- * @param options.backUVs
  * @returns the VertexData of the IcoSphere
  */
 export function CreateIcoSphereVertexData(options: {
@@ -43,7 +34,7 @@ export function CreateIcoSphereVertexData(options: {
     const sideOrientation = options.sideOrientation || VertexData.DEFAULTSIDE;
     const radius = options.radius || 1;
     const flat = options.flat === undefined ? true : options.flat;
-    const subdivisions = options.subdivisions || 4;
+    const subdivisions = (options.subdivisions || 4) | 0;
     const radiusX = options.radiusX || radius;
     const radiusY = options.radiusY || radius;
     const radiusZ = options.radiusZ || radius;
@@ -249,10 +240,10 @@ export function CreateIcoSphereVertexData(options: {
         0, //  15 - 19
     ];
 
-    const indices = new Array<number>();
-    const positions = new Array<number>();
-    const normals = new Array<number>();
-    const uvs = new Array<number>();
+    const indices: number[] = [];
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const uvs: number[] = [];
 
     let current_indice = 0;
     // prepare array of 3 vector (empty) (to be worked in place, shared for each face)
@@ -352,7 +343,7 @@ export function CreateIcoSphereVertexData(options: {
             const uv_interp = subdivisions === i2 ? face_vertex_uv[2] : Vector2.Lerp(uv_x0, uv_x1, i1 / (subdivisions - i2));
             positions.push(pos_interp.x * radiusX, pos_interp.y * radiusY, pos_interp.z * radiusZ);
             normals.push(vertex_normal.x, vertex_normal.y, vertex_normal.z);
-            uvs.push(uv_interp.x, CompatibilityOptions.UseOpenGLOrientationForUV ? 1.0 - uv_interp.y : uv_interp.y);
+            uvs.push(uv_interp.x, useOpenGLOrientationForUV ? 1.0 - uv_interp.y : uv_interp.y);
             // push each vertex has member of a face
             // Same vertex can belong to multiple face, it is pushed multiple time (duplicate vertex are present)
             indices.push(current_indice);
@@ -400,16 +391,6 @@ export function CreateIcoSphereVertexData(options: {
  * * The mesh can be set to updatable with the boolean parameter `updatable` (default false) if its internal geometry is supposed to change once created
  * @param name defines the name of the mesh
  * @param options defines the options used to create the mesh
- * @param options.radius
- * @param options.radiusX
- * @param options.radiusY
- * @param options.radiusZ
- * @param options.flat
- * @param options.subdivisions
- * @param options.sideOrientation
- * @param options.frontUVs
- * @param options.backUVs
- * @param options.updatable
  * @param scene defines the hosting scene
  * @returns the icosahedron mesh
  * @see https://doc.babylonjs.com/features/featuresDeepDive/mesh/creation/polyhedra#icosphere
@@ -452,10 +433,6 @@ export const IcoSphereBuilder = {
 
 VertexData.CreateIcoSphere = CreateIcoSphereVertexData;
 
-(Mesh as any).CreateIcoSphere = (
-    name: string,
-    options: { radius?: number; flat?: boolean; subdivisions?: number; sideOrientation?: number; updatable?: boolean },
-    scene: Scene
-): Mesh => {
+Mesh.CreateIcoSphere = (name: string, options: { radius?: number; flat?: boolean; subdivisions?: number; sideOrientation?: number; updatable?: boolean }, scene: Scene): Mesh => {
     return CreateIcoSphere(name, options, scene);
 };

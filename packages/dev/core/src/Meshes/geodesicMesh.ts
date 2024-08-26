@@ -393,7 +393,7 @@ export class _PrimaryIsoTriangle {
      */
 
     public build(m: number, n: number) {
-        const vertices = new Array<_IsoVector>();
+        const vertices: _IsoVector[] = [];
 
         const O: _IsoVector = _IsoVector.Zero();
         const A: _IsoVector = new _IsoVector(m, n);
@@ -547,9 +547,29 @@ export class _PrimaryIsoTriangle {
  */
 
 export class PolyhedronData {
+    /**
+     * @internal
+     */
     public edgematch: (number | string)[][];
 
-    constructor(public name: string, public category: string, public vertex: number[][], public face: number[][]) {}
+    constructor(
+        /**
+         * The name of the polyhedron
+         */
+        public name: string,
+        /**
+         * The category of the polyhedron
+         */
+        public category: string,
+        /**
+         * vertex data
+         */
+        public vertex: number[][],
+        /**
+         * face data
+         */
+        public face: number[][]
+    ) {}
 }
 
 /**
@@ -559,7 +579,7 @@ export class GeodesicData extends PolyhedronData {
     /**
      * @internal
      */
-    public edgematch: (number | string)[][];
+    public override edgematch: (number | string)[][];
     /**
      * @internal
      */

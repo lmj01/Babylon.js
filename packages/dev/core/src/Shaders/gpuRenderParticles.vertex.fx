@@ -35,6 +35,7 @@ uniform mat4 invView;
 #endif
 
 #include<clipPlaneVertexDeclaration2>
+#include<fogVertexDeclaration>
 #include<logDepthDeclaration>
 
 #ifdef COLORGRADIENTS
@@ -103,14 +104,14 @@ void main() {
 	#else
    	    vUV = uv;
 	#endif
-  float ratio = age / life;
+  float ratio = min(1.0, age / life);
 #ifdef COLORGRADIENTS
 	vColor = texture2D(colorGradientSampler, vec2(ratio, 0));
 #else
 	vColor = color * vec4(1.0 - ratio) + colorDead * vec4(ratio);
 #endif
 
-  vec2 cornerPos = (offset - translationPivot) * size.yz * size.x + translationPivot;
+  vec2 cornerPos = (offset - translationPivot) * size.yz * size.x;
 
 #ifdef BILLBOARD
 	vec4 rotatedCorner;
@@ -120,6 +121,7 @@ void main() {
 		rotatedCorner.x = cornerPos.x * cos(angle) - cornerPos.y * sin(angle);
 		rotatedCorner.z = cornerPos.x * sin(angle) + cornerPos.y * cos(angle);
 		rotatedCorner.y = 0.;
+        rotatedCorner.xz += translationPivot;
 
 		vec3 yaxis = (position + worldOffset) - eyePosition;
 		yaxis.y = 0.;
@@ -130,6 +132,7 @@ void main() {
 		rotatedCorner.x = cornerPos.x * cos(angle) - cornerPos.y * sin(angle);
 		rotatedCorner.y = cornerPos.x * sin(angle) + cornerPos.y * cos(angle);
 		rotatedCorner.z = 0.;
+        rotatedCorner.xy += translationPivot;
 
 		vec3 toCamera = (position + worldOffset) - eyePosition;
 		vPositionW = rotateAlign(toCamera, rotatedCorner.xyz);
@@ -140,6 +143,7 @@ void main() {
 		rotatedCorner.x = cornerPos.x * cos(angle) - cornerPos.y * sin(angle);
 		rotatedCorner.y = cornerPos.x * sin(angle) + cornerPos.y * cos(angle);
 		rotatedCorner.z = 0.;
+        rotatedCorner.xy += translationPivot;
 
 		// Expand position
 		#ifdef LOCAL
@@ -157,6 +161,7 @@ void main() {
 	rotatedCorner.x = cornerPos.x * cos(angle) - cornerPos.y * sin(angle);
 	rotatedCorner.y = 0.;
 	rotatedCorner.z = cornerPos.x * sin(angle) + cornerPos.y * cos(angle);
+    rotatedCorner.xz += translationPivot;
 
 	vec3 yaxis = normalize(initialDirection);
 	vPositionW = rotate(yaxis, rotatedCorner);
@@ -167,9 +172,10 @@ void main() {
 	gl_Position = projection * viewPosition;
 
 	// Clip plane
-#if defined(CLIPPLANE) || defined(CLIPPLANE2) || defined(CLIPPLANE3) || defined(CLIPPLANE4) || defined(CLIPPLANE5) || defined(CLIPPLANE6)
+#if defined(CLIPPLANE) || defined(CLIPPLANE2) || defined(CLIPPLANE3) || defined(CLIPPLANE4) || defined(CLIPPLANE5) || defined(CLIPPLANE6) || defined(FOG)
     vec4 worldPos = vec4(vPositionW, 1.0);
 #endif
 	#include<clipPlaneVertex>
+	#include<fogVertex>
 	#include<logDepthVertex>
 }

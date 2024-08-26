@@ -19,15 +19,15 @@ export class SphereParticleEmitter implements IParticleEmitterType {
      */
     constructor(
         /**
-         * The radius of the emission sphere.
+         * [1] The radius of the emission sphere.
          */
         public radius = 1,
         /**
-         * The range of emission [0-1] 0 Surface only, 1 Entire Radius.
+         * [1] The range of emission [0-1] 0 Surface only, 1 Entire Radius.
          */
         public radiusRange = 1,
         /**
-         * How much to randomize the particle direction [0-1].
+         * [0] How much to randomize the particle direction [0-1].
          */
         public directionRandomizer = 0
     ) {}
@@ -168,11 +168,11 @@ export class SphereDirectedParticleEmitter extends SphereParticleEmitter {
     constructor(
         radius = 1,
         /**
-         * The min limit of the emission direction.
+         * [Up vector] The min limit of the emission direction.
          */
         public direction1 = new Vector3(0, 1, 0),
         /**
-         * The max limit of the emission direction.
+         * [Up vector] The max limit of the emission direction.
          */
         public direction2 = new Vector3(0, 1, 0)
     ) {
@@ -184,7 +184,7 @@ export class SphereDirectedParticleEmitter extends SphereParticleEmitter {
      * @param worldMatrix is the world matrix of the particle system
      * @param directionToUpdate is the direction vector to update with the result
      */
-    public startDirectionFunction(worldMatrix: Matrix, directionToUpdate: Vector3): void {
+    public override startDirectionFunction(worldMatrix: Matrix, directionToUpdate: Vector3): void {
         const randX = Scalar.RandomRange(this.direction1.x, this.direction2.x);
         const randY = Scalar.RandomRange(this.direction1.y, this.direction2.y);
         const randZ = Scalar.RandomRange(this.direction1.z, this.direction2.z);
@@ -195,7 +195,7 @@ export class SphereDirectedParticleEmitter extends SphereParticleEmitter {
      * Clones the current emitter and returns a copy of it
      * @returns the new emitter
      */
-    public clone(): SphereDirectedParticleEmitter {
+    public override clone(): SphereDirectedParticleEmitter {
         const newOne = new SphereDirectedParticleEmitter(this.radius, this.direction1, this.direction2);
 
         DeepCopier.DeepCopy(this, newOne);
@@ -207,7 +207,7 @@ export class SphereDirectedParticleEmitter extends SphereParticleEmitter {
      * Called by the GPUParticleSystem to setup the update shader
      * @param uboOrEffect defines the update shader
      */
-    public applyToShader(uboOrEffect: UniformBufferEffectCommonAccessor): void {
+    public override applyToShader(uboOrEffect: UniformBufferEffectCommonAccessor): void {
         uboOrEffect.setFloat("radius", this.radius);
         uboOrEffect.setFloat("radiusRange", this.radiusRange);
         uboOrEffect.setVector3("direction1", this.direction1);
@@ -218,7 +218,7 @@ export class SphereDirectedParticleEmitter extends SphereParticleEmitter {
      * Creates the structure of the ubo for this particle emitter
      * @param ubo ubo to create the structure for
      */
-    public buildUniformLayout(ubo: UniformBuffer): void {
+    public override buildUniformLayout(ubo: UniformBuffer): void {
         ubo.addUniform("radius", 1);
         ubo.addUniform("radiusRange", 1);
         ubo.addUniform("direction1", 3);
@@ -229,7 +229,7 @@ export class SphereDirectedParticleEmitter extends SphereParticleEmitter {
      * Returns a string to use to update the GPU particles update shader
      * @returns a string containing the defines string
      */
-    public getEffectDefines(): string {
+    public override getEffectDefines(): string {
         return "#define SPHEREEMITTER\n#define DIRECTEDSPHEREEMITTER";
     }
 
@@ -237,7 +237,7 @@ export class SphereDirectedParticleEmitter extends SphereParticleEmitter {
      * Returns the string "SphereDirectedParticleEmitter"
      * @returns a string containing the class name
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "SphereDirectedParticleEmitter";
     }
 
@@ -245,7 +245,7 @@ export class SphereDirectedParticleEmitter extends SphereParticleEmitter {
      * Serializes the particle system to a JSON object.
      * @returns the JSON object
      */
-    public serialize(): any {
+    public override serialize(): any {
         const serializationObject = super.serialize();
 
         serializationObject.direction1 = this.direction1.asArray();
@@ -258,7 +258,7 @@ export class SphereDirectedParticleEmitter extends SphereParticleEmitter {
      * Parse properties from a JSON object
      * @param serializationObject defines the JSON object
      */
-    public parse(serializationObject: any): void {
+    public override parse(serializationObject: any): void {
         super.parse(serializationObject);
         this.direction1.copyFrom(serializationObject.direction1);
         this.direction2.copyFrom(serializationObject.direction2);

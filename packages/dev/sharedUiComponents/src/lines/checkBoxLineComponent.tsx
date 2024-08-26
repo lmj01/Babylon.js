@@ -1,9 +1,11 @@
 import * as React from "react";
 import type { Observable } from "core/Misc/observable";
 import type { PropertyChangedEvent } from "./../propertyChangedEvent";
+import { copyCommandToClipboard, getClassNameWithNamespace } from "../copyCommandToClipboard";
 import type { IconDefinition } from "@fortawesome/fontawesome-common-types";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { conflictingValuesPlaceholder } from "./targetsProxy";
+import copyIcon from "./copy.svg";
 
 export interface ICheckBoxLineComponentProps {
     label?: string;
@@ -20,22 +22,22 @@ export interface ICheckBoxLineComponentProps {
     large?: boolean;
 }
 
-import toggleOnIcon_40px from "../imgs/toggleOnIcon_40px.svg";
-import toggleOffIcon_40px from "../imgs/toggleOffIcon_40px.svg";
-import toggleOnIcon_30px from "../imgs/toggleOnIcon_30px.svg";
-import toggleMixedIcon_30px from "../imgs/toggleMixedIcon_30px.svg";
-import toggleOffIcon_30px from "../imgs/toggleOffIcon_30px.svg";
+import toggleOnIcon40px from "../imgs/toggleOnIcon_40px.svg";
+import toggleOffIcon40px from "../imgs/toggleOffIcon_40px.svg";
+import toggleOnIcon30px from "../imgs/toggleOnIcon_30px.svg";
+import toggleMixedIcon30px from "../imgs/toggleMixedIcon_30px.svg";
+import toggleOffIcon30px from "../imgs/toggleOffIcon_30px.svg";
 
 const Icons = {
     size30: {
-        on: toggleOnIcon_30px,
-        mixed: toggleMixedIcon_30px,
-        off: toggleOffIcon_30px,
+        on: toggleOnIcon30px,
+        mixed: toggleMixedIcon30px,
+        off: toggleOffIcon30px,
     },
     size40: {
-        on: toggleOnIcon_40px,
+        on: toggleOnIcon40px,
         mixed: "", // unneeded
-        off: toggleOffIcon_40px,
+        off: toggleOffIcon40px,
     },
 };
 
@@ -58,7 +60,7 @@ export class CheckBoxLineComponent extends React.Component<ICheckBoxLineComponen
         }
     }
 
-    shouldComponentUpdate(nextProps: ICheckBoxLineComponentProps, nextState: { isSelected: boolean; isDisabled: boolean; isConflict: boolean }) {
+    override shouldComponentUpdate(nextProps: ICheckBoxLineComponentProps, nextState: { isSelected: boolean; isDisabled: boolean; isConflict: boolean }) {
         let selected: boolean;
 
         if (nextProps.isSelected) {
@@ -109,7 +111,22 @@ export class CheckBoxLineComponent extends React.Component<ICheckBoxLineComponen
         this.setState({ isSelected: !this.state.isSelected, isConflict: false });
     }
 
-    render() {
+    // Copy to clipboard the code this checkbox actually does
+    // Example : mesh.checkCollisions = true;
+    onCopyClick() {
+        if (this.props && this.props.target) {
+            const { className, babylonNamespace } = getClassNameWithNamespace(this.props.target);
+            const targetName = "globalThis.debugNode";
+            const targetProperty = this.props.propertyName;
+            const value = this.props.target[this.props.propertyName!];
+            const strCommand = targetName + "." + targetProperty + " = " + value + ";// (debugNode as " + babylonNamespace + className + ")";
+            copyCommandToClipboard(strCommand);
+        } else {
+            copyCommandToClipboard("undefined");
+        }
+    }
+
+    override render() {
         const icons = this.props.large ? Icons.size40 : Icons.size30;
         const icon = this.state.isConflict ? icons.mixed : this.state.isSelected ? icons.on : icons.off;
         return (
@@ -141,6 +158,9 @@ export class CheckBoxLineComponent extends React.Component<ICheckBoxLineComponen
                         </label>
                     </div>
                 )}
+                <div className="copy hoverIcon" onClick={() => this.onCopyClick()} title="Copy to clipboard">
+                    <img src={copyIcon} alt="Copy" />
+                </div>
             </div>
         );
     }

@@ -2,7 +2,7 @@ import type { Nullable } from "../../types";
 import { Tools } from "../../Misc/tools";
 import type { Camera } from "../../Cameras/camera";
 import type { PostProcess } from "../../PostProcesses/postProcess";
-import type { Engine } from "../../Engines/engine";
+import type { AbstractEngine } from "../../Engines/abstractEngine";
 /**
  * This represents a set of one or more post processes in Babylon.
  * A post process can be used to apply a shader to a texture after it is rendered.
@@ -31,7 +31,7 @@ export class PostProcessRenderEffect {
      * @param getPostProcesses A function that returns a set of post processes which the effect will run in order to be run.
      * @param singleInstance False if this post process can be run on multiple cameras. (default: true)
      */
-    constructor(engine: Engine, name: string, getPostProcesses: () => Nullable<PostProcess | Array<PostProcess>>, singleInstance?: boolean) {
+    constructor(engine: AbstractEngine, name: string, getPostProcesses: () => Nullable<PostProcess | Array<PostProcess>>, singleInstance?: boolean) {
         this._name = name;
         this._singleInstance = singleInstance || true;
 
@@ -167,6 +167,8 @@ export class PostProcessRenderEffect {
             if (this._cameras[cameraName]) {
                 this._cameras[cameraName] = null;
             }
+
+            delete this._indicesForCamera[cameraName];
         }
     }
 
@@ -197,12 +199,13 @@ export class PostProcessRenderEffect {
         for (let i = 0; i < cams.length; i++) {
             const camera = cams[i];
             const cameraName = camera.name;
+            const cameraKey = this._singleInstance ? 0 : cameraName;
 
             for (let j = 0; j < this._indicesForCamera[cameraName].length; j++) {
-                if (camera._postProcesses[this._indicesForCamera[cameraName][j]] === undefined || camera._postProcesses[this._indicesForCamera[cameraName][j]] === null) {
-                    this._postProcesses[this._singleInstance ? 0 : cameraName].forEach((postProcess) => {
-                        cams![i].attachPostProcess(postProcess, this._indicesForCamera[cameraName][j]);
-                    });
+                const index = this._indicesForCamera[cameraName][j];
+                const postProcess = camera._postProcesses[index];
+                if (postProcess === undefined || postProcess === null) {
+                    cams![i].attachPostProcess(this._postProcesses[cameraKey][j], index);
                 }
             }
         }

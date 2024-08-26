@@ -1,4 +1,3 @@
-import { Engine } from "../../../Engines/engine";
 import type { AbstractMesh } from "../../../Meshes/abstractMesh";
 import { VertexBuffer } from "../../../Buffers/buffer";
 import type { Scene } from "../../../scene";
@@ -11,6 +10,7 @@ import { Color3, Color4 } from "../../../Maths/math.color";
 import { TexturePackerFrame } from "./frame";
 import { Logger } from "../../../Misc/logger";
 import { Tools } from "../../../Misc/tools";
+import { Constants } from "core/Engines/constants";
 
 /**
  * Defines the basic options interface of a TexturePacker
@@ -225,7 +225,6 @@ export class TexturePacker {
     /**
      * Starts the package process
      * @param resolve The promises resolution function
-     * @returns TexturePacker
      */
     private _createFrames(resolve: () => void) {
         const dtSize = this._calculateSize();
@@ -244,7 +243,7 @@ export class TexturePacker {
                 this.scene,
                 true, //Generate Mips
                 Texture.TRILINEAR_SAMPLINGMODE,
-                Engine.TEXTUREFORMAT_RGBA
+                Constants.TEXTUREFORMAT_RGBA
             );
 
             const dtx = dt.getContext();

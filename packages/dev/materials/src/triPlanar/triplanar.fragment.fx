@@ -50,6 +50,12 @@ uniform sampler2D normalSamplerZ;
 varying mat3 tangentSpace;
 #endif
 
+#ifdef LOGARITHMICDEPTH
+#extension GL_EXT_frag_depth : enable
+#endif
+
+#include<logDepthDeclaration>
+
 #include<lightsFragmentFunctions>
 #include<shadowsFragmentFunctions>
 #include<clipPlaneFragmentDeclaration>
@@ -124,6 +130,8 @@ void main(void) {
 	vec3 diffuseBase = vec3(0., 0., 0.);
     lightingInfo info;
 	float shadow = 1.;
+	float aggShadow = 0.;
+	float numLights = 0.;
 	
 #ifdef SPECULARTERM
 	float glossiness = vSpecularColor.a;
@@ -150,6 +158,7 @@ void main(void) {
 	// Composition
 	vec4 color = vec4(finalDiffuse + finalSpecular, alpha);
 
+#include<logDepthFragment>
 #include<fogFragment>
 
 	gl_FragColor = color;

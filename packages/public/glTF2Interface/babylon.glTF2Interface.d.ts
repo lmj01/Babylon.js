@@ -148,6 +148,10 @@ declare module BABYLON.GLTF2 {
          * WEBP Mime-type
          */
         WEBP = "image/webp",
+        /**
+         * AVIF Mime-type
+         */
+        AVIF = "image/avif",
     }
 
     /**
@@ -1089,6 +1093,15 @@ declare module BABYLON.GLTF2 {
     }
 
     /**
+     * Interfaces from the KHR_materials_dispersion extension
+     */
+
+    /** @internal */
+    interface IKHRMaterialsDispersion extends IMaterialExtension {
+        dispersion?: number;
+    }
+
+    /**
      * Interfaces from the KHR_materials_specular extension
      */
 
@@ -1145,14 +1158,16 @@ declare module BABYLON.GLTF2 {
     }
 
     /**
-     * Interfaces from the KHR_materials_translucency extension
+     * Interfaces from the KHR_materials_diffuse_transmission extension
      * !!! Experimental Extension Subject to Changes !!!
      */
 
     /** @internal */
-    interface IKHRMaterialsTranslucency extends IMaterialExtension {
-        translucencyFactor?: number;
-        translucencyTexture?: ITextureInfo;
+    interface IKHRMaterialsDiffuseTransmission extends IMaterialExtension {
+        diffuseTransmissionFactor?: number;
+        diffuseTransmissionTexture?: ITextureInfo;
+        diffuseTransmissionColorFactor?: number[];
+        diffuseTransmissionColorTexture?: ITextureInfo;
     }
 
     /**
@@ -1192,6 +1207,15 @@ declare module BABYLON.GLTF2 {
 
     /** @internal */
     interface IEXTTextureWebP {
+        source: number;
+    }
+
+    /**
+     * Interfaces from the EXT_texture_avif extension
+     */
+
+    /** @internal */
+    interface IEXTTextureAVIF {
         source: number;
     }
 
@@ -1318,5 +1342,64 @@ declare module BABYLON.GLTF2 {
         count: number;
         mode: "ATTRIBUTES" | "TRIANGLES" | "INDICES";
         filter?: "NONE" | "OCTAHEDRAL" | "QUATERNION" | "EXPONENTIAL";
+    }
+
+    /**
+     * Interfaces for the KHR_interactivity extension
+     */
+    interface IKHRInteractivity {
+        nodes: IKHRInteractivity_Node[];
+        customEvents?: IKHRInteractivity_CustomEvent[];
+        types?: IKHRInteractivity_Type[];
+        variables?: IKHRInteractivity_Variable[];
+    }
+
+    interface IKHRInteractivity_Node {
+        type: string;
+        flows?: IKHRInteractivity_Flow[];
+        configuration?: IKHRInteractivity_Configuration[];
+        values?: IKHRInteractivity_Value[];
+        metadata?: any;
+    }
+
+    interface IKHRInteractivity_Flow {
+        id: string;
+        node: number;
+        socket: string;
+    }
+
+    interface IKHRInteractivity_Configuration {
+        id: string;
+        value: any;
+        type?: number;
+    }
+
+    interface IKHRInteractivity_Value {
+        id: string;
+        value?: any;
+        node?: number;
+        socket?: string;
+        type?: number;
+    }
+
+    interface IKHRInteractivity_CustomEvent {
+        id: string;
+        values: IKHRInteractivity_CustomEventValue[];
+    }
+
+    interface IKHRInteractivity_CustomEventValue {
+        id: string;
+        type: number;
+        description: string;
+    }
+
+    interface IKHRInteractivity_Type {
+        signature: string;
+    }
+
+    interface IKHRInteractivity_Variable {
+        id: string;
+        value: any;
+        type: number;
     }
 }

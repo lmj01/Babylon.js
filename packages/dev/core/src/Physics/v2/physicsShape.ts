@@ -5,7 +5,7 @@ import { PhysicsShapeType } from "./IPhysicsEnginePlugin";
 import type { IPhysicsEnginePluginV2, PhysicsShapeParameters } from "./IPhysicsEnginePlugin";
 import type { PhysicsMaterial } from "./physicsMaterial";
 import { Matrix, Vector3, Quaternion, TmpVectors } from "../../Maths/math.vector";
-
+import type { GroundMesh } from "../../Meshes/groundMesh";
 import type { Mesh } from "../../Meshes/mesh";
 import type { Scene } from "../../scene";
 
@@ -45,6 +45,10 @@ export class PhysicsShape {
     private _type: PhysicsShapeType;
 
     private _material: PhysicsMaterial;
+
+    private _isTrigger: boolean = false;
+
+    private _isDisposed = false;
 
     /**
      * Constructs a new physics shape.
@@ -95,7 +99,8 @@ export class PhysicsShape {
     }
 
     /**
-     *
+     * Returns the type of the physics shape.
+     * @returns The type of the physics shape.
      */
     public get type(): PhysicsShapeType {
         return this._type;
@@ -157,23 +162,27 @@ export class PhysicsShape {
     }
 
     /**
-     *
-     * @returns
+     * Returns the material of the physics shape.
+     * @returns The material of the physics shape.
      */
     public get material(): PhysicsMaterial {
+        if (!this._material) {
+            this._material = this._physicsPlugin.getMaterial(this);
+        }
         return this._material;
     }
 
     /**
-     *
-     * @param density
+     * Sets the density of the physics shape.
+     * @param density The density of the physics shape.
      */
     public set density(density: number) {
         this._physicsPlugin.setDensity(this, density);
     }
 
     /**
-     *
+     * Returns the density of the physics shape.
+     * @returns The density of the physics shape.
      */
     public get density(): number {
         return this._physicsPlugin.getDensity(this);
@@ -212,33 +221,50 @@ export class PhysicsShape {
     }
 
     /**
-     *
-     * @param childIndex
+     * Removes a child shape from this shape.
+     * @param childIndex The index of the child shape to remove
      */
     public removeChild(childIndex: number): void {
         this._physicsPlugin.removeChild(this, childIndex);
     }
 
     /**
-     *
-     * @returns
+     * Returns the number of children of a physics shape.
+     * @returns The number of children of a physics shape.
      */
     public getNumChildren(): number {
         return this._physicsPlugin.getNumChildren(this);
     }
 
     /**
-     *
+     * Returns the bounding box of the physics shape.
+     * @returns The bounding box of the physics shape.
      */
     public getBoundingBox(): BoundingBox {
         return this._physicsPlugin.getBoundingBox(this);
     }
 
+    public set isTrigger(isTrigger: boolean) {
+        if (this._isTrigger === isTrigger) {
+            return;
+        }
+        this._isTrigger = isTrigger;
+        this._physicsPlugin.setTrigger(this, isTrigger);
+    }
+
+    public get isTrigger(): boolean {
+        return this._isTrigger;
+    }
+
     /**
-     *
+     * Dispose the shape and release its associated resources.
      */
     public dispose() {
+        if (this._isDisposed) {
+            return;
+        }
         this._physicsPlugin.disposeShape(this);
+        this._isDisposed = true;
     }
 }
 
@@ -257,8 +283,8 @@ export class PhysicsShapeSphere extends PhysicsShape {
     }
 
     /**
-     *
-     * @param mesh
+     * Derive an approximate sphere from the mesh.
+     * @param mesh node from which to derive the sphere shape
      * @returns PhysicsShapeSphere
      */
     static FromMesh(mesh: AbstractMesh) {
@@ -286,9 +312,10 @@ export class PhysicsShapeCapsule extends PhysicsShape {
     }
 
     /**
-     * Derive an approximate capsule from the transform node. Note, this is
+     * Derive an approximate capsule from the mesh. Note, this is
      * not the optimal bounding capsule.
-     * @param TransformNode node Node from which to derive a cylinder shape
+     * @param mesh Node from which to derive a cylinder shape
+     * @returns Physics Shape Capsule
      */
     static FromMesh(mesh: AbstractMesh): PhysicsShapeCapsule {
         const boundsLocal = mesh.getBoundingInfo();
@@ -316,9 +343,10 @@ export class PhysicsShapeCylinder extends PhysicsShape {
     }
 
     /**
-     * Derive an approximate cylinder from the transform node. Note, this is
+     * Derive an approximate cylinder from the mesh. Note, this is
      * not the optimal bounding cylinder.
-     * @param TransformNode node Node from which to derive a cylinder shape
+     * @param mesh Node from which to derive a cylinder shape
+     * @returns Physics Shape Cylinder
      */
     static FromMesh(mesh: AbstractMesh): PhysicsShapeCylinder {
         const boundsLocal = mesh.getBoundingInfo();
@@ -336,7 +364,7 @@ export class PhysicsShapeCylinder extends PhysicsShape {
 export class PhysicsShapeBox extends PhysicsShape {
     /**
      *
-     * @param center local center of the sphere
+     * @param center local center of the box
      * @param rotation local orientation
      * @param extents size of the box in each direction
      * @param scene scene to attach to
@@ -396,5 +424,49 @@ export class PhysicsShapeContainer extends PhysicsShape {
      */
     constructor(scene: Scene) {
         super({ type: PhysicsShapeType.CONTAINER, parameters: {} }, scene);
+    }
+}
+
+/**
+ * Helper object to create a heightfield Shape
+ */
+export class PhysicsShapeHeightField extends PhysicsShape {
+    /**
+     * Constructor of the Shape heightfield
+     * @param heightFieldSizeX The size of the heightfield in the X axis
+     * @param heightFieldSizeZ The size of the heightfield in the Z axis
+     * @param numHeightFieldSamplesX The number of samples along the X axis
+     * @param numHeightFieldSamplesZ The number of samples along the Z axis
+     * @param heightFieldData The data for the heightfield
+     * @param scene scene to attach to
+     */
+    constructor(heightFieldSizeX: number, heightFieldSizeZ: number, numHeightFieldSamplesX: number, numHeightFieldSamplesZ: number, heightFieldData: Float32Array, scene: Scene) {
+        super(
+            {
+                type: PhysicsShapeType.HEIGHTFIELD,
+                parameters: {
+                    heightFieldSizeX: heightFieldSizeX,
+                    heightFieldSizeZ: heightFieldSizeZ,
+                    numHeightFieldSamplesX: numHeightFieldSamplesX,
+                    numHeightFieldSamplesZ: numHeightFieldSamplesZ,
+                    heightFieldData: heightFieldData,
+                },
+            },
+            scene
+        );
+    }
+}
+
+/**
+ * Helper object to create a ground mesh Shape
+ */
+export class PhysicsShapeGroundMesh extends PhysicsShape {
+    /**
+     * Constructor of the Shape heightfield
+     * @param groundMesh ground mesh used for display
+     * @param scene scene to attach to
+     */
+    constructor(groundMesh: GroundMesh, scene: Scene) {
+        super({ type: PhysicsShapeType.HEIGHTFIELD, parameters: { groundMesh: groundMesh } }, scene);
     }
 }

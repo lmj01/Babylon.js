@@ -110,17 +110,17 @@ export class RadioButton extends Control {
      * Creates a new RadioButton
      * @param name defines the control name
      */
-    constructor(public name?: string) {
+    constructor(public override name?: string) {
         super(name);
 
         this.isPointerBlocker = true;
     }
 
-    protected _getTypeName(): string {
+    protected override _getTypeName(): string {
         return "RadioButton";
     }
 
-    public _draw(context: ICanvasRenderingContext): void {
+    public override _draw(context: ICanvasRenderingContext): void {
         context.save();
 
         this._applyStates(context);
@@ -140,6 +140,7 @@ export class RadioButton extends Control {
             this._currentMeasure.top + this._currentMeasure.height / 2,
             this._currentMeasure.width / 2 - this._thickness / 2,
             this._currentMeasure.height / 2 - this._thickness / 2,
+            1,
             context
         );
 
@@ -168,6 +169,7 @@ export class RadioButton extends Control {
                 this._currentMeasure.top + this._currentMeasure.height / 2,
                 offsetWidth / 2 - this._thickness / 2,
                 offseHeight / 2 - this._thickness / 2,
+                1,
                 context
             );
 
@@ -177,7 +179,7 @@ export class RadioButton extends Control {
     }
 
     // Events
-    public _onPointerDown(target: Control, coordinates: Vector2, pointerId: number, buttonIndex: number, pi: PointerInfoBase): boolean {
+    public override _onPointerDown(target: Control, coordinates: Vector2, pointerId: number, buttonIndex: number, pi: PointerInfoBase): boolean {
         if (!super._onPointerDown(target, coordinates, pointerId, buttonIndex, pi)) {
             return false;
         }

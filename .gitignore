@@ -1,4 +1,6 @@
 dist
+tmp
+temp
 .temp
 .tempChromeCanaryProfileForDebug
 .tempChromeProfileForDebug
@@ -24,3 +26,9 @@ junit.xml
 packages/tools/babylonServer/public/localDev
 packages/tools/babylonServer/public/localDevWebGPU
 packages/tools/playground/public/temp
+#playwright
+test-results
+playwright-report
+playwright/.cache/
+.nx
+.DS_Store

@@ -97,6 +97,14 @@ export class PBRBRDFConfiguration extends MaterialPluginBase {
         this._internalMarkAllSubMeshesAsMiscDirty();
     }
 
+    /**
+     * Gets a boolean indicating that the plugin is compatible with a given shader language.
+     * @returns true if the plugin is compatible with the shader language
+     */
+    public override isCompatible(): boolean {
+        return true;
+    }
+
     constructor(material: PBRBaseMaterial, addToPluginList = true) {
         super(material, "PBRBRDF", 90, new MaterialBRDFDefines(), addToPluginList);
 
@@ -104,14 +112,14 @@ export class PBRBRDFConfiguration extends MaterialPluginBase {
         this._enable(true);
     }
 
-    public prepareDefines(defines: MaterialBRDFDefines): void {
+    public override prepareDefines(defines: MaterialBRDFDefines): void {
         defines.BRDF_V_HEIGHT_CORRELATED = this._useSmithVisibilityHeightCorrelated;
         defines.MS_BRDF_ENERGY_CONSERVATION = this._useEnergyConservation && this._useSmithVisibilityHeightCorrelated;
         defines.SPHERICAL_HARMONICS = this._useSphericalHarmonics;
         defines.SPECULAR_GLOSSINESS_ENERGY_CONSERVATION = this._useSpecularGlossinessInputEnergyConservation;
     }
 
-    public getClassName(): string {
+    public override getClassName(): string {
         return "PBRBRDFConfiguration";
     }
 }

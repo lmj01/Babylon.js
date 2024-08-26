@@ -4,6 +4,7 @@ import style from "./NumericInputComponent.modules.scss";
 
 interface INumericInputComponentProps {
     label: string;
+    labelTooltip?: string;
     value: number;
     step?: number;
     onChange: (value: number) => void;
@@ -26,13 +27,13 @@ export class NumericInputComponent extends React.Component<INumericInputComponen
         this.state = { value: this.props.value.toFixed(this.props.precision !== undefined ? this.props.precision : 3) };
     }
 
-    componentWillUnmount() {
+    override componentWillUnmount() {
         if (this.props.lockObject) {
             this.props.lockObject.lock = false;
         }
     }
 
-    shouldComponentUpdate(nextProps: INumericInputComponentProps, nextState: { value: string }) {
+    override shouldComponentUpdate(nextProps: INumericInputComponentProps, nextState: { value: string }) {
         if (this._localChange) {
             return true;
         }
@@ -106,12 +107,12 @@ export class NumericInputComponent extends React.Component<INumericInputComponen
         }
     }
 
-    render() {
+    override render() {
         return (
             <div className={style.numeric}>
                 {this.props.icon && <img src={this.props.icon} title={this.props.iconLabel} alt={this.props.iconLabel} className="icon" />}
                 {this.props.label && (
-                    <div className={style.numericLabel} title={this.props.label}>
+                    <div className={style.numericLabel} title={this.props.labelTooltip ?? this.props.label}>
                         {`${this.props.label}: `}
                     </div>
                 )}

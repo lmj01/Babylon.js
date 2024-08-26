@@ -1,7 +1,6 @@
 import type { Nullable } from "../types";
-import { Vector3, Quaternion } from "../Maths/math.vector";
+import { Vector3, Quaternion, TmpVectors } from "../Maths/math.vector";
 import { Color3 } from "../Maths/math.color";
-import { AbstractMesh } from "../Meshes/abstractMesh";
 import { Mesh } from "../Meshes/mesh";
 import type { IGizmo } from "./gizmo";
 import { Gizmo } from "./gizmo";
@@ -21,6 +20,7 @@ import { PointerEventTypes } from "../Events/pointerEvents";
 import type { Observer } from "../Misc/observable";
 import { Observable } from "../Misc/observable";
 import { CreateCylinder } from "../Meshes/Builders/cylinderBuilder";
+import { Logger } from "core/Misc/logger";
 
 /**
  * Interface for light gizmo
@@ -56,7 +56,7 @@ export class LightGizmo extends Gizmo implements ILightGizmo {
      */
     constructor(gizmoLayer: UtilityLayerRenderer = UtilityLayerRenderer.DefaultUtilityLayer) {
         super(gizmoLayer);
-        this.attachedMesh = new AbstractMesh("", this.gizmoLayer.utilityLayerScene);
+        this.attachedMesh = new Mesh("", this.gizmoLayer.utilityLayerScene);
         this._attachedMeshParent = new TransformNode("parent", this.gizmoLayer.utilityLayerScene);
 
         this.attachedMesh.parent = this._attachedMeshParent;
@@ -82,11 +82,11 @@ export class LightGizmo extends Gizmo implements ILightGizmo {
      * It will return the attached mesh (if any) and setting an attached node will log
      * a warning
      */
-    public get attachedNode() {
+    public override get attachedNode() {
         return this.attachedMesh;
     }
-    public set attachedNode(value: Nullable<Node>) {
-        console.warn("Nodes cannot be attached to LightGizmo. Attach to a mesh instead.");
+    public override set attachedNode(value: Nullable<Node>) {
+        Logger.Warn("Nodes cannot be attached to LightGizmo. Attach to a mesh instead.");
     }
 
     /**
@@ -138,7 +138,8 @@ export class LightGizmo extends Gizmo implements ILightGizmo {
             if ((light as any).direction) {
                 this.attachedMesh!.setDirection((light as any).direction);
                 this.attachedMesh!.computeWorldMatrix(true);
-                this._cachedForward.copyFrom(this.attachedMesh!.forward);
+                const forward = this._getMeshForward();
+                this._cachedForward.copyFrom(forward);
             }
 
             this._update();
@@ -157,9 +158,22 @@ export class LightGizmo extends Gizmo implements ILightGizmo {
 
     /**
      * @internal
+     * returns mesh forward
+     */
+    protected _getMeshForward(): Vector3 {
+        let forward = this.attachedMesh!.forward;
+        if (this.attachedMesh!.getScene().useRightHandedSystem) {
+            forward.negateToRef(TmpVectors.Vector3[0]);
+            forward = TmpVectors.Vector3[0];
+        }
+        return forward;
+    }
+
+    /**
+     * @internal
      * Updates the gizmo to match the attached mesh's position/rotation
      */
-    protected _update() {
+    protected override _update() {
         super._update();
         if (!this._light) {
             return;
@@ -188,16 +202,17 @@ export class LightGizmo extends Gizmo implements ILightGizmo {
         }
         if ((this._light as any).direction) {
             // If the gizmo is moved update the light otherwise update the gizmo to match the light
-            if (Vector3.DistanceSquared(this.attachedMesh!.forward, this._cachedForward) > 0.0001) {
+            const forward = this._getMeshForward();
+            if (Vector3.DistanceSquared(forward, this._cachedForward) > 0.0001) {
                 // update light to match gizmo
-                const direction = this.attachedMesh!.forward;
+                const direction = forward;
                 (this._light as any).direction = new Vector3(direction.x, direction.y, direction.z);
-                this._cachedForward.copyFrom(this.attachedMesh!.forward);
-            } else if (Vector3.DistanceSquared(this.attachedMesh!.forward, (this._light as any).direction) > 0.0001) {
+                this._cachedForward.copyFrom(forward);
+            } else if (Vector3.DistanceSquared(forward, (this._light as any).direction) > 0.0001) {
                 // update gizmo to match light
                 this.attachedMesh!.setDirection((this._light as any).direction);
                 this.attachedMesh!.computeWorldMatrix(true);
-                this._cachedForward.copyFrom(this.attachedMesh!.forward);
+                this._cachedForward.copyFrom(forward);
             }
         }
     }
@@ -209,6 +224,7 @@ export class LightGizmo extends Gizmo implements ILightGizmo {
      * Creates the lines for a light mesh
      * @param levels
      * @param scene
+     * @returns the light lines mesh
      */
     private static _CreateLightLines = (levels: number, scene: Scene) => {
         const distFromSphere = 1.2;
@@ -281,7 +297,7 @@ export class LightGizmo extends Gizmo implements ILightGizmo {
     /**
      * Disposes of the light gizmo
      */
-    public dispose() {
+    public override dispose() {
         this.onClickedObservable.clear();
         this.gizmoLayer.utilityLayerScene.onPointerObservable.remove(this._pointerObserver);
         this._material.dispose();

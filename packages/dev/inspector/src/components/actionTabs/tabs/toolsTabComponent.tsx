@@ -17,6 +17,7 @@ import { SceneSerializer } from "core/Misc/sceneSerializer";
 import { Mesh } from "core/Meshes/mesh";
 import { FilesInput } from "core/Misc/filesInput";
 import type { Scene } from "core/scene";
+import { captureEquirectangularFromScene } from "core/Misc/equirectangularCapture";
 import { SceneLoader, SceneLoaderAnimationGroupLoadingMode } from "core/Loading/sceneLoader";
 import { Reflector } from "core/Misc/reflector";
 import { GLTFComponent } from "./tools/gltfComponent";
@@ -25,13 +26,13 @@ import type { GLTFData } from "serializers/glTF/2.0/index";
 import { GLTF2Export } from "serializers/glTF/2.0/index";
 import { FloatLineComponent } from "shared-ui-components/lines/floatLineComponent";
 import type { IScreenshotSize } from "core/Misc/interfaces/screenshotSize";
-import { NumericInputComponent } from "shared-ui-components/lines/numericInputComponent";
+import { NumericInput } from "shared-ui-components/lines/numericInputComponent";
 import { CheckBoxLineComponent } from "shared-ui-components/lines/checkBoxLineComponent";
 import { TextLineComponent } from "shared-ui-components/lines/textLineComponent";
 import { FileMultipleButtonLineComponent } from "shared-ui-components/lines/fileMultipleButtonLineComponent";
-import { OptionsLineComponent } from "shared-ui-components/lines/optionsLineComponent";
+import { OptionsLine } from "shared-ui-components/lines/optionsLineComponent";
 import { MessageLineComponent } from "shared-ui-components/lines/messageLineComponent";
-import { FileButtonLineComponent } from "shared-ui-components/lines/fileButtonLineComponent";
+import { FileButtonLine } from "shared-ui-components/lines/fileButtonLineComponent";
 import { IndentedTextLineComponent } from "shared-ui-components/lines/indentedTextLineComponent";
 import { TextInputLineComponent } from "shared-ui-components/lines/textInputLineComponent";
 import { LockObject } from "shared-ui-components/tabs/propertyGrids/lockObject";
@@ -40,6 +41,7 @@ import GIF from "gif.js.optimized";
 import { Camera } from "core/Cameras/camera";
 import { Light } from "core/Lights/light";
 import { GLTFFileLoader } from "loaders/glTF/glTFFileLoader";
+import { Logger } from "core/Misc/logger";
 
 const envExportImageTypes = [
     { label: "PNG", value: 0, imageType: "image/png" },
@@ -84,14 +86,14 @@ export class ToolsTabComponent extends PaneComponent {
         }
     }
 
-    componentDidMount() {
+    override componentDidMount() {
         if (!GLTF2Export) {
             Tools.Warn("GLTF2Export is not available. Make sure to load the serializers library");
             return;
         }
     }
 
-    componentWillUnmount() {
+    override componentWillUnmount() {
         if (this._videoRecorder) {
             this._videoRecorder.stopRecording();
             this._videoRecorder.dispose();
@@ -109,6 +111,13 @@ export class ToolsTabComponent extends PaneComponent {
         const scene = this.props.scene;
         if (scene.activeCamera) {
             Tools.CreateScreenshot(scene.getEngine(), scene.activeCamera, this._screenShotSize);
+        }
+    }
+
+    captureEquirectangular() {
+        const scene = this.props.scene;
+        if (scene.activeCamera) {
+            captureEquirectangularFromScene(scene, { size: 1024, filename: "equirectangular_capture.png" });
         }
     }
 
@@ -307,7 +316,7 @@ export class ToolsTabComponent extends PaneComponent {
                 Tools.Download(blob, "environment.env");
             })
             .catch((error: any) => {
-                console.error(error);
+                Logger.Error(error);
                 alert(error);
             });
     }
@@ -338,7 +347,7 @@ export class ToolsTabComponent extends PaneComponent {
         this._reflector = new Reflector(this.props.scene, this._reflectorHostname, this._reflectorPort);
     }
 
-    render() {
+    override render() {
         const scene = this.props.scene;
 
         if (!scene) {
@@ -358,6 +367,7 @@ export class ToolsTabComponent extends PaneComponent {
             <div className="pane">
                 <LineContainerComponent title="CAPTURE" selection={this.props.globalState}>
                     <ButtonLineComponent label="Screenshot" onClick={() => this.captureScreenshot()} />
+                    <ButtonLineComponent label="Generate equirectangular capture" onClick={() => this.captureEquirectangular()} />
                     <ButtonLineComponent label={this.state.tag} onClick={() => this.recordVideo()} />
                 </LineContainerComponent>
                 <LineContainerComponent title="CAPTURE WITH RTT" selection={this.props.globalState}>
@@ -380,7 +390,7 @@ export class ToolsTabComponent extends PaneComponent {
                         />
                         {this._useWidthHeight && (
                             <div className="secondLine">
-                                <NumericInputComponent
+                                <NumericInput
                                     lockObject={this._lockObject}
                                     label="Width"
                                     precision={0}
@@ -388,7 +398,7 @@ export class ToolsTabComponent extends PaneComponent {
                                     value={this._screenShotSize.width ? this._screenShotSize.width : 512}
                                     onChange={(value) => (this._screenShotSize.width = value)}
                                 />
-                                <NumericInputComponent
+                                <NumericInput
                                     lockObject={this._lockObject}
                                     label="Height"
                                     precision={0}
@@ -414,7 +424,7 @@ export class ToolsTabComponent extends PaneComponent {
                     {!this.props.globalState.recorder.isRecording && <ButtonLineComponent label="Start recording" onClick={() => this.startRecording()} />}
                     {this.props.globalState.recorder.isRecording && <IndentedTextLineComponent value={"Record in progress"} />}
                     {this.props.globalState.recorder.isRecording && <ButtonLineComponent label="Generate delta file" onClick={() => this.exportReplay()} />}
-                    <FileButtonLineComponent label={`Apply delta file`} onClick={(file) => this.applyDelta(file)} accept=".json" />
+                    <FileButtonLine label={`Apply delta file`} onClick={(file) => this.applyDelta(file)} accept=".json" />
                 </LineContainerComponent>
                 <LineContainerComponent title="SCENE IMPORT" selection={this.props.globalState}>
                     <FileMultipleButtonLineComponent label="Import animations" accept="gltf" onClick={(evt: any) => this.importAnimations(evt)} />
@@ -428,12 +438,7 @@ export class ToolsTabComponent extends PaneComponent {
                         }}
                     />
                     {sceneImportDefaults["overwriteAnimations"] === false && (
-                        <OptionsLineComponent
-                            label="Animation merge mode"
-                            options={animationGroupLoadingModes}
-                            target={sceneImportDefaults}
-                            propertyName="animationGroupLoadingMode"
-                        />
+                        <OptionsLine label="Animation merge mode" options={animationGroupLoadingModes} target={sceneImportDefaults} propertyName="animationGroupLoadingMode" />
                     )}
                 </LineContainerComponent>
                 <LineContainerComponent title="SCENE EXPORT" selection={this.props.globalState}>
@@ -441,7 +446,7 @@ export class ToolsTabComponent extends PaneComponent {
                     {!scene.getEngine().premultipliedAlpha && scene.environmentTexture && scene.environmentTexture._prefiltered && scene.activeCamera && (
                         <>
                             <ButtonLineComponent label="Generate .env texture" onClick={() => this.createEnvTexture()} />
-                            <OptionsLineComponent
+                            <OptionsLine
                                 label="Image type"
                                 options={envExportImageTypes}
                                 target={this._envOptions}

@@ -1,4 +1,5 @@
-import { serializeAsMeshReference, serializeAsVector3, SerializationHelper } from "../Misc/decorators";
+import { serializeAsMeshReference, serializeAsVector3 } from "../Misc/decorators";
+import { SerializationHelper } from "../Misc/decorators.serialization";
 import { RenderTargetTexture } from "../Materials/Textures/renderTargetTexture";
 import { Matrix, Vector3 } from "../Maths/math.vector";
 import type { AbstractMesh } from "../Meshes/abstractMesh";
@@ -111,7 +112,7 @@ export class ReflectionProbe {
 
         // Create the scene field if not exist.
         if (!this._scene.reflectionProbes) {
-            this._scene.reflectionProbes = new Array<ReflectionProbe>();
+            this._scene.reflectionProbes = [] as ReflectionProbe[];
         }
         this._scene.reflectionProbes.push(this);
 
@@ -236,9 +237,13 @@ export class ReflectionProbe {
         return this._renderTargetTexture;
     }
 
-    /** Gets the list of meshes to render */
+    /** Gets or sets the list of meshes to render */
     public get renderList(): Nullable<AbstractMesh[]> {
         return this._renderTargetTexture.renderList;
+    }
+
+    public set renderList(value: Nullable<AbstractMesh[]>) {
+        this._renderTargetTexture.renderList = value;
     }
 
     /**

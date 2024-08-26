@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/naming-convention */
 import type { GraphNode } from "./graphNode";
 import type { GraphCanvasComponent } from "./graphCanvas";
 import type { Nullable } from "core/types";
@@ -13,7 +14,7 @@ import styles from "./graphFrame.modules.scss";
 import commonStyles from "./common.modules.scss";
 import { ClassNames } from "../components/classNames";
 
-declare type ISelectionChangedOptions = import("./interfaces/selectionChangedOptions").ISelectionChangedOptions;
+import type { ISelectionChangedOptions } from "./interfaces/selectionChangedOptions";
 
 enum ResizingDirection {
     Right,

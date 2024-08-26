@@ -14,12 +14,10 @@ import { Texture } from "core/Materials/Textures/texture";
 import { DynamicTexture } from "core/Materials/Textures/dynamicTexture";
 import type { AbstractMesh } from "core/Meshes/abstractMesh";
 import { Layer } from "core/Layers/layer";
-import type { Engine } from "core/Engines/engine";
 import type { Scene } from "core/scene";
 
 import { Container } from "./controls/container";
 import { Control } from "./controls/control";
-import type { IFocusableControl } from "./controls/focusableControl";
 import { Style } from "./style";
 import { Measure } from "./measure";
 import { Constants } from "core/Engines/constants";
@@ -31,14 +29,15 @@ import { RandomGUID } from "core/Misc/guid";
 import { GetClass } from "core/Misc/typeStore";
 import { DecodeBase64ToBinary } from "core/Misc/stringTools";
 
-declare type StandardMaterial = import("core/Materials/standardMaterial").StandardMaterial;
+import type { StandardMaterial } from "core/Materials/standardMaterial";
+import type { AbstractEngine } from "core/Engines/abstractEngine";
 
 /**
  * Class used to create texture to support 2D GUI elements
  * @see https://doc.babylonjs.com/features/featuresDeepDive/gui/gui
  */
 export class AdvancedDynamicTexture extends DynamicTexture {
-    /** Define the Uurl to load snippets */
+    /** Define the url to load snippets */
     public static SnippetUrl = Constants.SnippetUrl;
 
     /** Indicates if some optimizations can be performed in GUI GPU management (the downside is additional memory/GPU texture memory used) */
@@ -52,13 +51,13 @@ export class AdvancedDynamicTexture extends DynamicTexture {
 
     private _isDirty = false;
     private _renderObserver: Nullable<Observer<Camera>>;
-    private _resizeObserver: Nullable<Observer<Engine>>;
+    private _resizeObserver: Nullable<Observer<AbstractEngine>>;
     private _preKeyboardObserver: Nullable<Observer<KeyboardInfoPre>>;
     private _prePointerObserver: Nullable<Observer<PointerInfoPre>>;
     private _sceneRenderObserver: Nullable<Observer<Scene>>;
     private _pointerObserver: Nullable<Observer<PointerInfo>>;
     private _canvasPointerOutObserver: Nullable<Observer<PointerEvent>>;
-    private _canvasBlurObserver: Nullable<Observer<Engine>>;
+    private _canvasBlurObserver: Nullable<Observer<AbstractEngine>>;
     private _controlAddedObserver: Nullable<Observer<Nullable<Control>>>;
     private _controlRemovedObserver: Nullable<Observer<Nullable<Control>>>;
     private _background: string;
@@ -78,13 +77,14 @@ export class AdvancedDynamicTexture extends DynamicTexture {
     public _layerToDispose: Nullable<Layer>;
     /** @internal */
     public _linkedControls = new Array<Control>();
-    private _isFullscreen = false;
+    /** @internal */
+    public _isFullscreen = false;
     private _fullscreenViewport = new Viewport(0, 0, 1, 1);
     private _idealWidth = 0;
     private _idealHeight = 0;
     private _useSmallestIdeal: boolean = false;
     private _renderAtIdealSize = false;
-    private _focusedControl: Nullable<IFocusableControl>;
+    private _focusedControl: Nullable<Control>;
     private _blockNextFocusCheck = false;
     private _renderScale = 1;
     private _rootElement: Nullable<HTMLElement>;
@@ -146,6 +146,17 @@ export class AdvancedDynamicTexture extends DynamicTexture {
      * Gets or sets a boolean indicating that the canvas must be reverted on Y when updating the texture
      */
     public applyYInversionOnUpdate = true;
+
+    /**
+     * A boolean indicating whether or not the elements can be navigated to using the tab key.
+     * Defaults to false.
+     */
+    public disableTabNavigation = false;
+
+    /**
+     * If set to true, the POINTERTAP event type will be used for "click", instead of POINTERUP
+     */
+    public usePointerTapForClickEvent = false;
     /**
      * Gets or sets a number used to scale rendering size (2 means that the texture will be twice bigger).
      * Useful when you want more antialiasing
@@ -321,10 +332,10 @@ export class AdvancedDynamicTexture extends DynamicTexture {
     /**
      * Gets or sets the current focused control
      */
-    public get focusedControl(): Nullable<IFocusableControl> {
+    public get focusedControl(): Nullable<Control> {
         return this._focusedControl;
     }
-    public set focusedControl(control: Nullable<IFocusableControl>) {
+    public set focusedControl(control: Nullable<Control>) {
         if (this._focusedControl == control) {
             return;
         }
@@ -365,6 +376,13 @@ export class AdvancedDynamicTexture extends DynamicTexture {
     }
 
     /**
+     * If this is set, even when a control is pointer blocker, some events can still be passed through to the scene.
+     * Options from values are PointerEventTypes
+     * POINTERDOWN, POINTERUP, POINTERMOVE, POINTERWHEEL, POINTERPICK, POINTERTAP, POINTERDOUBLETAP
+     */
+    public skipBlockEvents = 0;
+
+    /**
      * If set to true, every scene render will trigger a pointer event for the GUI
      * if it is linked to a mesh or has controls linked to a mesh. This will allow
      * you to catch the pointer moving around the GUI due to camera or mesh movements,
@@ -403,6 +421,22 @@ export class AdvancedDynamicTexture extends DynamicTexture {
             }
         });
         this._preKeyboardObserver = scene.onPreKeyboardObservable.add((info) => {
+            // check if tab is pressed
+            if (!this.disableTabNavigation && info.type === KeyboardEventTypes.KEYDOWN && info.event.code === "Tab") {
+                const forward = !info.event.shiftKey;
+                if (
+                    (forward && this._focusProperties.index === this._focusProperties.total - 1) ||
+                    (!forward && this._focusProperties.index === 0 && this._focusProperties.total > 0)
+                ) {
+                    this.focusedControl = null;
+                    this._focusProperties.index = 0;
+                    this._focusProperties.total = -1;
+                    return;
+                }
+                this._focusNextElement(forward);
+                info.event.preventDefault();
+                return;
+            }
             if (!this._focusedControl) {
                 return;
             }
@@ -423,7 +457,7 @@ export class AdvancedDynamicTexture extends DynamicTexture {
      * Get the current class name of the texture useful for serialization or dynamic coding.
      * @returns "AdvancedDynamicTexture"
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "AdvancedDynamicTexture";
     }
     /**
@@ -561,7 +595,7 @@ export class AdvancedDynamicTexture extends DynamicTexture {
     /**
      * Release all resources
      */
-    public dispose(): void {
+    public override dispose(): void {
         const scene = this.getScene();
         if (!scene) {
             return;
@@ -924,7 +958,7 @@ export class AdvancedDynamicTexture extends DynamicTexture {
             const pointerId = (pi.event as IPointerEvent).pointerId || this._defaultMousePointerId;
             this._doPicking(transformedX, transformedY, pi, pi.type, pointerId, pi.event.button, (<IWheelEvent>pi.event).deltaX, (<IWheelEvent>pi.event).deltaY);
             // Avoid overwriting a true skipOnPointerObservable to false
-            if (this._shouldBlockPointer || this._capturingControl[pointerId]) {
+            if ((this._shouldBlockPointer && !(pi.type & this.skipBlockEvents)) || this._capturingControl[pointerId]) {
                 pi.skipOnPointerObservable = true;
             }
         } else {
@@ -955,7 +989,8 @@ export class AdvancedDynamicTexture extends DynamicTexture {
                 pi.type !== PointerEventTypes.POINTERMOVE &&
                 pi.type !== PointerEventTypes.POINTERUP &&
                 pi.type !== PointerEventTypes.POINTERDOWN &&
-                pi.type !== PointerEventTypes.POINTERWHEEL
+                pi.type !== PointerEventTypes.POINTERWHEEL &&
+                pi.type !== PointerEventTypes.POINTERTAP
             ) {
                 return;
             }
@@ -974,6 +1009,43 @@ export class AdvancedDynamicTexture extends DynamicTexture {
         this._attachPickingToSceneRender(scene, () => this._translateToPicking(scene, tempViewport, null), false);
         this._attachToOnPointerOut(scene);
         this._attachToOnBlur(scene);
+    }
+
+    private _focusProperties: { index: number; total: number } = { index: 0, total: -1 };
+
+    private _focusNextElement(forward: boolean = true): void {
+        // generate the order of tab-able controls
+        const sortedTabbableControls: Control[] = [];
+        this.executeOnAllControls((control) => {
+            if (control.isFocusInvisible || !control.isVisible || control.tabIndex < 0) {
+                return;
+            }
+            sortedTabbableControls.push(control);
+        });
+        // if no control is tab-able, return
+        if (sortedTabbableControls.length === 0) {
+            return;
+        }
+        sortedTabbableControls.sort((a, b) => {
+            // if tabIndex is 0, put it in the end of the list, otherwise sort by tabIndex
+            return a.tabIndex === 0 ? 1 : b.tabIndex === 0 ? -1 : a.tabIndex - b.tabIndex;
+        });
+        this._focusProperties.total = sortedTabbableControls.length;
+        // if no control is focused, focus the first one
+        let nextIndex = -1;
+        if (!this._focusedControl) {
+            nextIndex = forward ? 0 : sortedTabbableControls.length - 1;
+        } else {
+            const currentIndex = sortedTabbableControls.indexOf(this._focusedControl);
+            nextIndex = currentIndex + (forward ? 1 : -1);
+            if (nextIndex < 0) {
+                nextIndex = sortedTabbableControls.length - 1;
+            } else if (nextIndex >= sortedTabbableControls.length) {
+                nextIndex = 0;
+            }
+        }
+        sortedTabbableControls[nextIndex].focus();
+        this._focusProperties.index = nextIndex;
     }
 
     /**
@@ -1181,7 +1253,7 @@ export class AdvancedDynamicTexture extends DynamicTexture {
      * Move the focus to a specific control
      * @param control defines the control which will receive the focus
      */
-    public moveFocusToControl(control: IFocusableControl): void {
+    public moveFocusToControl(control: Control): void {
         this.focusedControl = control;
         this._lastPickedControl = <any>control;
         this._blockNextFocusCheck = true;
@@ -1255,9 +1327,10 @@ export class AdvancedDynamicTexture extends DynamicTexture {
      * Recreate the content of the ADT from a JSON object
      * @param serializedObject define the JSON serialized object to restore from
      * @param scaleToSize defines whether to scale to texture to the saved size
+     * @param urlRewriter defines an url rewriter to update urls before sending them to the controls
      */
-    public parseSerializedObject(serializedObject: any, scaleToSize?: boolean) {
-        this._rootContainer = Control.Parse(serializedObject.root, this) as Container;
+    public parseSerializedObject(serializedObject: any, scaleToSize?: boolean, urlRewriter?: (url: string) => string) {
+        this._rootContainer = Control.Parse(serializedObject.root, this, urlRewriter) as Container;
         if (scaleToSize) {
             const width = serializedObject.width;
             const height = serializedObject.height;
@@ -1271,11 +1344,12 @@ export class AdvancedDynamicTexture extends DynamicTexture {
     }
 
     /**
-     * Clones the ADT
+     * Clones the ADT. If no mesh is defined, the GUI will be considered as a fullscreen GUI
      * @param newName defines the name of the new ADT
+     * @param attachToMesh defines if the new ADT should be attached to a mesh
      * @returns the clone of the ADT
      */
-    public clone(newName?: string): AdvancedDynamicTexture {
+    public override clone(newName?: string, attachToMesh?: AbstractMesh): AdvancedDynamicTexture {
         const scene = this.getScene();
 
         if (!scene) {
@@ -1283,7 +1357,16 @@ export class AdvancedDynamicTexture extends DynamicTexture {
         }
         const size = this.getSize();
         const data = this.serializeContent();
-        const clone = new AdvancedDynamicTexture(newName ?? "Clone of " + this.name, size.width, size.height, scene, !this.noMipmap, this.samplingMode);
+        let clone;
+        if (!this._isFullscreen) {
+            if (attachToMesh) {
+                clone = AdvancedDynamicTexture.CreateForMesh(attachToMesh, size.width, size.height);
+            } else {
+                clone = new AdvancedDynamicTexture(newName ?? "Clone of " + this.name, size.width, size.height, scene, !this.noMipmap, this.samplingMode);
+            }
+        } else {
+            clone = AdvancedDynamicTexture.CreateFullscreenUI(newName ?? "Clone of " + this.name);
+        }
         clone.parseSerializedObject(data);
 
         return clone;
@@ -1293,6 +1376,7 @@ export class AdvancedDynamicTexture extends DynamicTexture {
      * Recreate the content of the ADT from a JSON object
      * @param serializedObject define the JSON serialized object to restore from
      * @param scaleToSize defines whether to scale to texture to the saved size
+     * @param urlRewriter defines an url rewriter to update urls before sending them to the controls
      * @deprecated Please use parseSerializedObject instead
      */
     public parseContent = this.parseSerializedObject;
@@ -1302,16 +1386,22 @@ export class AdvancedDynamicTexture extends DynamicTexture {
      * @param snippetId defines the snippet to load
      * @param scaleToSize defines whether to scale to texture to the saved size
      * @param appendToAdt if provided the snippet will be appended to the adt. Otherwise a fullscreen ADT will be created.
+     * @param urlRewriter defines an url rewriter to update urls before sending them to the controls
      * @returns a promise that will resolve on success
      */
-    public static async ParseFromSnippetAsync(snippetId: string, scaleToSize?: boolean, appendToAdt?: AdvancedDynamicTexture): Promise<AdvancedDynamicTexture> {
+    public static async ParseFromSnippetAsync(
+        snippetId: string,
+        scaleToSize?: boolean,
+        appendToAdt?: AdvancedDynamicTexture,
+        urlRewriter?: (url: string) => string
+    ): Promise<AdvancedDynamicTexture> {
         const adt = appendToAdt ?? AdvancedDynamicTexture.CreateFullscreenUI("ADT from snippet");
         if (snippetId === "_BLANK") {
             return adt;
         }
 
         const serialized = await AdvancedDynamicTexture._LoadURLContentAsync(AdvancedDynamicTexture.SnippetUrl + "/" + snippetId.replace(/#/g, "/"), true);
-        adt.parseSerializedObject(serialized, scaleToSize);
+        adt.parseSerializedObject(serialized, scaleToSize, urlRewriter);
         return adt;
     }
 
@@ -1319,10 +1409,11 @@ export class AdvancedDynamicTexture extends DynamicTexture {
      * Recreate the content of the ADT from a snippet saved by the GUI editor
      * @param snippetId defines the snippet to load
      * @param scaleToSize defines whether to scale to texture to the saved size
+     * @param urlRewriter defines an url rewriter to update urls before sending them to the controls
      * @returns a promise that will resolve on success
      */
-    public parseFromSnippetAsync(snippetId: string, scaleToSize?: boolean): Promise<AdvancedDynamicTexture> {
-        return AdvancedDynamicTexture.ParseFromSnippetAsync(snippetId, scaleToSize, this);
+    public parseFromSnippetAsync(snippetId: string, scaleToSize?: boolean, urlRewriter?: (url: string) => string): Promise<AdvancedDynamicTexture> {
+        return AdvancedDynamicTexture.ParseFromSnippetAsync(snippetId, scaleToSize, this, urlRewriter);
     }
 
     /**
@@ -1330,12 +1421,18 @@ export class AdvancedDynamicTexture extends DynamicTexture {
      * @param url defines the url to load
      * @param scaleToSize defines whether to scale to texture to the saved size
      * @param appendToAdt if provided the snippet will be appended to the adt. Otherwise a fullscreen ADT will be created.
+     * @param urlRewriter defines an url rewriter to update urls before sending them to the controls
      * @returns a promise that will resolve on success
      */
-    public static async ParseFromFileAsync(url: string, scaleToSize?: boolean, appendToAdt?: AdvancedDynamicTexture): Promise<AdvancedDynamicTexture> {
+    public static async ParseFromFileAsync(
+        url: string,
+        scaleToSize?: boolean,
+        appendToAdt?: AdvancedDynamicTexture,
+        urlRewriter?: (url: string) => string
+    ): Promise<AdvancedDynamicTexture> {
         const adt = appendToAdt ?? AdvancedDynamicTexture.CreateFullscreenUI("ADT from URL");
         const serialized = await AdvancedDynamicTexture._LoadURLContentAsync(url);
-        adt.parseSerializedObject(serialized, scaleToSize);
+        adt.parseSerializedObject(serialized, scaleToSize, urlRewriter);
         return adt;
     }
 
@@ -1343,10 +1440,11 @@ export class AdvancedDynamicTexture extends DynamicTexture {
      * Recreate the content of the ADT from a url json
      * @param url defines the url to load
      * @param scaleToSize defines whether to scale to texture to the saved size
+     * @param urlRewriter defines an url rewriter to update urls before sending them to the controls
      * @returns a promise that will resolve on success
      */
-    public parseFromURLAsync(url: string, scaleToSize?: boolean): Promise<AdvancedDynamicTexture> {
-        return AdvancedDynamicTexture.ParseFromFileAsync(url, scaleToSize, this);
+    public parseFromURLAsync(url: string, scaleToSize?: boolean, urlRewriter?: (url: string) => string): Promise<AdvancedDynamicTexture> {
+        return AdvancedDynamicTexture.ParseFromFileAsync(url, scaleToSize, this, urlRewriter);
     }
 
     private static _LoadURLContentAsync(url: string, snippet: boolean = false): Promise<any> {
@@ -1403,6 +1501,7 @@ export class AdvancedDynamicTexture extends DynamicTexture {
      * @param onlyAlphaTesting defines a boolean indicating that alpha blending will not be used (only alpha testing) (false by default)
      * @param invertY defines if the texture needs to be inverted on the y axis during loading (true by default)
      * @param materialSetupCallback defines a custom way of creating and setting up the material on the mesh
+     * @param sampling defines the texture sampling mode (Texture.TRILINEAR_SAMPLINGMODE by default)
      * @returns a new AdvancedDynamicTexture
      */
     public static CreateForMesh(
@@ -1412,19 +1511,12 @@ export class AdvancedDynamicTexture extends DynamicTexture {
         supportPointerMove = true,
         onlyAlphaTesting = false,
         invertY?: boolean,
-        materialSetupCallback: (mesh: AbstractMesh, uniqueId: string, texture: AdvancedDynamicTexture, onlyAlphaTesting: boolean) => void = this._CreateMaterial
+        materialSetupCallback: (mesh: AbstractMesh, uniqueId: string, texture: AdvancedDynamicTexture, onlyAlphaTesting: boolean) => void = this._CreateMaterial,
+        sampling = Texture.TRILINEAR_SAMPLINGMODE
     ): AdvancedDynamicTexture {
         // use a unique ID in name so serialization will work even if you create two ADTs for a single mesh
         const uniqueId = RandomGUID();
-        const result = new AdvancedDynamicTexture(
-            `AdvancedDynamicTexture for ${mesh.name} [${uniqueId}]`,
-            width,
-            height,
-            mesh.getScene(),
-            true,
-            Texture.TRILINEAR_SAMPLINGMODE,
-            invertY
-        );
+        const result = new AdvancedDynamicTexture(`AdvancedDynamicTexture for ${mesh.name} [${uniqueId}]`, width, height, mesh.getScene(), true, sampling, invertY);
 
         materialSetupCallback(mesh, uniqueId, result, onlyAlphaTesting);
 
@@ -1435,6 +1527,7 @@ export class AdvancedDynamicTexture extends DynamicTexture {
     private static _CreateMaterial(mesh: AbstractMesh, uniqueId: string, texture: AdvancedDynamicTexture, onlyAlphaTesting: boolean): void {
         const internalClassType = GetClass("BABYLON.StandardMaterial");
         if (!internalClassType) {
+            // eslint-disable-next-line no-throw-literal
             throw "StandardMaterial needs to be imported before as it contains a side-effect required by your code.";
         }
 
@@ -1460,10 +1553,18 @@ export class AdvancedDynamicTexture extends DynamicTexture {
      * @param height defines the texture height (1024 by default)
      * @param supportPointerMove defines a boolean indicating if the texture must capture move events (true by default)
      * @param invertY defines if the texture needs to be inverted on the y axis during loading (true by default)
+     * @param sampling defines the texture sampling mode (Texture.TRILINEAR_SAMPLINGMODE by default)
      * @returns a new AdvancedDynamicTexture
      */
-    public static CreateForMeshTexture(mesh: AbstractMesh, width = 1024, height = 1024, supportPointerMove = true, invertY?: boolean): AdvancedDynamicTexture {
-        const result = new AdvancedDynamicTexture(mesh.name + " AdvancedDynamicTexture", width, height, mesh.getScene(), true, Texture.TRILINEAR_SAMPLINGMODE, invertY);
+    public static CreateForMeshTexture(
+        mesh: AbstractMesh,
+        width = 1024,
+        height = 1024,
+        supportPointerMove = true,
+        invertY?: boolean,
+        sampling = Texture.TRILINEAR_SAMPLINGMODE
+    ): AdvancedDynamicTexture {
+        const result = new AdvancedDynamicTexture(mesh.name + " AdvancedDynamicTexture", width, height, mesh.getScene(), true, sampling, invertY);
         result.attachToMesh(mesh, supportPointerMove);
         return result;
     }
@@ -1510,7 +1611,7 @@ export class AdvancedDynamicTexture extends DynamicTexture {
      * Scales the texture
      * @param ratio the scale factor to apply to both width and height
      */
-    public scale(ratio: number): void {
+    public override scale(ratio: number): void {
         super.scale(ratio);
         this.markAsDirty();
     }
@@ -1520,7 +1621,7 @@ export class AdvancedDynamicTexture extends DynamicTexture {
      * @param width the new width
      * @param height the new height
      */
-    public scaleTo(width: number, height: number): void {
+    public override scaleTo(width: number, height: number): void {
         super.scaleTo(width, height);
         this.markAsDirty();
     }
@@ -1534,7 +1635,7 @@ export class AdvancedDynamicTexture extends DynamicTexture {
     }
 
     /**
-     * Returns true if all the GUI components are ready to render
+     * @returns true if all the GUI components are ready to render
      */
     public guiIsReady(): boolean {
         return this._rootContainer.isReady();

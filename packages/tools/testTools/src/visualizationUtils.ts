@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 /* eslint-disable @typescript-eslint/naming-convention */
 declare const BABYLON: typeof window.BABYLON;
 
@@ -14,47 +15,13 @@ export const evaluateInitEngineForVisualization = async (engineName: string, use
     BABYLON.SceneLoader.ShowLoadingScreen = false;
     BABYLON.SceneLoader.ForceFullSceneLoadingForIncremental = true;
 
-    BABYLON.DracoCompression.Configuration.decoder = {
-        wasmUrl: baseUrl + "/draco_wasm_wrapper_gltf.js",
-        wasmBinaryUrl: baseUrl + "/draco_decoder_gltf.wasm",
-        fallbackUrl: baseUrl + "/draco_decoder_gltf.js",
-    };
-    BABYLON.MeshoptCompression.Configuration.decoder = {
-        url: baseUrl + "/meshopt_decoder.js",
-    };
-    (BABYLON as any).GLTFValidation.Configuration = {
-        url: baseUrl + "/gltf_validator.js",
-    };
-
-    (BABYLON.KhronosTextureContainer2.URLConfig as any) = {
-        jsDecoderModule: baseUrl + "/babylon.ktx2Decoder.js",
-        wasmUASTCToASTC: baseUrl + "/ktx2Transcoders/uastc_astc.wasm",
-        wasmUASTCToBC7: baseUrl + "/ktx2Transcoders/uastc_bc7.wasm",
-        wasmUASTCToRGBA_UNORM: baseUrl + "/ktx2Transcoders/uastc_rgba32_unorm.wasm",
-        wasmUASTCToRGBA_SRGB: baseUrl + "/ktx2Transcoders/uastc_rgba32_srgb.wasm",
-        jsMSCTranscoder: baseUrl + "/ktx2Transcoders/msc_basis_transcoder.js",
-        wasmMSCTranscoder: baseUrl + "/ktx2Transcoders/msc_basis_transcoder.wasm",
-        wasmZSTDDecoder: baseUrl + "/zstddec.wasm",
-    };
-
-    BABYLON.BasisToolsOptions.JSModuleURL = baseUrl + "/basisTranscoder/1/basis_transcoder.js";
-    BABYLON.BasisToolsOptions.WasmModuleURL = baseUrl + "/basisTranscoder/1/basis_transcoder.wasm";
+    BABYLON.Tools.ScriptBaseUrl = baseUrl;
 
     window.forceUseReverseDepthBuffer = useReverseDepthBuffer === 1 || useReverseDepthBuffer === "true";
     window.forceUseNonCompatibilityMode = useNonCompatibilityMode === 1 || useNonCompatibilityMode === "true";
 
     window.canvas = document.getElementById("babylon-canvas") as HTMLCanvasElement;
     if (engineName === "webgpu") {
-        const glslangOptions = {
-            jsPath: baseUrl + "/glslang/glslang.js",
-            wasmPath: baseUrl + "/glslang/glslang.wasm",
-        };
-
-        const twgslOptions = {
-            jsPath: baseUrl + "/twgsl/twgsl.js",
-            wasmPath: baseUrl + "/twgsl/twgsl.wasm",
-        };
-
         const options = {
             enableAllFeatures: true,
             setMaximumLimits: true,
@@ -67,7 +34,8 @@ export const evaluateInitEngineForVisualization = async (engineName: string, use
         engine.compatibilityMode = !window.forceUseNonCompatibilityMode;
         window.engine = engine;
 
-        await engine.initAsync(glslangOptions, twgslOptions);
+        await engine.initAsync();
+        await engine.prepareGlslangAndTintAsync();
     } else {
         const engine = new BABYLON.Engine(window.canvas, false, {
             useHighPrecisionFloats: true,
@@ -277,7 +245,7 @@ export const evaluateDisposeSceneForVisualization = async (engineFlags: { forceU
 
 export const evaluateIsGLError = async () => {
     try {
-        const gl = window.engine!._gl,
+        const gl = (window.engine! as any)._gl,
             glError = gl ? gl.getError() : 0;
         if (gl && glError !== 0) {
             return true;

@@ -44,6 +44,7 @@ export class Button3D extends AbstractButton3D {
     /**
      * Creates a new button
      * @param name defines the control name
+     * @param options defines the options used to create the button
      */
     constructor(name?: string, options?: IButton3DCreationOptions) {
         super(name);
@@ -89,16 +90,16 @@ export class Button3D extends AbstractButton3D {
      * Apply the facade texture (created from the content property).
      * @param facadeTexture defines the AdvancedDynamicTexture to use
      */
-    protected _applyFacade(facadeTexture: AdvancedDynamicTexture) {
+    protected override _applyFacade(facadeTexture: AdvancedDynamicTexture) {
         (<any>this._currentMaterial).emissiveTexture = facadeTexture;
     }
 
-    protected _getTypeName(): string {
+    protected override _getTypeName(): string {
         return "Button3D";
     }
 
     // Mesh association
-    protected _createNode(scene: Scene): TransformNode {
+    protected override _createNode(scene: Scene): TransformNode {
         const faceUV = new Array(6);
 
         for (let i = 0; i < 6; i++) {
@@ -129,7 +130,7 @@ export class Button3D extends AbstractButton3D {
         return mesh;
     }
 
-    protected _affectMaterial(mesh: AbstractMesh) {
+    protected override _affectMaterial(mesh: AbstractMesh) {
         const material = new StandardMaterial(this.name + "Material", mesh.getScene());
         material.specularColor = Color3.Black();
 
@@ -142,7 +143,7 @@ export class Button3D extends AbstractButton3D {
     /**
      * Releases all associated resources
      */
-    public dispose() {
+    public override dispose() {
         super.dispose();
 
         this._disposeFacadeTexture();

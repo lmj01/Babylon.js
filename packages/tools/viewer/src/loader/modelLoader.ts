@@ -31,6 +31,9 @@ export class ModelLoader {
 
     private _baseUrl: string;
 
+    /**
+     * @returns the base url of the model loader
+     */
     public get baseUrl(): string {
         return this._baseUrl;
     }
@@ -40,7 +43,10 @@ export class ModelLoader {
      * @param _observablesManager
      * @param _configurationContainer
      */
-    constructor(private _observablesManager: ObservablesManager, private _configurationContainer?: ConfigurationContainer) {
+    constructor(
+        private _observablesManager: ObservablesManager,
+        private _configurationContainer?: ConfigurationContainer
+    ) {
         this._loaders = [];
         this._loadId = 0;
         this._plugins = [];
@@ -69,6 +75,7 @@ export class ModelLoader {
     /**
      * Load a model using predefined configuration
      * @param modelConfiguration the modelConfiguration to use to load the model
+     * @returns the loaded model
      */
     public load(modelConfiguration: IModelConfiguration): ViewerModel {
         const model = new ViewerModel(this._observablesManager, modelConfiguration, this._configurationContainer);
@@ -177,6 +184,10 @@ export class ModelLoader {
         return model;
     }
 
+    /**
+     * Cancel the loading of a model.
+     * @param model the model to cancel the loading of
+     */
     public cancelLoad(model: ViewerModel) {
         const loader = model.loader || this._loaders[model.loadId];
         // ATM only available in the GLTF Loader

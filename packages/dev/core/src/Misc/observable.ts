@@ -75,6 +75,13 @@ export class Observer<T> {
     public unregisterOnNextCall = false;
 
     /**
+     * this function can be used to remove the observer from the observable.
+     * It will be set by the observable that the observer belongs to.
+     * @internal
+     */
+    public _remove: Nullable<() => void> = null;
+
+    /**
      * Creates a new observer
      * @param callback defines the callback to call when the observer is notified
      * @param mask defines the mask of the observer (used to filter notifications)
@@ -90,10 +97,20 @@ export class Observer<T> {
          */
         public mask: number,
         /**
-         * Defines the current scope used to restore the JS context
+         * [null] Defines the current scope used to restore the JS context
          */
         public scope: any = null
     ) {}
+
+    /**
+     * Remove the observer from its observable
+     * This can be used instead of using the observable's remove function.
+     */
+    public remove() {
+        if (this._remove) {
+            this._remove();
+        }
+    }
 }
 
 /**
@@ -157,7 +174,7 @@ export class Observable<T> {
     constructor(
         onObserverAdded?: (observer: Observer<T>) => void,
         /**
-         * If set to true the observable will notify when an observer was added if the observable was already triggered.
+         * [false] If set to true the observable will notify when an observer was added if the observable was already triggered.
          * This is helpful to single-state observables like the scene onReady or the dispose observable.
          */
         public notifyIfTriggered = false
@@ -178,8 +195,17 @@ export class Observable<T> {
      * @param unregisterOnFirstCall defines if the observer as to be unregistered after the next notification
      * @returns the new observer created for the callback
      */
+    public add(callback?: null | undefined, mask?: number, insertFirst?: boolean, scope?: any, unregisterOnFirstCall?: boolean): null;
+    public add(callback: (eventData: T, eventState: EventState) => void, mask?: number, insertFirst?: boolean, scope?: any, unregisterOnFirstCall?: boolean): Observer<T>;
     public add(
-        callback: (eventData: T, eventState: EventState) => void,
+        callback?: ((eventData: T, eventState: EventState) => void) | null | undefined,
+        mask?: number,
+        insertFirst?: boolean,
+        scope?: any,
+        unregisterOnFirstCall?: boolean
+    ): Nullable<Observer<T>>;
+    public add(
+        callback?: ((eventData: T, eventState: EventState) => void) | null | undefined,
         mask: number = -1,
         insertFirst = false,
         scope: any = null,
@@ -208,6 +234,10 @@ export class Observable<T> {
                 this.notifyObserver(observer, this._lastNotifiedValue);
             }
         }
+        // attach the remove function to the observer
+        observer._remove = () => {
+            this.remove(observer);
+        };
 
         return observer;
     }
@@ -217,7 +247,10 @@ export class Observable<T> {
      * @param callback the callback that will be executed for that Observer
      * @returns the new observer created for the callback
      */
-    public addOnce(callback: (eventData: T, eventState: EventState) => void): Nullable<Observer<T>> {
+    public addOnce(callback?: null | undefined): null;
+    public addOnce(callback: (eventData: T, eventState: EventState) => void): Observer<T>;
+    public addOnce(callback?: ((eventData: T, eventState: EventState) => void) | null | undefined): Nullable<Observer<T>>;
+    public addOnce(callback?: ((eventData: T, eventState: EventState) => void) | null | undefined): Nullable<Observer<T>> {
         return this.add(callback, undefined, undefined, undefined, true);
     }
 
@@ -231,6 +264,7 @@ export class Observable<T> {
             return false;
         }
 
+        observer._remove = null;
         const index = this._observers.indexOf(observer);
 
         if (index !== -1) {
@@ -405,7 +439,12 @@ export class Observable<T> {
      * Clear the list of observers
      */
     public clear(): void {
-        this._observers.length = 0;
+        while (this._observers.length) {
+            const o = this._observers.pop();
+            if (o) {
+                o._remove = null;
+            }
+        }
         this._onObserverAdded = null;
         this._numObserversMarkedAsDeleted = 0;
         this.cleanLastNotifiedState();

@@ -3,14 +3,12 @@ import { Constants } from "../Engines/constants";
 import type { Camera } from "../Cameras/camera";
 import type { PostProcessOptions } from "./postProcess";
 import { PostProcess } from "./postProcess";
-import { Engine } from "../Engines/engine";
+import { AbstractEngine } from "../Engines/abstractEngine";
 
-import "../Shaders/pass.fragment";
-import "../Shaders/passCube.fragment";
 import { RegisterClass } from "../Misc/typeStore";
-import { SerializationHelper } from "../Misc/decorators";
+import { SerializationHelper } from "../Misc/decorators.serialization";
 
-declare type Scene = import("../scene").Scene;
+import type { Scene } from "../scene";
 
 /**
  * PassPostProcess which produces an output the same as it's input
@@ -20,7 +18,7 @@ export class PassPostProcess extends PostProcess {
      * Gets a string identifying the name of the class
      * @returns "PassPostProcess" string
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "PassPostProcess";
     }
 
@@ -40,7 +38,7 @@ export class PassPostProcess extends PostProcess {
         options: number | PostProcessOptions,
         camera: Nullable<Camera> = null,
         samplingMode?: number,
-        engine?: Engine,
+        engine?: AbstractEngine,
         reusable?: boolean,
         textureType: number = Constants.TEXTURETYPE_UNSIGNED_INT,
         blockCompilation = false
@@ -48,10 +46,21 @@ export class PassPostProcess extends PostProcess {
         super(name, "pass", null, null, options, camera, samplingMode, engine, reusable, undefined, textureType, undefined, null, blockCompilation);
     }
 
+    protected override _gatherImports(useWebGPU: boolean, list: Promise<any>[]) {
+        if (useWebGPU) {
+            this._webGPUReady = true;
+            list.push(Promise.all([import("../ShadersWGSL/pass.fragment")]));
+        } else {
+            list.push(Promise.all([import("../Shaders/pass.fragment")]));
+        }
+
+        super._gatherImports(useWebGPU, list);
+    }
+
     /**
      * @internal
      */
-    public static _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string) {
+    public static override _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string) {
         return SerializationHelper.Parse(
             () => {
                 return new PassPostProcess(
@@ -123,7 +132,7 @@ export class PassCubePostProcess extends PostProcess {
      * Gets a string identifying the name of the class
      * @returns "PassCubePostProcess" string
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "PassCubePostProcess";
     }
 
@@ -143,7 +152,7 @@ export class PassCubePostProcess extends PostProcess {
         options: number | PostProcessOptions,
         camera: Nullable<Camera> = null,
         samplingMode?: number,
-        engine?: Engine,
+        engine?: AbstractEngine,
         reusable?: boolean,
         textureType: number = Constants.TEXTURETYPE_UNSIGNED_INT,
         blockCompilation = false
@@ -151,10 +160,21 @@ export class PassCubePostProcess extends PostProcess {
         super(name, "passCube", null, null, options, camera, samplingMode, engine, reusable, "#define POSITIVEX", textureType, undefined, null, blockCompilation);
     }
 
+    protected override _gatherImports(useWebGPU: boolean, list: Promise<any>[]) {
+        if (useWebGPU) {
+            this._webGPUReady = true;
+            list.push(Promise.all([import("../ShadersWGSL/passCube.fragment")]));
+        } else {
+            list.push(Promise.all([import("../Shaders/passCube.fragment")]));
+        }
+
+        super._gatherImports(useWebGPU, list);
+    }
+
     /**
      * @internal
      */
-    public static _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string) {
+    public static override _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string) {
         return SerializationHelper.Parse(
             () => {
                 return new PassCubePostProcess(
@@ -173,6 +193,6 @@ export class PassCubePostProcess extends PostProcess {
     }
 }
 
-Engine._RescalePostProcessFactory = (engine: Engine) => {
+AbstractEngine._RescalePostProcessFactory = (engine: AbstractEngine) => {
     return new PassPostProcess("rescale", 1, null, Constants.TEXTURE_BILINEAR_SAMPLINGMODE, engine, false, Constants.TEXTURETYPE_UNSIGNED_INT);
 };

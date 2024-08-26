@@ -16,6 +16,7 @@ import type { Material } from "../Materials/material";
 import { StandardMaterial } from "../Materials/standardMaterial";
 import { MultiMaterial } from "../Materials/multiMaterial";
 import type { PickingInfo } from "../Collisions/pickingInfo";
+import type { PBRMaterial } from "../Materials/PBR/pbrMaterial";
 
 /**
  * The SPS is a single updatable mesh. The solid particles are simply separate parts or faces of this big mesh.
@@ -324,6 +325,18 @@ export class SolidParticleSystem implements IDisposable {
         return this.mesh;
     }
 
+    private _getUVKind(mesh: Mesh, uvKind: number) {
+        if (uvKind === -1) {
+            if ((mesh.material as StandardMaterial)?.diffuseTexture) {
+                uvKind = (mesh.material as StandardMaterial).diffuseTexture!.coordinatesIndex;
+            } else if ((mesh.material as PBRMaterial)?.albedoTexture) {
+                uvKind = (mesh.material as PBRMaterial).albedoTexture!.coordinatesIndex;
+            }
+        }
+
+        return "uv" + (uvKind ? uvKind + 1 : "");
+    }
+
     /**
      * Digests the mesh and generates as many solid particles in the system as wanted. Returns the SPS.
      * These particles will have the same geometry than the mesh parts and will be positioned at the same localisation than the mesh original places.
@@ -333,19 +346,21 @@ export class SolidParticleSystem implements IDisposable {
      * {delta} (optional integer, default 0) is the random extra number of facets per particle , each particle will have between `facetNb` and `facetNb + delta` facets
      * {number} (optional positive integer) is the wanted number of particles : each particle is built with `mesh_total_facets / number` facets
      * {storage} (optional existing array) is an array where the particles will be stored for a further use instead of being inserted in the SPS.
+     * {uvKind} (optional positive integer, default 0) is the kind of UV to read from. Use -1 to deduce it from the diffuse/albedo texture (if any) of the mesh material
      * @param options.facetNb
      * @param options.number
      * @param options.delta
      * @param options.storage
+     * @param options.uvKind
      * @returns the current SPS
      */
-    public digest(mesh: Mesh, options?: { facetNb?: number; number?: number; delta?: number; storage?: [] }): SolidParticleSystem {
+    public digest(mesh: Mesh, options?: { facetNb?: number; number?: number; delta?: number; storage?: []; uvKind?: number }): SolidParticleSystem {
         let size: number = (options && options.facetNb) || 1;
         let number: number = (options && options.number) || 0;
         let delta: number = (options && options.delta) || 0;
         const meshPos = <FloatArray>mesh.getVerticesData(VertexBuffer.PositionKind);
         const meshInd = <IndicesArray>mesh.getIndices();
-        const meshUV = <FloatArray>mesh.getVerticesData(VertexBuffer.UVKind);
+        const meshUV = <FloatArray>mesh.getVerticesData(this._getUVKind(mesh, options?.uvKind ?? 0));
         const meshCol = <FloatArray>mesh.getVerticesData(VertexBuffer.ColorKind);
         const meshNor = <FloatArray>mesh.getVerticesData(VertexBuffer.NormalKind);
         const storage = options && options.storage ? options.storage : null;
@@ -552,11 +567,11 @@ export class SolidParticleSystem implements IDisposable {
         positions: number[],
         meshInd: IndicesArray,
         indices: number[],
-        meshUV: number[] | Float32Array,
+        meshUV: FloatArray,
         uvs: number[],
-        meshCol: number[] | Float32Array,
+        meshCol: FloatArray,
         colors: number[],
-        meshNor: number[] | Float32Array,
+        meshNor: FloatArray,
         normals: number[],
         idx: number,
         idxInShape: number,
@@ -687,7 +702,7 @@ export class SolidParticleSystem implements IDisposable {
      * @returns a vector3 array
      * @internal
      */
-    protected _posToShape(positions: number[] | Float32Array): Vector3[] {
+    protected _posToShape(positions: FloatArray): Vector3[] {
         const shape = [];
         for (let i = 0; i < positions.length; i += 3) {
             shape.push(Vector3.FromArray(positions, i));
@@ -701,7 +716,7 @@ export class SolidParticleSystem implements IDisposable {
      * @returns a shapeUV array
      * @internal
      */
-    protected _uvsToShapeUV(uvs: number[] | Float32Array): number[] {
+    protected _uvsToShapeUV(uvs: FloatArray): number[] {
         const shapeUV = [];
         if (uvs) {
             for (let i = 0; i < uvs.length; i++) {
@@ -744,7 +759,7 @@ export class SolidParticleSystem implements IDisposable {
     /**
      * Adds some particles to the SPS from the model shape. Returns the shape id.
      * Please read the doc : https://doc.babylonjs.com/features/featuresDeepDive/particles/solid_particle_system/immutable_sps
-     * @param mesh is any Mesh object that will be used as a model for the solid particles.
+     * @param mesh is any Mesh object that will be used as a model for the solid particles. If the mesh does not have vertex normals, it will turn on the recomputeNormals attribute.
      * @param nb (positive integer) the number of particles to be created from this model
      * @param options {positionFunction} is an optional javascript function to called for each particle on SPS creation.
      * {vertexFunction} is an optional javascript function to called for each vertex of each particle on SPS creation
@@ -762,7 +777,7 @@ export class SolidParticleSystem implements IDisposable {
         const meshNor = <FloatArray>mesh.getVerticesData(VertexBuffer.NormalKind);
         this.recomputeNormals = meshNor ? false : true;
         const indices = Array.from(meshInd);
-        const shapeNormals = Array.from(meshNor);
+        const shapeNormals = meshNor ? Array.from(meshNor) : [];
         const shapeColors = meshCol ? Array.from(meshCol) : [];
         const storage = options && options.storage ? options.storage : null;
         let bbInfo: Nullable<BoundingInfo> = null;
@@ -994,9 +1009,9 @@ export class SolidParticleSystem implements IDisposable {
         modelShape: ModelShape,
         shape: Vector3[],
         meshInd: IndicesArray,
-        meshUV: number[] | Float32Array,
-        meshCol: number[] | Float32Array,
-        meshNor: number[] | Float32Array,
+        meshUV: FloatArray,
+        meshCol: FloatArray,
+        meshNor: FloatArray,
         bbInfo: Nullable<BoundingInfo>,
         storage: Nullable<[]>,
         options: any
@@ -1604,8 +1619,8 @@ export class SolidParticleSystem implements IDisposable {
     /**
      * Populates the passed array "ref" with the particles having the passed shapeId.
      * @param shapeId the shape identifier
+     * @param ref array to populate
      * @returns the SPS
-     * @param ref
      */
     public getParticlesByShapeIdToRef(shapeId: number, ref: SolidParticle[]): SolidParticleSystem {
         ref.length = 0;

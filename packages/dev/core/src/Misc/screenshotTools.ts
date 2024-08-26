@@ -7,11 +7,13 @@ import { Constants } from "../Engines/constants";
 import { Logger } from "./logger";
 import { Tools } from "./tools";
 import type { IScreenshotSize } from "./interfaces/screenshotSize";
-import { DumpTools } from "./dumpTools";
+import { DumpData } from "./dumpTools";
 import type { Nullable } from "../types";
 import { ApplyPostProcess } from "./textureTools";
 
-declare type Engine = import("../Engines/engine").Engine;
+import type { AbstractEngine } from "../Engines/abstractEngine";
+
+import "../Engines/Extensions/engine.readTexture";
 
 let screenshotCanvas: Nullable<HTMLCanvasElement> = null;
 
@@ -31,14 +33,16 @@ let screenshotCanvas: Nullable<HTMLCanvasElement> = null;
  * @param mimeType defines the MIME type of the screenshot image (default: image/png).
  * Check your browser for supported MIME types
  * @param forceDownload force the system to download the image even if a successCallback is provided
+ * @param quality The quality of the image if lossy mimeType is used (e.g. image/jpeg, image/webp). See {@link https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob | HTMLCanvasElement.toBlob()}'s `quality` parameter.
  */
 export function CreateScreenshot(
-    engine: Engine,
+    engine: AbstractEngine,
     camera: Camera,
     size: IScreenshotSize | number,
     successCallback?: (data: string) => void,
-    mimeType: string = "image/png",
-    forceDownload = false
+    mimeType = "image/png",
+    forceDownload = false,
+    quality?: number
 ): void {
     const { height, width } = _GetScreenshotSize(engine, camera, size);
 
@@ -85,8 +89,13 @@ export function CreateScreenshot(
                 }
             },
             mimeType,
-            1,
-            engine.getCreationOptions().antialias
+            1.0,
+            engine.getCreationOptions().antialias,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            quality
         );
     } else {
         engine.onEndFrameObservable.addOnce(() => {
@@ -97,12 +106,12 @@ export function CreateScreenshot(
 
             if (screenshotCanvas) {
                 if (forceDownload) {
-                    Tools.EncodeScreenshotCanvasData(screenshotCanvas, undefined, mimeType);
+                    Tools.EncodeScreenshotCanvasData(screenshotCanvas, undefined, mimeType, undefined, quality);
                     if (successCallback) {
                         successCallback("");
                     }
                 } else {
-                    Tools.EncodeScreenshotCanvasData(screenshotCanvas, successCallback, mimeType);
+                    Tools.EncodeScreenshotCanvasData(screenshotCanvas, successCallback, mimeType, undefined, quality);
                 }
             }
         });
@@ -121,10 +130,11 @@ export function CreateScreenshot(
  * rendering at a higher or lower resolution
  * @param mimeType defines the MIME type of the screenshot image (default: image/png).
  * Check your browser for supported MIME types
+ * @param quality The quality of the image if lossy mimeType is used (e.g. image/jpeg, image/webp). See {@link https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob | HTMLCanvasElement.toBlob()}'s `quality` parameter.
  * @returns screenshot as a string of base64-encoded characters. This string can be assigned
  * to the src parameter of an <img> to display it
  */
-export function CreateScreenshotAsync(engine: Engine, camera: Camera, size: IScreenshotSize | number, mimeType: string = "image/png"): Promise<string> {
+export function CreateScreenshotAsync(engine: AbstractEngine, camera: Camera, size: IScreenshotSize | number, mimeType = "image/png", quality?: number): Promise<string> {
     return new Promise((resolve, reject) => {
         CreateScreenshot(
             engine,
@@ -137,7 +147,9 @@ export function CreateScreenshotAsync(engine: Engine, camera: Camera, size: IScr
                     reject(new Error("Data is undefined"));
                 }
             },
-            mimeType
+            mimeType,
+            undefined,
+            quality
         );
     });
 }
@@ -151,10 +163,11 @@ export function CreateScreenshotAsync(engine: Engine, camera: Camera, size: IScr
  * @param height defines the expected height
  * @param mimeType defines the MIME type of the screenshot image (default: image/png).
  * Check your browser for supported MIME types
+ * @param quality The quality of the image if lossy mimeType is used (e.g. image/jpeg, image/webp). See {@link https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob | HTMLCanvasElement.toBlob()}'s `quality` parameter.
  * @returns screenshot as a string of base64-encoded characters. This string can be assigned
  * to the src parameter of an <img> to display it
  */
-export function CreateScreenshotWithResizeAsync(engine: Engine, camera: Camera, width: number, height: number, mimeType: string = "image/png"): Promise<void> {
+export function CreateScreenshotWithResizeAsync(engine: AbstractEngine, camera: Camera, width: number, height: number, mimeType = "image/png", quality?: number): Promise<void> {
     return new Promise((resolve) => {
         CreateScreenshot(
             engine,
@@ -164,7 +177,8 @@ export function CreateScreenshotWithResizeAsync(engine: Engine, camera: Camera, 
                 resolve();
             },
             mimeType,
-            true
+            true,
+            quality
         );
     });
 }
@@ -190,19 +204,23 @@ export function CreateScreenshotWithResizeAsync(engine: Engine, camera: Camera, 
  * @param renderSprites Whether the sprites should be rendered or not (default: false)
  * @param enableStencilBuffer Whether the stencil buffer should be enabled or not (default: false)
  * @param useLayerMask if the camera's layer mask should be used to filter what should be rendered (default: true)
+ * @param quality The quality of the image if lossy mimeType is used (e.g. image/jpeg, image/webp). See {@link https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob | HTMLCanvasElement.toBlob()}'s `quality` parameter.
+ * @param customizeTexture An optional callback that can be used to modify the render target texture before taking the screenshot. This can be used, for instance, to enable camera post-processes before taking the screenshot.
  */
 export function CreateScreenshotUsingRenderTarget(
-    engine: Engine,
+    engine: AbstractEngine,
     camera: Camera,
     size: IScreenshotSize | number,
     successCallback?: (data: string) => void,
-    mimeType: string = "image/png",
-    samples: number = 1,
-    antialiasing: boolean = false,
+    mimeType = "image/png",
+    samples = 1,
+    antialiasing = false,
     fileName?: string,
-    renderSprites: boolean = false,
-    enableStencilBuffer: boolean = false,
-    useLayerMask: boolean = true
+    renderSprites = false,
+    enableStencilBuffer = false,
+    useLayerMask = true,
+    quality?: number,
+    customizeTexture?: (texture: RenderTargetTexture) => void
 ): void {
     const { height, width, finalWidth, finalHeight } = _GetScreenshotSize(engine, camera, size);
     const targetTextureSize = { width, height };
@@ -239,51 +257,62 @@ export function CreateScreenshotUsingRenderTarget(
     texture.renderSprites = renderSprites;
     texture.activeCamera = camera;
     texture.forceLayerMaskCheck = useLayerMask;
+    customizeTexture?.(texture);
 
-    const renderToTexture = () => {
-        engine.onEndFrameObservable.addOnce(() => {
-            if (finalWidth === width && finalHeight === height) {
-                texture.readPixels(undefined, undefined, undefined, false)!.then((data) => {
-                    DumpTools.DumpData(width, height, data, successCallback as (data: string | ArrayBuffer) => void, mimeType, fileName, true);
-                    texture.dispose();
-                });
-            } else {
-                ApplyPostProcess("pass", texture.getInternalTexture()!, scene, undefined, undefined, undefined, finalWidth, finalHeight).then((texture) => {
-                    engine._readTexturePixels(texture, finalWidth, finalHeight, -1, 0, null, true, false, 0, 0).then((data) => {
-                        DumpTools.DumpData(finalWidth, finalHeight, data, successCallback as (data: string | ArrayBuffer) => void, mimeType, fileName, true);
+    const renderWhenReady = () => {
+        if (texture.isReadyForRendering() && camera.isReady(true)) {
+            engine.onEndFrameObservable.addOnce(() => {
+                if (finalWidth === width && finalHeight === height) {
+                    texture.readPixels(undefined, undefined, undefined, false)!.then((data) => {
+                        DumpData(width, height, data, successCallback as (data: string | ArrayBuffer) => void, mimeType, fileName, true, undefined, quality);
                         texture.dispose();
                     });
-                });
-            }
-        });
+                } else {
+                    ApplyPostProcess("pass", texture.getInternalTexture()!, scene, undefined, undefined, undefined, finalWidth, finalHeight).then((texture) => {
+                        engine._readTexturePixels(texture, finalWidth, finalHeight, -1, 0, null, true, false, 0, 0).then((data) => {
+                            DumpData(finalWidth, finalHeight, data, successCallback as (data: string | ArrayBuffer) => void, mimeType, fileName, true, undefined, quality);
+                            texture.dispose();
+                        });
+                    });
+                }
+            });
 
+            // re-render the scene after the camera has been reset to the original camera to avoid a flicker that could occur
+            // if the camera used for the RTT rendering stays in effect for the next frame (and if that camera was different from the original camera)
+            scene.incrementRenderId();
+            scene.resetCachedMaterial();
+            texture.render(true);
+            engine.setSize(originalSize.width, originalSize.height);
+            camera.getProjectionMatrix(true); // Force cache refresh;
+            scene.render();
+        } else {
+            setTimeout(renderWhenReady, 16);
+        }
+    };
+
+    const renderToTexture = () => {
         // render the RTT
         scene.incrementRenderId();
         scene.resetCachedMaterial();
-        texture.render(true);
 
-        // re-render the scene after the camera has been reset to the original camera to avoid a flicker that could occur
-        // if the camera used for the RTT rendering stays in effect for the next frame (and if that camera was different from the original camera)
-        scene.incrementRenderId();
-        scene.resetCachedMaterial();
-        engine.setSize(originalSize.width, originalSize.height);
-        camera.getProjectionMatrix(true); // Force cache refresh;
-        scene.render();
+        renderWhenReady();
     };
 
     if (antialiasing) {
         const fxaaPostProcess = new FxaaPostProcess("antialiasing", 1.0, scene.activeCamera);
         texture.addPostProcess(fxaaPostProcess);
         // Async Shader Compilation can lead to none ready effects in synchronous code
-        if (!fxaaPostProcess.getEffect().isReady()) {
-            fxaaPostProcess.getEffect().onCompiled = () => {
+        fxaaPostProcess.onEffectCreatedObservable.addOnce((e) => {
+            if (!e.isReady()) {
+                e.onCompiled = () => {
+                    renderToTexture();
+                };
+            }
+            // The effect is ready we can render
+            else {
                 renderToTexture();
-            };
-        }
-        // The effect is ready we can render
-        else {
-            renderToTexture();
-        }
+            }
+        });
     } else {
         // No need to wait for extra resources to be ready
         renderToTexture();
@@ -308,20 +337,22 @@ export function CreateScreenshotUsingRenderTarget(
  * @param renderSprites Whether the sprites should be rendered or not (default: false)
  * @param enableStencilBuffer Whether the stencil buffer should be enabled or not (default: false)
  * @param useLayerMask if the camera's layer mask should be used to filter what should be rendered (default: true)
+ * @param quality The quality of the image if lossy mimeType is used (e.g. image/jpeg, image/webp). See {@link https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob | HTMLCanvasElement.toBlob()}'s `quality` parameter.
  * @returns screenshot as a string of base64-encoded characters. This string can be assigned
  * to the src parameter of an <img> to display it
  */
 export function CreateScreenshotUsingRenderTargetAsync(
-    engine: Engine,
+    engine: AbstractEngine,
     camera: Camera,
     size: IScreenshotSize | number,
-    mimeType: string = "image/png",
-    samples: number = 1,
-    antialiasing: boolean = false,
+    mimeType = "image/png",
+    samples = 1,
+    antialiasing = false,
     fileName?: string,
-    renderSprites: boolean = false,
-    enableStencilBuffer: boolean = false,
-    useLayerMask: boolean = true
+    renderSprites = false,
+    enableStencilBuffer = false,
+    useLayerMask = true,
+    quality?: number
 ): Promise<string> {
     return new Promise((resolve, reject) => {
         CreateScreenshotUsingRenderTarget(
@@ -341,7 +372,8 @@ export function CreateScreenshotUsingRenderTargetAsync(
             fileName,
             renderSprites,
             enableStencilBuffer,
-            useLayerMask
+            useLayerMask,
+            quality
         );
     });
 }
@@ -353,7 +385,7 @@ export function CreateScreenshotUsingRenderTargetAsync(
  * @param size
  * @private
  */
-function _GetScreenshotSize(engine: Engine, camera: Camera, size: IScreenshotSize | number): { height: number; width: number; finalWidth: number; finalHeight: number } {
+function _GetScreenshotSize(engine: AbstractEngine, camera: Camera, size: IScreenshotSize | number): { height: number; width: number; finalWidth: number; finalHeight: number } {
     let height = 0;
     let width = 0;
     let finalWidth = 0;
@@ -451,6 +483,7 @@ export const ScreenshotTools = {
      * @param mimeType defines the MIME type of the screenshot image (default: image/png).
      * Check your browser for supported MIME types
      * @param forceDownload force the system to download the image even if a successCallback is provided
+     * @param quality The quality of the image if lossy mimeType is used (e.g. image/jpeg, image/webp). See {@link https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob | HTMLCanvasElement.toBlob()}'s `quality` parameter.
      */
     CreateScreenshot,
 
@@ -466,6 +499,7 @@ export const ScreenshotTools = {
      * rendering at a higher or lower resolution
      * @param mimeType defines the MIME type of the screenshot image (default: image/png).
      * Check your browser for supported MIME types
+     * @param quality The quality of the image if lossy mimeType is used (e.g. image/jpeg, image/webp). See {@link https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob | HTMLCanvasElement.toBlob()}'s `quality` parameter.
      * @returns screenshot as a string of base64-encoded characters. This string can be assigned
      * to the src parameter of an <img> to display it
      */
@@ -480,6 +514,7 @@ export const ScreenshotTools = {
      * @param height defines the expected height
      * @param mimeType defines the MIME type of the screenshot image (default: image/png).
      * Check your browser for supported MIME types
+     * @param quality The quality of the image if lossy mimeType is used (e.g. image/jpeg, image/webp). See {@link https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob | HTMLCanvasElement.toBlob()}'s `quality` parameter.
      * @returns screenshot as a string of base64-encoded characters. This string can be assigned
      * to the src parameter of an <img> to display it
      */
@@ -505,6 +540,7 @@ export const ScreenshotTools = {
      * @param fileName A name for for the downloaded file.
      * @param renderSprites Whether the sprites should be rendered or not (default: false)
      * @param enableStencilBuffer Whether the stencil buffer should be enabled or not (default: false)
+     * @param quality The quality of the image if lossy mimeType is used (e.g. image/jpeg, image/webp). See {@link https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob | HTMLCanvasElement.toBlob()}'s `quality` parameter.
      */
     CreateScreenshotUsingRenderTarget,
 
@@ -524,6 +560,7 @@ export const ScreenshotTools = {
      * @param antialiasing Whether antialiasing should be turned on or not (default: false)
      * @param fileName A name for for the downloaded file.
      * @param renderSprites Whether the sprites should be rendered or not (default: false)
+     * @param quality The quality of the image if lossy mimeType is used (e.g. image/jpeg, image/webp). See {@link https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob | HTMLCanvasElement.toBlob()}'s `quality` parameter.
      * @returns screenshot as a string of base64-encoded characters. This string can be assigned
      * to the src parameter of an <img> to display it
      */

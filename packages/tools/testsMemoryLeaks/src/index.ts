@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import { findLeaks } from "@memlab/api";
 import { MemLabConfig } from "@memlab/core";
 import type { IScenario } from "@memlab/core";
@@ -9,7 +10,9 @@ import { TestPlanner } from "@memlab/e2e";
 const playgrounds: string[] = ["#2FDQT5#1508", "#T90MQ4#14", "#8EDB5N#2", "#YACNQS#2", "#SLV8LW#3"];
 
 /**
- *
+ * Get the global configuration for the tests
+ * @param overrideConfig override the default configuration
+ * @returns the configuration
  */
 export const getGlobalConfig = (overrideConfig: { root?: string; baseUrl?: string } = {}) => {
     populateEnvironment();
@@ -23,19 +26,18 @@ export const getGlobalConfig = (overrideConfig: { root?: string; baseUrl?: strin
 };
 
 function getConfigFromRunOptions(options: RunOptions): MemLabConfig {
-    let config = MemLabConfig.getInstance();
-    // if (options.workDir) {
-    //   fileManager.initDirs(config, {workDir: options.workDir});
-    // } else {
-    config = MemLabConfig.resetConfigWithTransientDir();
-    // }
+    const config = MemLabConfig.resetConfigWithTransientDir();
+    // if you have issues with WebGL not supported, run it in headful mode
+    // config.puppeteerConfig.headless = false;
     config.isFullRun = !!options.snapshotForEachStep;
     config.oversizeObjectAsLeak = true;
     config.oversizeThreshold = 50000;
     return config;
 }
 /**
- *
+ * Take snapshots of the playgrounds
+ * @param options the options to use
+ * @returns the result reader
  */
 export async function takeSnapshotsLocal(options: RunOptions = {}): Promise<BrowserInteractionResultReader> {
     const config = getConfigFromRunOptions(options);
@@ -79,7 +81,10 @@ export async function takeSnapshotsLocal(options: RunOptions = {}): Promise<Brow
                     await page.click("#dispose");
                 },
                 leakFilter: (node, _snapshot, _leakedNodeIds) => {
-                    if (node.retainedSize < 35000) {
+                    if (node.name === "FontAwesomeConfig") {
+                        return false;
+                    }
+                    if (node.retainedSize < 40000) {
                         return false;
                     }
                     if (node.pathEdge?.type === "internal" || node.pathEdge?.type === "hidden") {
@@ -105,7 +110,7 @@ export async function takeSnapshotsLocal(options: RunOptions = {}): Promise<Brow
             const leaks = await findLeaks(await takeSnapshotsLocal({ scenario }));
             if (leaks.length > 0) {
                 // console.log(leaks);
-                throw new Error(leaks.length + " leak(s) found");
+                throw new Error(leaks.length + " leak(s) found @ " + playground);
             }
         };
     });

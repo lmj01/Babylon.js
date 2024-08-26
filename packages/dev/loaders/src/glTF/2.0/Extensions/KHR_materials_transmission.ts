@@ -67,6 +67,7 @@ interface ITransmissionHelperOptions {
 class TransmissionHelper {
     /**
      * Creates the default options for the helper.
+     * @returns the default options
      */
     private static _GetDefaultOptions(): ITransmissionHelperOptions {
         return {
@@ -154,7 +155,7 @@ class TransmissionHelper {
     }
 
     /**
-     * Gets the opaque render target texture or null if not available.
+     * @returns the opaque render target texture or null if not available.
      */
     public getOpaqueTarget(): Nullable<Texture> {
         return this._opaqueRenderTarget;
@@ -239,9 +240,19 @@ class TransmissionHelper {
     }
 
     /**
+     * @internal
+     * Check if the opaque render target has not been disposed and can still be used.
+     * @returns
+     */
+    public _isRenderTargetValid() {
+        return this._opaqueRenderTarget?.getInternalTexture() !== null;
+    }
+
+    /**
+     * @internal
      * Setup the render targets according to the specified options.
      */
-    private _setupRenderTargets(): void {
+    public _setupRenderTargets(): void {
         if (this._opaqueRenderTarget) {
             this._opaqueRenderTarget.dispose();
         }
@@ -260,6 +271,8 @@ class TransmissionHelper {
         this._opaqueRenderTarget.lodGenerationScale = this._options.lodGenerationScale;
         this._opaqueRenderTarget.lodGenerationOffset = this._options.lodGenerationOffset;
         this._opaqueRenderTarget.samples = this._options.samples;
+        this._opaqueRenderTarget.renderSprites = true;
+        this._opaqueRenderTarget.renderParticles = true;
 
         let sceneImageProcessingapplyByPostProcess: boolean;
 
@@ -303,6 +316,17 @@ class TransmissionHelper {
 }
 
 const NAME = "KHR_materials_transmission";
+
+declare module "../../glTFFileLoader" {
+    // eslint-disable-next-line jsdoc/require-jsdoc
+    export interface GLTFLoaderExtensionOptions {
+        /**
+         * Defines options for the KHR_materials_transmission extension.
+         */
+        // NOTE: Don't use NAME here as it will break the UMD type declarations.
+        ["KHR_materials_transmission"]: {};
+    }
+}
 
 /**
  * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_transmission/README.md)
@@ -375,6 +399,9 @@ export class KHR_materials_transmission implements IGLTFLoaderExtension {
             const scene = pbrMaterial.getScene() as unknown as ITransmissionHelperHolder;
             if (pbrMaterial.subSurface.refractionIntensity && !scene._transmissionHelper) {
                 new TransmissionHelper({}, pbrMaterial.getScene());
+            } else if (pbrMaterial.subSurface.refractionIntensity && !scene._transmissionHelper?._isRenderTargetValid()) {
+                // If the render target is not valid, recreate it.
+                scene._transmissionHelper?._setupRenderTargets();
             }
         } else {
             pbrMaterial.subSurface.refractionIntensity = 0.0;

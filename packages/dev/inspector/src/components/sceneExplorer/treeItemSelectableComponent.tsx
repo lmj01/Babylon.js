@@ -1,4 +1,5 @@
 import type { Nullable } from "core/types";
+import type { Camera } from "core/Cameras/camera";
 import type { IExplorerExtensibilityGroup } from "core/Debug/debugLayer";
 
 import { TreeItemSpecializedComponent } from "./treeItemSpecializedComponent";
@@ -9,12 +10,15 @@ import * as ReactDOM from "react-dom";
 import * as React from "react";
 import type { GlobalState } from "../globalState";
 
+import { setDebugNode } from "./treeNodeDebugger";
+
 export interface ITreeItemSelectableComponentProps {
     entity: any;
     selectedEntity?: any;
     mustExpand?: boolean;
     offset: number;
     globalState: GlobalState;
+    gizmoCamera?: Camera;
     extensibilityGroups?: IExplorerExtensibilityGroup[];
     filter: Nullable<string>;
 }
@@ -35,7 +39,7 @@ export class TreeItemSelectableComponent extends React.Component<ITreeItemSelect
         this.setState({ isExpanded: !this.state.isExpanded });
     }
 
-    shouldComponentUpdate(nextProps: ITreeItemSelectableComponentProps, nextState: { isExpanded: boolean; isSelected: boolean }) {
+    override shouldComponentUpdate(nextProps: ITreeItemSelectableComponentProps, nextState: { isExpanded: boolean; isSelected: boolean }) {
         if (!nextState.isExpanded && this.state.isExpanded) {
             return true;
         }
@@ -65,13 +69,13 @@ export class TreeItemSelectableComponent extends React.Component<ITreeItemSelect
         }
     }
 
-    componentDidMount() {
+    override componentDidMount() {
         if (this.state.isSelected) {
             this.scrollIntoView();
         }
     }
 
-    componentDidUpdate() {
+    override componentDidUpdate() {
         if (this.state.isSelected && !this._wasSelected) {
             this.scrollIntoView();
         }
@@ -84,6 +88,8 @@ export class TreeItemSelectableComponent extends React.Component<ITreeItemSelect
         }
         this._wasSelected = true;
         const entity = this.props.entity;
+        // Put selected node into window.debugNode
+        setDebugNode(entity);
         this.props.globalState.onSelectionChangedObservable.notifyObservers(entity);
     }
 
@@ -98,6 +104,7 @@ export class TreeItemSelectableComponent extends React.Component<ITreeItemSelect
             return (
                 <TreeItemSelectableComponent
                     globalState={this.props.globalState}
+                    gizmoCamera={this.props.gizmoCamera}
                     mustExpand={this.props.mustExpand}
                     extensibilityGroups={this.props.extensibilityGroups}
                     selectedEntity={this.props.selectedEntity}
@@ -110,7 +117,7 @@ export class TreeItemSelectableComponent extends React.Component<ITreeItemSelect
         });
     }
 
-    render() {
+    override render() {
         const marginStyle = {
             paddingLeft: 10 * (this.props.offset + 0.5) + "px",
         };
@@ -158,6 +165,7 @@ export class TreeItemSelectableComponent extends React.Component<ITreeItemSelect
                     )}
                     <TreeItemSpecializedComponent
                         globalState={this.props.globalState}
+                        gizmoCamera={this.props.gizmoCamera}
                         extensibilityGroups={this.props.extensibilityGroups}
                         label={entity.name}
                         entity={entity}

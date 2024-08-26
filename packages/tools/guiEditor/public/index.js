@@ -3,7 +3,7 @@ let snippetUrl = "https://snippet.babylonjs.com";
 let currentSnippetToken;
 let previousHash = "";
 
-const fallbackUrl = "https://babylonsnapshots.z22.web.core.windows.net/refs/heads/master";
+const fallbackUrl = "https://snapshots-cvgtc2eugrd3cgfd.z01.azurefd.net/refs/heads/master";
 
 let loadScriptAsync = function (url, instantResolve) {
     return new Promise((resolve) => {
@@ -35,7 +35,7 @@ let loadScriptAsync = function (url, instantResolve) {
 };
 
 const Versions = {
-    dist: ["https://preview.babylonjs.com/timestamp.js?t=" + Date.now(), "https://preview.babylonjs.com/babylon.js", "https://preview.babylonjs.com/gui/babylon.gui.min.js"],
+    dist: ["https://cdn.babylonjs.com/timestamp.js?t=" + Date.now(), "https://preview.babylonjs.com/babylon.js", "https://preview.babylonjs.com/gui/babylon.gui.min.js"],
     local: [`//${window.location.hostname}:1337/babylon.js`, `//${window.location.hostname}:1337/gui/babylon.gui.min.js`],
 };
 
@@ -66,11 +66,26 @@ let checkBabylonVersionAsync = function () {
 
     let versions = Versions[activeVersion] || Versions["dist"];
     if (snapshot && activeVersion === "dist") {
-        versions = versions.map((v) => v.replace("https://preview.babylonjs.com", "https://babylonsnapshots.z22.web.core.windows.net/" + snapshot));
+        versions = versions.map((v) => v.replace("https://preview.babylonjs.com", "https://snapshots-cvgtc2eugrd3cgfd.z01.azurefd.net/" + snapshot));
+    }
+
+    let version = "";
+    if (window.location.search.indexOf("version=") !== -1) {
+        version = window.location.search.split("version=")[1];
+        // cleanup, just in case
+        version = version.split("&")[0];
+        activeVersion = "dist";
+    }
+
+    let frameworkScripts = Versions[activeVersion] || Versions["dist"];
+    if (snapshot) {
+        frameworkScripts = frameworkScripts.map((v) => v.replace("https://preview.babylonjs.com", "https://snapshots-cvgtc2eugrd3cgfd.z01.azurefd.net/" + snapshot));
+    } else if (version) {
+        frameworkScripts = frameworkScripts.map((v) => v.replace("https://preview.babylonjs.com", "https://cdn.babylonjs.com/v" + version));
     }
 
     return new Promise((resolve) => {
-        loadInSequence(versions, 0, resolve);
+        loadInSequence(frameworkScripts, 0, resolve);
     });
 };
 

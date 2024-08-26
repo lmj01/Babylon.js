@@ -69,6 +69,12 @@ export interface EngineFeatures {
     /**  Indicates that the engine supports sprite instancing */
     supportSpriteInstancing: boolean;
 
+    /** Indicates that the stride and (byte) offset of a vertex buffer must always be a multiple of 4 bytes */
+    forceVertexBufferStrideAndOffsetMultiple4Bytes: boolean;
+
+    /** @internal */
+    _checkNonFloatVertexBuffersDontRecreatePipelineContext: boolean;
+
     /** @internal */
     _collectUbosUpdatedInFrame: boolean;
 }

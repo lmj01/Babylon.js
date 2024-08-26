@@ -7,9 +7,8 @@ import { AbstractMesh } from "../Meshes/abstractMesh";
 import type { SubMesh } from "../Meshes/subMesh";
 import type { Mesh } from "../Meshes/mesh";
 import type { Camera } from "../Cameras/camera";
-import type { Effect } from "../Materials/effect";
+import type { Effect, IEffectCreationOptions } from "../Materials/effect";
 import { Material } from "../Materials/material";
-import { MaterialHelper } from "../Materials/materialHelper";
 import { StandardMaterial } from "../Materials/standardMaterial";
 import { Texture } from "../Materials/Textures/texture";
 import { RenderTargetTexture } from "../Materials/Textures/renderTargetTexture";
@@ -28,7 +27,9 @@ import { Viewport } from "../Maths/math.viewport";
 import { RegisterClass } from "../Misc/typeStore";
 import type { Nullable } from "../types";
 
-declare type Engine = import("../Engines/engine").Engine;
+import { BindBonesParameters, BindMorphTargetParameters, PrepareAttributesForMorphTargetsInfluencers, PushAttributesForInstances } from "../Materials/materialHelper.functions";
+import type { AbstractEngine } from "../Engines/abstractEngine";
+import { EffectFallbacks } from "core/Materials/effectFallbacks";
 
 /**
  *  Inspired by https://developer.nvidia.com/gpugems/gpugems3/part-ii-light-and-shadows/chapter-13-volumetric-light-scattering-post-process
@@ -85,14 +86,14 @@ export class VolumetricLightScatteringPostProcess extends PostProcess {
      * Array containing the excluded meshes not rendered in the internal pass
      */
     @serialize()
-    public excludedMeshes = new Array<AbstractMesh>();
+    public excludedMeshes: AbstractMesh[] = [];
 
     /**
      * Array containing the only meshes rendered in the internal pass.
      * If this array is not empty, only the meshes from this array are rendered in the internal pass
      */
     @serialize()
-    public includedMeshes = new Array<AbstractMesh>();
+    public includedMeshes: AbstractMesh[] = [];
 
     /**
      * Controls the overall intensity of the post-process
@@ -137,7 +138,7 @@ export class VolumetricLightScatteringPostProcess extends PostProcess {
         mesh?: Mesh,
         samples: number = 100,
         samplingMode: number = Texture.BILINEAR_SAMPLINGMODE,
-        engine?: Engine,
+        engine?: AbstractEngine,
         reusable?: boolean,
         scene?: Scene
     ) {
@@ -188,7 +189,7 @@ export class VolumetricLightScatteringPostProcess extends PostProcess {
      * Returns the string "VolumetricLightScatteringPostProcess"
      * @returns "VolumetricLightScatteringPostProcess"
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "VolumetricLightScatteringPostProcess";
     }
 
@@ -208,7 +209,7 @@ export class VolumetricLightScatteringPostProcess extends PostProcess {
 
         const defines = [];
         const attribs = [VertexBuffer.PositionKind];
-        const material: any = subMesh.getMaterial();
+        const material = subMesh.getMaterial();
 
         // Alpha test
         if (material) {
@@ -227,21 +228,61 @@ export class VolumetricLightScatteringPostProcess extends PostProcess {
         }
 
         // Bones
-        if (mesh.useBones && mesh.computeBonesUsingShaders) {
+        const fallbacks = new EffectFallbacks();
+        if (mesh.useBones && mesh.computeBonesUsingShaders && mesh.skeleton) {
             attribs.push(VertexBuffer.MatricesIndicesKind);
             attribs.push(VertexBuffer.MatricesWeightsKind);
+            if (mesh.numBoneInfluencers > 4) {
+                attribs.push(VertexBuffer.MatricesIndicesExtraKind);
+                attribs.push(VertexBuffer.MatricesWeightsExtraKind);
+            }
             defines.push("#define NUM_BONE_INFLUENCERS " + mesh.numBoneInfluencers);
-            defines.push("#define BonesPerMesh " + (mesh.skeleton ? mesh.skeleton.bones.length + 1 : 0));
+            if (mesh.numBoneInfluencers > 0) {
+                fallbacks.addCPUSkinningFallback(0, mesh);
+            }
+
+            const skeleton = mesh.skeleton;
+            if (skeleton.isUsingTextureForMatrices) {
+                defines.push("#define BONETEXTURE");
+            } else {
+                defines.push("#define BonesPerMesh " + (skeleton.bones.length + 1));
+            }
         } else {
             defines.push("#define NUM_BONE_INFLUENCERS 0");
+        }
+
+        // Morph targets
+        const morphTargetManager = (mesh as Mesh).morphTargetManager;
+        let numMorphInfluencers = 0;
+        if (morphTargetManager) {
+            numMorphInfluencers = morphTargetManager.numMaxInfluencers || morphTargetManager.numInfluencers;
+            if (numMorphInfluencers > 0) {
+                defines.push("#define MORPHTARGETS");
+                defines.push("#define NUM_MORPH_INFLUENCERS " + numMorphInfluencers);
+
+                if (morphTargetManager.isUsingTextureForTargets) {
+                    defines.push("#define MORPHTARGETS_TEXTURE");
+                }
+
+                PrepareAttributesForMorphTargetsInfluencers(attribs, mesh, numMorphInfluencers);
+            }
         }
 
         // Instances
         if (useInstances) {
             defines.push("#define INSTANCES");
-            MaterialHelper.PushAttributesForInstances(attribs);
+            PushAttributesForInstances(attribs);
             if (subMesh.getRenderingMesh().hasThinInstances) {
                 defines.push("#define THIN_INSTANCES");
+            }
+        }
+
+        // Baked vertex animations
+        const bvaManager = mesh.bakedVertexAnimationManager;
+        if (bvaManager && bvaManager.isEnabled) {
+            defines.push("#define BAKED_VERTEX_ANIMATION_TEXTURE");
+            if (useInstances) {
+                attribs.push("bakedVertexAnimationSettingsInstanced");
             }
         }
 
@@ -250,20 +291,41 @@ export class VolumetricLightScatteringPostProcess extends PostProcess {
         const cachedDefines = drawWrapper.defines;
         const join = defines.join("\n");
         if (cachedDefines !== join) {
+            const uniforms = [
+                "world",
+                "mBones",
+                "boneTextureWidth",
+                "viewProjection",
+                "diffuseMatrix",
+                "morphTargetInfluences",
+                "morphTargetCount",
+                "morphTargetTextureInfo",
+                "morphTargetTextureIndices",
+                "bakedVertexAnimationSettings",
+                "bakedVertexAnimationTextureSizeInverted",
+                "bakedVertexAnimationTime",
+                "bakedVertexAnimationTexture",
+            ];
+            const samplers = ["diffuseSampler", "morphTargets", "boneSampler", "bakedVertexAnimationTexture"];
+
             drawWrapper.setEffect(
                 mesh
                     .getScene()
                     .getEngine()
                     .createEffect(
                         "volumetricLightScatteringPass",
-                        attribs,
-                        ["world", "mBones", "viewProjection", "diffuseMatrix"],
-                        ["diffuseSampler"],
-                        join,
-                        undefined,
-                        undefined,
-                        undefined,
-                        { maxSimultaneousMorphTargets: mesh.numBoneInfluencers }
+                        <IEffectCreationOptions>{
+                            attributes: attribs,
+                            uniformsNames: uniforms,
+                            uniformBuffersNames: [],
+                            samplers: samplers,
+                            defines: join,
+                            fallbacks: fallbacks,
+                            onCompiled: null,
+                            onError: null,
+                            indexParameters: { maxSimultaneousMorphTargets: numMorphInfluencers },
+                        },
+                        mesh.getScene().getEngine()
                     ),
                 join
             );
@@ -290,9 +352,9 @@ export class VolumetricLightScatteringPostProcess extends PostProcess {
 
     /**
      * Disposes the internal assets and detaches the post-process from the camera
-     * @param camera
+     * @param camera The camera from which to detach the post-process
      */
-    public dispose(camera: Camera): void {
+    public override dispose(camera: Camera): void {
         const rttIndex = camera.getScene().customRenderTargets.indexOf(this._volumetricLightScatteringRTT);
         if (rttIndex !== -1) {
             camera.getScene().customRenderTargets.splice(rttIndex, 1);
@@ -401,19 +463,28 @@ export class VolumetricLightScatteringPostProcess extends PostProcess {
                     effect.setMatrix("viewProjection", scene.getTransformMatrix());
 
                     // Alpha test
-                    if (material && material.needAlphaTesting()) {
+                    if (material.needAlphaTesting()) {
                         const alphaTexture = material.getAlphaTestTexture();
 
-                        effect.setTexture("diffuseSampler", alphaTexture);
-
                         if (alphaTexture) {
+                            effect.setTexture("diffuseSampler", alphaTexture);
                             effect.setMatrix("diffuseMatrix", alphaTexture.getTextureMatrix());
                         }
                     }
 
                     // Bones
-                    if (renderingMesh.useBones && renderingMesh.computeBonesUsingShaders && renderingMesh.skeleton) {
-                        effect.setMatrices("mBones", renderingMesh.skeleton.getTransformMatrices(renderingMesh));
+                    BindBonesParameters(renderingMesh, effect);
+
+                    // Morph targets
+                    BindMorphTargetParameters(renderingMesh, effect);
+                    if (renderingMesh.morphTargetManager && renderingMesh.morphTargetManager.isUsingTextureForTargets) {
+                        renderingMesh.morphTargetManager._bind(effect);
+                    }
+
+                    // Baked vertex animations
+                    const bvaManager = subMesh.getMesh().bakedVertexAnimationManager;
+                    if (bvaManager && bvaManager.isEnabled) {
+                        bvaManager.bind(effect, hardwareInstancedRendering);
                     }
                 }
 

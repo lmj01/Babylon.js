@@ -1,12 +1,11 @@
 import type { PostProcessOptions } from "./postProcess";
 import { PostProcess } from "./postProcess";
 import type { Nullable } from "../types";
-import type { Engine } from "../Engines/engine";
+import type { AbstractEngine } from "../Engines/abstractEngine";
 import type { Effect } from "../Materials/effect";
 import type { Camera } from "../Cameras/camera";
 import { Constants } from "../Engines/constants";
 
-import "../Shaders/bloomMerge.fragment";
 import { RegisterClass } from "../Misc/typeStore";
 import { serialize } from "../Misc/decorators";
 
@@ -22,7 +21,7 @@ export class BloomMergePostProcess extends PostProcess {
      * Gets a string identifying the name of the class
      * @returns "BloomMergePostProcess" string
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "BloomMergePostProcess";
     }
 
@@ -49,7 +48,7 @@ export class BloomMergePostProcess extends PostProcess {
         options: number | PostProcessOptions,
         camera: Nullable<Camera>,
         samplingMode?: number,
-        engine?: Engine,
+        engine?: AbstractEngine,
         reusable?: boolean,
         textureType: number = Constants.TEXTURETYPE_UNSIGNED_INT,
         blockCompilation = false
@@ -66,6 +65,17 @@ export class BloomMergePostProcess extends PostProcess {
         if (!blockCompilation) {
             this.updateEffect();
         }
+    }
+
+    protected override _gatherImports(useWebGPU: boolean, list: Promise<any>[]) {
+        if (useWebGPU) {
+            this._webGPUReady = true;
+            list.push(import("../ShadersWGSL/bloomMerge.fragment"));
+        } else {
+            list.push(import("../Shaders/bloomMerge.fragment"));
+        }
+
+        super._gatherImports(useWebGPU, list);
     }
 }
 

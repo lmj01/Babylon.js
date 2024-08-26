@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/naming-convention */
-import { serialize, SerializationHelper } from "../../../Misc/decorators";
+import { serialize } from "../../../Misc/decorators";
+import { SerializationHelper } from "../../../Misc/decorators.serialization";
 import { Vector3, Matrix, Quaternion, TmpVectors } from "../../../Maths/math.vector";
 import type { Camera } from "../../../Cameras/camera";
 import type { Effect } from "../../../Materials/effect";
@@ -18,10 +19,7 @@ import { DepthRenderer } from "../../../Rendering/depthRenderer";
 import type { ISize } from "../../../Maths/math.size";
 
 import "../postProcessRenderPipelineManagerSceneComponent";
-
-import "../../../Shaders/screenSpaceReflection2.fragment";
-import "../../../Shaders/screenSpaceReflection2Blur.fragment";
-import "../../../Shaders/screenSpaceReflection2BlurCombiner.fragment";
+import { ShaderLanguage } from "core/Materials/shaderLanguage";
 
 const trs = Matrix.Compose(new Vector3(0.5, 0.5, 0.5), Quaternion.Identity(), new Vector3(0.5, 0.5, 0.5));
 const trsWebGPU = Matrix.Compose(new Vector3(0.5, 0.5, 1), Quaternion.Identity(), new Vector3(0.5, 0.5, 0));
@@ -404,7 +402,7 @@ export class SSRRenderingPipeline extends PostProcessRenderPipeline {
      * When enabled, a depth renderer is created which will render the back faces of the scene to a depth texture (meaning additional work for the GPU).
      * In that mode, the "thickness" property is still used as an offset to compute the ray intersection, but you can typically use a much lower
      * value than when enableAutomaticThicknessComputation is false (it's even possible to use a value of 0 when using low values for "step")
-     * Note that for performance reasons, this option will only apply to the first camera to which the the rendering pipeline is attached!
+     * Note that for performance reasons, this option will only apply to the first camera to which the rendering pipeline is attached!
      */
     public get enableAutomaticThicknessComputation(): boolean {
         return this._enableAutomaticThicknessComputation;
@@ -618,7 +616,7 @@ export class SSRRenderingPipeline extends PostProcessRenderPipeline {
     /**
      * Returns true if SSR is supported by the running hardware
      */
-    public get isSupported(): boolean {
+    public override get isSupported(): boolean {
         const caps = this._scene.getEngine().getCaps();
 
         return caps.drawBuffersExtension && caps.texelFetch;
@@ -668,7 +666,7 @@ export class SSRRenderingPipeline extends PostProcessRenderPipeline {
      * Get the class name
      * @returns "SSRRenderingPipeline"
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "SSRRenderingPipeline";
     }
 
@@ -693,9 +691,9 @@ export class SSRRenderingPipeline extends PostProcessRenderPipeline {
 
     /**
      * Removes the internal pipeline assets and detaches the pipeline from the scene cameras
-     * @param disableGeometryBufferRenderer
+     * @param disableGeometryBufferRenderer if the geometry buffer renderer should be disabled
      */
-    public dispose(disableGeometryBufferRenderer: boolean = false): void {
+    public override dispose(disableGeometryBufferRenderer: boolean = false): void {
         this._disposeDepthRenderer();
         this._disposePostProcesses();
 
@@ -790,6 +788,20 @@ export class SSRRenderingPipeline extends PostProcessRenderPipeline {
         }
         if (this._reflectivityThreshold === 0) {
             defines.push("#define SSR_DISABLE_REFLECTIVITY_TEST");
+        }
+
+        if (this._geometryBufferRenderer?.generateNormalsInWorldSpace ?? this._prePassRenderer?.generateNormalsInWorldSpace) {
+            defines.push("#define SSR_NORMAL_IS_IN_WORLDSPACE");
+        }
+
+        if (this._geometryBufferRenderer?.normalsAreUnsigned) {
+            defines.push("#define SSR_DECODE_NORMAL");
+        }
+
+        const camera = this._cameras?.[0];
+
+        if (camera && camera.mode === Constants.ORTHOGRAPHIC_CAMERA) {
+            defines.push("#define ORTHOGRAPHIC_CAMERA");
         }
 
         this._ssrPostProcess?.updateEffect(defines.join("\n"));
@@ -952,7 +964,19 @@ export class SSRRenderingPipeline extends PostProcessRenderPipeline {
             this._scene.getEngine(),
             false,
             "",
-            this._textureType
+            this._textureType,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            this._scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
+            (useWebGPU, list) => {
+                if (useWebGPU) {
+                    list.push(import("../../../ShadersWGSL/screenSpaceReflection2.fragment"));
+                } else {
+                    list.push(import("../../../Shaders/screenSpaceReflection2.fragment"));
+                }
+            }
         );
 
         this._updateEffectDefines();
@@ -993,8 +1017,8 @@ export class SSRRenderingPipeline extends PostProcessRenderPipeline {
                 return;
             }
 
-            const viewMatrix = camera.getViewMatrix(true);
-            const projectionMatrix = camera.getProjectionMatrix(true);
+            const viewMatrix = camera.getViewMatrix();
+            const projectionMatrix = camera.getProjectionMatrix();
 
             projectionMatrix.invertToRef(TmpVectors.Matrix[0]);
             viewMatrix.invertToRef(TmpVectors.Matrix[1]);
@@ -1054,7 +1078,19 @@ export class SSRRenderingPipeline extends PostProcessRenderPipeline {
             engine,
             false,
             "",
-            this._textureType
+            this._textureType,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            this._scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
+            (useWebGPU, list) => {
+                if (useWebGPU) {
+                    list.push(import("../../../ShadersWGSL/screenSpaceReflection2Blur.fragment"));
+                } else {
+                    list.push(import("../../../Shaders/screenSpaceReflection2Blur.fragment"));
+                }
+            }
         );
         this._blurPostProcessX.autoClear = false;
 
@@ -1075,7 +1111,19 @@ export class SSRRenderingPipeline extends PostProcessRenderPipeline {
             engine,
             false,
             "",
-            this._textureType
+            this._textureType,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            this._scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
+            (useWebGPU, list) => {
+                if (useWebGPU) {
+                    list.push(import("../../../ShadersWGSL/screenSpaceReflection2Blur.fragment"));
+                } else {
+                    list.push(import("../../../Shaders/screenSpaceReflection2Blur.fragment"));
+                }
+            }
         );
         this._blurPostProcessY.autoClear = false;
 
@@ -1120,7 +1168,19 @@ export class SSRRenderingPipeline extends PostProcessRenderPipeline {
             engine,
             false,
             defines,
-            this._textureType
+            this._textureType,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            this._scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
+            (useWebGPU, list) => {
+                if (useWebGPU) {
+                    list.push(import("../../../ShadersWGSL/screenSpaceReflection2BlurCombiner.fragment"));
+                } else {
+                    list.push(import("../../../Shaders/screenSpaceReflection2BlurCombiner.fragment"));
+                }
+            }
         );
         this._blurCombinerPostProcess.autoClear = false;
 

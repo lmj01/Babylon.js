@@ -143,7 +143,7 @@ export class WebXRHitTest extends WebXRAbstractFeature implements IWebXRHitTestF
     constructor(
         _xrSessionManager: WebXRSessionManager,
         /**
-         * options to use when constructing this feature
+         * [Empty Object] options to use when constructing this feature
          */
         public readonly options: IWebXRHitTestOptions = {}
     ) {
@@ -158,7 +158,7 @@ export class WebXRHitTest extends WebXRAbstractFeature implements IWebXRHitTestF
      *
      * @returns true if successful.
      */
-    public attach(): boolean {
+    public override attach(): boolean {
         if (!super.attach()) {
             return false;
         }
@@ -194,7 +194,7 @@ export class WebXRHitTest extends WebXRAbstractFeature implements IWebXRHitTestF
      *
      * @returns true if successful.
      */
-    public detach(): boolean {
+    public override detach(): boolean {
         if (!super.detach()) {
             return false;
         }
@@ -213,7 +213,7 @@ export class WebXRHitTest extends WebXRAbstractFeature implements IWebXRHitTestF
     /**
      * Dispose this feature and all of the resources attached
      */
-    public dispose(): void {
+    public override dispose(): void {
         super.dispose();
         this.onHitTestResultObservable.clear();
     }
@@ -246,7 +246,7 @@ export class WebXRHitTest extends WebXRAbstractFeature implements IWebXRHitTestF
             }
             const pos = pose.transform.position;
             const quat = pose.transform.orientation;
-            this._tmpPos.set(pos.x, pos.y, pos.z);
+            this._tmpPos.set(pos.x, pos.y, pos.z).scaleInPlace(this._xrSessionManager.worldScalingFactor);
             this._tmpQuat.set(quat.x, quat.y, quat.z, quat.w);
             Matrix.FromFloat32ArrayToRefScaled(pose.transform.matrix, 0, 1, this._tmpMat);
             if (!this._xrSessionManager.scene.useRightHandedSystem) {

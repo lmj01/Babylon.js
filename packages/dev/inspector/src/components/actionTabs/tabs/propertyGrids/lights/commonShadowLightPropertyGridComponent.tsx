@@ -7,7 +7,7 @@ import { CheckBoxLineComponent } from "shared-ui-components/lines/checkBoxLineCo
 import { FloatLineComponent } from "shared-ui-components/lines/floatLineComponent";
 import type { LockObject } from "shared-ui-components/tabs/propertyGrids/lockObject";
 import type { GlobalState } from "../../../../globalState";
-import { OptionsLineComponent } from "shared-ui-components/lines/optionsLineComponent";
+import { OptionsLine } from "shared-ui-components/lines/optionsLineComponent";
 import { ShadowGenerator } from "core/Lights/Shadows/shadowGenerator";
 import { CascadedShadowGenerator } from "core/Lights/Shadows/cascadedShadowGenerator";
 import { SliderLineComponent } from "shared-ui-components/lines/sliderLineComponent";
@@ -60,7 +60,7 @@ export class CommonShadowLightPropertyGridComponent extends React.Component<ICom
         this.forceUpdate();
     }
 
-    render() {
+    override render() {
         const light = this.props.light;
         const internals = this._internals;
         const generator = (light.getShadowGenerator() as ShadowGenerator | CascadedShadowGenerator) || null;
@@ -74,6 +74,7 @@ export class CommonShadowLightPropertyGridComponent extends React.Component<ICom
         }
 
         const mapSizeOptions = [
+            { label: "4096x4096", value: 4096 },
             { label: "2048x2048", value: 2048 },
             { label: "1024x1024", value: 1024 },
             { label: "512x512", value: 512 },
@@ -114,7 +115,7 @@ export class CommonShadowLightPropertyGridComponent extends React.Component<ICom
         ];
 
         const near = camera ? camera.minZ : 0,
-            far = camera ? camera.maxZ : 0;
+            far = camera ? (camera.maxZ ? camera.maxZ : 500000) : 0;
 
         const filter = generator ? generator.filter : 0;
 
@@ -148,8 +149,8 @@ export class CommonShadowLightPropertyGridComponent extends React.Component<ICom
                 </LineContainerComponent>
                 {generator == null && (
                     <LineContainerComponent title="SHADOW GENERATOR" selection={this.props.globalState}>
-                        <OptionsLineComponent label="Type" options={typeGeneratorOptions} target={internals} propertyName="generatorType" />
-                        <OptionsLineComponent label="Map size" options={mapSizeOptions} target={internals} propertyName="mapSize" />
+                        <OptionsLine label="Type" options={typeGeneratorOptions} target={internals} propertyName="generatorType" />
+                        <OptionsLine label="Map size" options={mapSizeOptions} target={internals} propertyName="mapSize" />
                         <ButtonLineComponent label="Create generator" onClick={() => this.createShadowGenerator()} />
                     </LineContainerComponent>
                 )}
@@ -158,7 +159,7 @@ export class CommonShadowLightPropertyGridComponent extends React.Component<ICom
                         <ButtonLineComponent label="Dispose generator" onClick={() => this.disposeShadowGenerator()} />
                         {csmGenerator && (
                             <>
-                                <OptionsLineComponent
+                                <OptionsLine
                                     label="Num cascades"
                                     options={numCascadesOptions}
                                     target={generator}
@@ -253,7 +254,7 @@ export class CommonShadowLightPropertyGridComponent extends React.Component<ICom
                             propertyName="transparencyShadow"
                             onPropertyChangedObservable={this.props.onPropertyChangedObservable}
                         />
-                        <OptionsLineComponent
+                        <OptionsLine
                             label="Filter"
                             options={blurModeOptions}
                             onSelect={() => {
@@ -264,7 +265,7 @@ export class CommonShadowLightPropertyGridComponent extends React.Component<ICom
                             onPropertyChangedObservable={this.props.onPropertyChangedObservable}
                         />
                         {(filter === ShadowGenerator.FILTER_PCF || filter === ShadowGenerator.FILTER_PCSS) && (
-                            <OptionsLineComponent
+                            <OptionsLine
                                 label="Filtering quality"
                                 options={filteringQualityOptions}
                                 onSelect={() => {

@@ -6,24 +6,52 @@ import {
     PhysicsConstraintMotorType,
     PhysicsConstraintAxis,
     PhysicsConstraintAxisLimitMode,
+    PhysicsEventType,
+    PhysicsPrestepType,
+    PhysicsActivationControl,
 } from "../IPhysicsEnginePlugin";
-import type { PhysicsShapeParameters, IPhysicsEnginePluginV2, PhysicsMassProperties, IPhysicsCollisionEvent } from "../IPhysicsEnginePlugin";
+import type {
+    PhysicsShapeParameters,
+    IPhysicsEnginePluginV2,
+    PhysicsMassProperties,
+    IPhysicsCollisionEvent,
+    IBasePhysicsCollisionEvent,
+    ConstrainedBodyPair,
+} from "../IPhysicsEnginePlugin";
+import type { IRaycastQuery, PhysicsRaycastResult } from "../../physicsRaycastResult";
 import { Logger } from "../../../Misc/logger";
 import type { PhysicsBody } from "../physicsBody";
 import type { PhysicsConstraint, Physics6DoFConstraint } from "../physicsConstraint";
 import type { PhysicsMaterial } from "../physicsMaterial";
 import { PhysicsMaterialCombineMode } from "../physicsMaterial";
 import { PhysicsShape } from "../physicsShape";
-import type { BoundingBox } from "../../../Culling/boundingBox";
+import { BoundingBox } from "../../../Culling/boundingBox";
 import type { TransformNode } from "../../../Meshes/transformNode";
-import type { PhysicsRaycastResult } from "../../physicsRaycastResult";
 import { Mesh } from "../../../Meshes/mesh";
+import { InstancedMesh } from "../../../Meshes/instancedMesh";
 import type { Scene } from "../../../scene";
 import { VertexBuffer } from "../../../Buffers/buffer";
-import { ArrayTools } from "../../../Misc/arrayTools";
+import { BuildArray } from "../../../Misc/arrayTools";
 import { Observable } from "../../../Misc/observable";
-import type { Nullable } from "../../../types";
+import type { Nullable, FloatArray } from "../../../types";
+import type { IPhysicsPointProximityQuery } from "../../physicsPointProximityQuery";
+import type { ProximityCastResult } from "../../proximityCastResult";
+import type { IPhysicsShapeProximityCastQuery } from "../../physicsShapeProximityCastQuery";
+import type { IPhysicsShapeCastQuery } from "../../physicsShapeCastQuery";
+import type { ShapeCastResult } from "../../shapeCastResult";
 declare let HK: any;
+
+/**
+ * Helper to keep a reference to plugin memory.
+ * Used to avoid https://github.com/emscripten-core/emscripten/issues/7294
+ * @internal
+ */
+interface PluginMemoryRef {
+    /** The offset from the beginning of the plugin's heap */
+    offset: number;
+    /** The number of identically-sized objects the buffer contains */
+    numObjects: number;
+}
 
 class MeshAccumulator {
     /**
@@ -52,18 +80,53 @@ class MeshAccumulator {
      * have a physics impostor. This is useful for creating a physics engine
      * that accurately reflects the mesh and its children.
      */
-    public addMesh(mesh: Mesh, includeChildren: boolean): void {
-        const indexOffset = this._vertices.length;
-        // Force absoluteScaling to be computed
+    public addNodeMeshes(mesh: TransformNode, includeChildren: boolean): void {
+        // Force absoluteScaling to be computed; we're going to use that to bake
+        // the scale of any parent nodes into this shape, as physics engines
+        // usually use rigid transforms, so can't handle arbitrary scale.
         mesh.computeWorldMatrix(true);
-        const shapeFromBody = TmpVectors.Matrix[0];
-        Matrix.ScalingToRef(mesh.absoluteScaling.x, mesh.absoluteScaling.y, mesh.absoluteScaling.z, shapeFromBody);
+        const rootScaled = TmpVectors.Matrix[0];
+        Matrix.ScalingToRef(mesh.absoluteScaling.x, mesh.absoluteScaling.y, mesh.absoluteScaling.z, rootScaled);
 
+        if (mesh instanceof Mesh) {
+            this._addMesh(mesh, rootScaled);
+        } else if (mesh instanceof InstancedMesh) {
+            this._addMesh(mesh.sourceMesh, rootScaled);
+        }
+
+        if (includeChildren) {
+            const worldToRoot = TmpVectors.Matrix[1];
+            mesh.computeWorldMatrix().invertToRef(worldToRoot);
+            const worldToRootScaled = TmpVectors.Matrix[2];
+            worldToRoot.multiplyToRef(rootScaled, worldToRootScaled);
+
+            const children = mesh.getChildMeshes(false);
+            //  Ignore any children which have a physics body.
+            //  Other plugin implementations do not have this check, which appears to be
+            //  a bug, as otherwise, the mesh will have a duplicate collider
+            children
+                .filter((m: any) => !m.physicsBody)
+                .forEach((m: TransformNode) => {
+                    const childToWorld = m.computeWorldMatrix();
+                    const childToRootScaled = TmpVectors.Matrix[3];
+                    childToWorld.multiplyToRef(worldToRootScaled, childToRootScaled);
+
+                    if (m instanceof Mesh) {
+                        this._addMesh(m, childToRootScaled);
+                    } else if (m instanceof InstancedMesh) {
+                        this._addMesh(m.sourceMesh, childToRootScaled);
+                    }
+                });
+        }
+    }
+
+    private _addMesh(mesh: Mesh, meshToRoot: Matrix): void {
         const vertexData = mesh.getVerticesData(VertexBuffer.PositionKind) || [];
         const numVerts = vertexData.length / 3;
+        const indexOffset = this._vertices.length;
         for (let v = 0; v < numVerts; v++) {
             const pos = new Vector3(vertexData[v * 3 + 0], vertexData[v * 3 + 1], vertexData[v * 3 + 2]);
-            this._vertices.push(Vector3.TransformCoordinates(pos, shapeFromBody));
+            this._vertices.push(Vector3.TransformCoordinates(pos, meshToRoot));
         }
 
         if (this._collectIndices) {
@@ -83,25 +146,18 @@ class MeshAccumulator {
                 }
             }
         }
-
-        if (includeChildren) {
-            const children = mesh.getChildMeshes(false);
-            //  Ignore any children which have a physics body.
-            //  Other plugin implementations do not have this check, which appears to be
-            //  a bug, as otherwise, the mesh will have a duplicate collider
-            children.filter((m: any) => !m.physicsBody).forEach((m: any) => this.addMesh(m, includeChildren));
-        }
     }
 
     /**
      * Allocate and populate the vertex positions inside the physics plugin.
      *
+     * @param plugin - The plugin to allocate the memory in.
      * @returns An array of floats, whose backing memory is inside the plugin. The array contains the
      * positions of the mesh vertices, where a position is defined by three floats. You must call
      * freeBuffer() on the returned array once you have finished with it, in order to free the
      * memory inside the plugin..
      */
-    public getVertices(plugin: any): Float32Array {
+    public getVertices(plugin: any): PluginMemoryRef {
         const nFloats = this._vertices.length * 3;
         const bytesPerFloat = 4;
         const nBytes = nFloats * bytesPerFloat;
@@ -114,21 +170,22 @@ class MeshAccumulator {
             ret[i * 3 + 2] = this._vertices[i].z;
         }
 
-        return ret;
+        return { offset: bufferBegin, numObjects: nFloats };
     }
 
-    public freeBuffer(plugin: any, arr: Float32Array | Int32Array) {
-        plugin._free(arr.byteOffset);
+    public freeBuffer(plugin: any, arr: PluginMemoryRef) {
+        plugin._free(arr.offset);
     }
 
     /**
      * Allocate and populate the triangle indices inside the physics plugin
      *
+     * @param plugin - The plugin to allocate the memory in.
      * @returns A new Int32Array, whose backing memory is inside the plugin. The array contains the indices
      * of the triangle positions, where a single triangle is defined by three indices. You must call
      * freeBuffer() on this array once you have finished with it, to free the memory inside the plugin..
      */
-    public getTriangles(plugin: any): Int32Array {
+    public getTriangles(plugin: any): PluginMemoryRef {
         const bytesPerInt = 4;
         const nBytes = this._indices.length * bytesPerInt;
         const bufferBegin = plugin._malloc(nBytes);
@@ -137,7 +194,7 @@ class MeshAccumulator {
             ret[i] = this._indices[i];
         }
 
-        return ret;
+        return { offset: bufferBegin, numObjects: this._indices.length };
     }
 
     private _isRightHanded: boolean;
@@ -167,7 +224,7 @@ class ShapePath
 }
 */
 
-class ContactPoint {
+class CollisionContactPoint {
     public bodyId: bigint = BigInt(0); //0,2
     //public colliderId: number = 0; //2,4
     //public shapePath: ShapePath = new ShapePath(); //4,8
@@ -177,11 +234,12 @@ class ContactPoint {
 }
 
 class CollisionEvent {
-    //public eventType: number = 0; //0,1
-    public contactOnA: ContactPoint = new ContactPoint(); //1
-    public contactOnB: ContactPoint = new ContactPoint();
+    public contactOnA: CollisionContactPoint = new CollisionContactPoint(); //1
+    public contactOnB: CollisionContactPoint = new CollisionContactPoint();
     public impulseApplied: number = 0;
+    public type: number = 0;
 
+    // eslint-disable-next-line @typescript-eslint/naming-convention
     static readToRef(buffer: any, offset: number, eventOut: CollisionEvent) {
         const intBuf = new Int32Array(buffer, offset);
         const floatBuf = new Float32Array(buffer, offset);
@@ -194,6 +252,21 @@ class CollisionEvent {
         eventOut.contactOnB.position.set(floatBuf[offB + 8], floatBuf[offB + 9], floatBuf[offB + 10]);
         eventOut.contactOnB.normal.set(floatBuf[offB + 11], floatBuf[offB + 12], floatBuf[offB + 13]);
         eventOut.impulseApplied = floatBuf[offB + 13 + 3];
+        eventOut.type = intBuf[0];
+    }
+}
+
+class TriggerEvent {
+    public bodyIdA: bigint = BigInt(0);
+    public bodyIdB: bigint = BigInt(0);
+    public type: number = 0;
+
+    // eslint-disable-next-line @typescript-eslint/naming-convention
+    static readToRef(buffer: any, offset: number, eventOut: TriggerEvent) {
+        const intBuf = new Int32Array(buffer, offset);
+        eventOut.type = intBuf[0];
+        eventOut.bodyIdA = BigInt(intBuf[2]);
+        eventOut.bodyIdB = BigInt(intBuf[6]);
     }
 }
 
@@ -216,19 +289,33 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
     /**
      * We only have a single raycast in-flight right now
      */
-    private _queryCollector: bigint;
+    private _queryCollector;
     private _fixedTimeStep: number = 1 / 60;
-    private _timeStep: number = 1 / 60;
-    private _tmpVec3 = ArrayTools.BuildArray(3, Vector3.Zero);
+    private _tmpVec3 = BuildArray(3, Vector3.Zero);
     private _bodies = new Map<bigint, { body: PhysicsBody; index: number }>();
+    private _shapes = new Map<bigint, PhysicsShape>();
     private _bodyBuffer: number;
     private _bodyCollisionObservable = new Map<bigint, Observable<IPhysicsCollisionEvent>>();
+    // Map from constraint id to the pair of bodies, where the first is the parent and the second is the child
+    private _constraintToBodyIdPair = new Map<bigint, [bigint, bigint]>();
+    private _bodyCollisionEndedObservable = new Map<bigint, Observable<IBasePhysicsCollisionEvent>>();
     /**
-     *
+     * Observable for collision started and collision continued events
      */
     public onCollisionObservable = new Observable<IPhysicsCollisionEvent>();
+    /**
+     * Observable for collision ended events
+     */
+    public onCollisionEndedObservable = new Observable<IBasePhysicsCollisionEvent>();
+    /**
+     * Observable for trigger entered and trigger exited events
+     */
+    public onTriggerCollisionObservable = new Observable<IBasePhysicsCollisionEvent>();
 
-    public constructor(private _useDeltaForWorldStep: boolean = true, hpInjection: any = HK) {
+    public constructor(
+        private _useDeltaForWorldStep: boolean = true,
+        hpInjection: any = HK
+    ) {
         if (typeof hpInjection === "function") {
             Logger.Error("Havok is not ready. Please make sure you await HK() before using the plugin.");
             return;
@@ -286,7 +373,6 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      *
      * @param delta The time delta in seconds since the last step.
      * @param physicsBodies An array of physics bodies to be simulated.
-     * @returns void
      *
      * This method is useful for simulating the physics engine. It sets the physics body transformation,
      * steps the world, syncs the physics body, and notifies collisions. This allows for the physics engine
@@ -300,14 +386,19 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
             this.setPhysicsBodyTransformation(physicsBody, physicsBody.transformNode);
         }
 
-        this._hknp.HP_World_Step(this.world, this._useDeltaForWorldStep ? delta : this._timeStep);
+        const deltaTime = this._useDeltaForWorldStep ? delta : this._fixedTimeStep;
+        this._hknp.HP_World_SetIdealStepTime(this.world, deltaTime);
+        this._hknp.HP_World_Step(this.world, deltaTime);
 
         this._bodyBuffer = this._hknp.HP_World_GetBodyBuffer(this.world)[1];
         for (const physicsBody of physicsBodies) {
-            this.sync(physicsBody);
+            if (!physicsBody.disableSync) {
+                this.sync(physicsBody);
+            }
         }
 
         this._notifyCollisions();
+        this._notifyTriggers();
     }
 
     /**
@@ -319,6 +410,31 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      */
     public getPluginVersion(): number {
         return 2;
+    }
+
+    /**
+     * Set the maximum allowed linear and angular velocities
+     * @param maxLinearVelocity maximum allowed linear velocity
+     * @param maxAngularVelocity maximum allowed angular velocity
+     */
+    setVelocityLimits(maxLinearVelocity: number, maxAngularVelocity: number): void {
+        this._hknp.HP_World_SetSpeedLimit(this.world, maxLinearVelocity, maxAngularVelocity);
+    }
+
+    /**
+     * @returns maximum allowed linear velocity
+     */
+    getMaxLinearVelocity(): number {
+        const limits = this._hknp.HP_World_GetSpeedLimit(this.world);
+        return limits[1];
+    }
+
+    /**
+     * @returns maximum allowed angular velocity
+     */
+    getMaxAngularVelocity(): number {
+        const limits = this._hknp.HP_World_GetSpeedLimit(this.world);
+        return limits[2];
     }
 
     /**
@@ -353,11 +469,13 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
             for (const instance of body._pluginDataInstances) {
                 this._bodyCollisionObservable.delete(instance.hpBodyId[0]);
                 this._hknp.HP_World_RemoveBody(this.world, instance.hpBodyId);
+                this._bodies.delete(instance.hpBodyId[0]);
             }
         }
         if (body._pluginData) {
             this._bodyCollisionObservable.delete(body._pluginData.hpBodyId[0]);
             this._hknp.HP_World_RemoveBody(this.world, body._pluginData.hpBodyId);
+            this._bodies.delete(body._pluginData.hpBodyId[0]);
         }
     }
 
@@ -435,6 +553,11 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
         if (instancesCount > pluginInstancesCount) {
             this._createOrUpdateBodyInstances(body, motionType, matrixData, pluginInstancesCount, instancesCount, false);
             const firstBodyShape = this._hknp.HP_Body_GetShape(body._pluginDataInstances[0].hpBodyId)[1];
+            // firstBodyShape[0] might be 0 in the case where thin instances data is set (with thinInstancesSetBuffer call) after body creation
+            // in that case, use the shape provided at body creation.
+            if (!firstBodyShape[0]) {
+                firstBodyShape[0] = body.shape?._pluginData[0];
+            }
             for (let i = pluginInstancesCount; i < instancesCount; i++) {
                 this._hknp.HP_Body_SetShape(body._pluginDataInstances[i].hpBodyId, firstBodyShape);
                 this._internalUpdateMassProperties(body._pluginDataInstances[i]);
@@ -513,6 +636,8 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
                 // transform position/orientation in parent space
                 if (parent && !parent.getWorldMatrix().isIdentity()) {
                     parent.computeWorldMatrix(true);
+                    // Save scaling for future use
+                    TmpVectors.Vector3[1].copyFrom(transformNode.scaling);
 
                     quat.normalize();
                     const finalTransform = TmpVectors.Matrix[0];
@@ -527,6 +652,8 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
                     finalTransform.multiplyToRef(parentInverseTransform, localTransform);
                     localTransform.decomposeToTransformNode(transformNode);
                     transformNode.rotationQuaternion?.normalize();
+                    // Keep original scaling. Re-injecting scaling can introduce discontinuity between frames. Basically, it grows or shrinks.
+                    transformNode.scaling.copyFrom(TmpVectors.Vector3[1]);
                 } else {
                     transformNode.position.set(bodyTranslation[0], bodyTranslation[1], bodyTranslation[2]);
                     if (transformNode.rotationQuaternion) {
@@ -536,7 +663,7 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
                     }
                 }
             } catch (e) {
-                console.log(`Syncing transform failed for node ${transformNode.name}: ${e.message}...`);
+                Logger.Error(`Syncing transform failed for node ${transformNode.name}: ${e.message}...`);
             }
         }
     }
@@ -613,6 +740,7 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * Sets the event mask of a physics body.
      * @param body - The physics body to set the event mask for.
      * @param eventMask - The event mask to set.
+     * @param instanceIndex - The index of the instance to set the event mask for
      *
      * This function is useful for setting the event mask of a physics body, which is used to determine which events the body will respond to. This is important for ensuring that the physics engine is able to accurately simulate the behavior of the body in the game world.
      */
@@ -630,6 +758,7 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * Retrieves the event mask of a physics body.
      *
      * @param body - The physics body to retrieve the event mask from.
+     * @param instanceIndex - The index of the instance to retrieve the event mask from.
      * @returns The event mask of the physics body.
      *
      */
@@ -682,6 +811,12 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
         }
     }
 
+    /**
+     * sets the motion type of a physics body.
+     * @param body - The physics body to set the motion type for.
+     * @param motionType - The motion type to set.
+     * @param instanceIndex - The index of the instance to set the motion type for. If undefined, the motion type of all the bodies will be set.
+     */
     public setMotionType(body: PhysicsBody, motionType: PhysicsMotionType, instanceIndex?: number): void {
         this._applyToBodyOrInstances(
             body,
@@ -692,6 +827,12 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
         );
     }
 
+    /**
+     * Gets the motion type of a physics body.
+     * @param body - The physics body to get the motion type from.
+     * @param instanceIndex - The index of the instance to get the motion type from. If not specified, the motion type of the first instance will be returned.
+     * @returns The motion type of the physics body.
+     */
     public getMotionType(body: PhysicsBody, instanceIndex?: number): PhysicsMotionType {
         const pluginRef = this._getPluginReference(body, instanceIndex);
         const type = this._hknp.HP_Body_GetMotionType(pluginRef.hpBodyId)[1];
@@ -704,6 +845,25 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
                 return PhysicsMotionType.DYNAMIC;
         }
         throw new Error("Unknown motion type: " + type);
+    }
+
+    /**
+     * sets the activation control mode of a physics body, for instance if you need the body to never sleep.
+     * @param body - The physics body to set the activation control mode.
+     * @param controlMode - The activation control mode.
+     */
+    public setActivationControl(body: PhysicsBody, controlMode: PhysicsActivationControl): void {
+        switch (controlMode) {
+            case PhysicsActivationControl.ALWAYS_ACTIVE:
+                this._hknp.HP_Body_SetActivationControl(body._pluginData.hpBodyId, this._hknp.ActivationControl.ALWAYS_ACTIVE);
+                break;
+            case PhysicsActivationControl.ALWAYS_INACTIVE:
+                this._hknp.HP_Body_SetActivationControl(body._pluginData.hpBodyId, this._hknp.ActivationControl.ALWAYS_INACTIVE);
+                break;
+            case PhysicsActivationControl.SIMULATION_CONTROLLED:
+                this._hknp.HP_Body_SetActivationControl(body._pluginData.hpBodyId, this._hknp.ActivationControl.SIMULATION_CONTROLLED);
+                break;
+        }
     }
 
     private _internalComputeMassProperties(pluginData: BodyPluginData): any[] {
@@ -723,6 +883,8 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * Computes the mass properties of a physics body, from it's shape
      *
      * @param body - The physics body to copmute the mass properties of
+     * @param instanceIndex - The index of the instance to compute the mass properties of.
+     * @returns The mass properties of the physics body.
      */
     public computeMassProperties(body: PhysicsBody, instanceIndex?: number): PhysicsMassProperties {
         const pluginRef = this._getPluginReference(body, instanceIndex);
@@ -752,7 +914,10 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
         );
     }
     /**
-     *
+     * Gets the mass properties of a physics body.
+     * @param body - The physics body to get the mass properties from.
+     * @param instanceIndex - The index of the instance to get the mass properties from. If not specified, the mass properties of the first instance will be returned.
+     * @returns The mass properties of the physics body.
      */
     public getMassProperties(body: PhysicsBody, instanceIndex?: number): PhysicsMassProperties {
         const pluginRef = this._getPluginReference(body, instanceIndex);
@@ -764,6 +929,7 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * Sets the linear damping of the given body.
      * @param body - The body to set the linear damping for.
      * @param damping - The linear damping to set.
+     * @param instanceIndex - The index of the instance to set the linear damping for. If not specified, the linear damping of the first instance will be set.
      *
      * This method is useful for controlling the linear damping of a body in a physics engine.
      * Linear damping is a force that opposes the motion of the body, and is proportional to the velocity of the body.
@@ -782,6 +948,7 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
     /**
      * Gets the linear damping of the given body.
      * @param body - The body to get the linear damping from.
+     * @param instanceIndex - The index of the instance to get the linear damping from. If not specified, the linear damping of the first instance will be returned.
      * @returns The linear damping of the given body.
      *
      * This method is useful for getting the linear damping of a body in a physics engine.
@@ -797,6 +964,7 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * Sets the angular damping of a physics body.
      * @param body - The physics body to set the angular damping for.
      * @param damping - The angular damping value to set.
+     * @param instanceIndex - The index of the instance to set the angular damping for. If not specified, the angular damping of the first instance will be set.
      *
      * This function is useful for controlling the angular velocity of a physics body.
      * By setting the angular damping, the body's angular velocity will be reduced over time, allowing for more realistic physics simulations.
@@ -814,6 +982,7 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
     /**
      * Gets the angular damping of a physics body.
      * @param body - The physics body to get the angular damping from.
+     * @param instanceIndex - The index of the instance to get the angular damping from. If not specified, the angular damping of the first instance will be returned.
      * @returns The angular damping of the body.
      *
      * This function is useful for retrieving the angular damping of a physics body,
@@ -828,6 +997,7 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * Sets the linear velocity of a physics body.
      * @param body - The physics body to set the linear velocity of.
      * @param linVel - The linear velocity to set.
+     * @param instanceIndex - The index of the instance to set the linear velocity of. If not specified, the linear velocity of the first instance will be set.
      *
      * This function is useful for setting the linear velocity of a physics body, which is necessary for simulating
      * motion in a physics engine. The linear velocity is the speed and direction of the body's movement.
@@ -846,6 +1016,7 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * Gets the linear velocity of a physics body and stores it in a given vector.
      * @param body - The physics body to get the linear velocity from.
      * @param linVel - The vector to store the linear velocity in.
+     * @param instanceIndex - The index of the instance to get the linear velocity from. If not specified, the linear velocity of the first instance will be returned.
      *
      * This function is useful for retrieving the linear velocity of a physics body,
      * which can be used to determine the speed and direction of the body. This
@@ -891,6 +1062,21 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
     }
 
     /**
+     * Applies an angular impulse(torque) to a physics body
+     * @param body - The physics body to apply the impulse to.
+     * @param angularImpulse - The torque value
+     * @param instanceIndex - The index of the instance to apply the impulse to. If not specified, the impulse will be applied to all instances.
+     */
+    public applyAngularImpulse(body: PhysicsBody, angularImpulse: Vector3, instanceIndex?: number): void {
+        this._applyToBodyOrInstances(
+            body,
+            (pluginRef) => {
+                this._hknp.HP_Body_ApplyAngularImpulse(pluginRef.hpBodyId, this._bVecToV3(angularImpulse));
+            },
+            instanceIndex
+        );
+    }
+    /**
      * Applies a force to a physics body at a given location.
      * @param body - The physics body to apply the impulse to.
      * @param force - The force vector to apply.
@@ -910,6 +1096,7 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      *
      * @param body - The physics body to set the angular velocity of.
      * @param angVel - The angular velocity to set.
+     * @param instanceIndex - The index of the instance to set the angular velocity of. If not specified, the angular velocity of the first instance will be set.
      *
      * This function is useful for setting the angular velocity of a physics body in a physics engine.
      * This allows for more realistic simulations of physical objects, as they can be given a rotational velocity.
@@ -928,6 +1115,7 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * Gets the angular velocity of a body.
      * @param body - The body to get the angular velocity from.
      * @param angVel - The vector3 to store the angular velocity.
+     * @param instanceIndex - The index of the instance to get the angular velocity from. If not specified, the angular velocity of the first instance will be returned.
      *
      * This method is useful for getting the angular velocity of a body in a physics engine. It
      * takes the body and a vector3 as parameters and stores the angular velocity of the body
@@ -953,20 +1141,45 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * same transformation.
      */
     public setPhysicsBodyTransformation(body: PhysicsBody, node: TransformNode) {
-        const transformNode = body.transformNode;
-        if (body.numInstances > 0) {
-            // instances
-            const m = transformNode as Mesh;
-            const matrixData = m._thinInstanceDataStorage.matrixData;
-            if (!matrixData) {
-                return; // TODO: error handling
+        if (body.getPrestepType() == PhysicsPrestepType.TELEPORT) {
+            const transformNode = body.transformNode;
+            if (body.numInstances > 0) {
+                // instances
+                const m = transformNode as Mesh;
+                const matrixData = m._thinInstanceDataStorage.matrixData;
+                if (!matrixData) {
+                    return; // TODO: error handling
+                }
+                const instancesCount = body.numInstances;
+                this._createOrUpdateBodyInstances(body, body.getMotionType(), matrixData, 0, instancesCount, true);
+            } else {
+                // regular
+                this._hknp.HP_Body_SetQTransform(body._pluginData.hpBodyId, this._getTransformInfos(node));
             }
-            const instancesCount = body.numInstances;
-            this._createOrUpdateBodyInstances(body, body.getMotionType(), matrixData, 0, instancesCount, true);
+        } else if (body.getPrestepType() == PhysicsPrestepType.ACTION) {
+            this.setTargetTransform(body, node.absolutePosition, node.absoluteRotationQuaternion);
+        } else if (body.getPrestepType() == PhysicsPrestepType.DISABLED) {
+            Logger.Warn("Prestep type is set to DISABLED. Unable to set physics body transformation.");
         } else {
-            // regular
-            this._hknp.HP_Body_SetQTransform(body._pluginData.hpBodyId, this._getTransformInfos(node));
+            Logger.Warn("Invalid prestep type set to physics body.");
         }
+    }
+
+    /**
+     * Set the target transformation (position and rotation) of the body, such that the body will set its velocity to reach that target
+     * @param body The physics body to set the target transformation for.
+     * @param position The target position
+     * @param rotation The target rotation
+     * @param instanceIndex The index of the instance in an instanced body
+     */
+    public setTargetTransform(body: PhysicsBody, position: Vector3, rotation: Quaternion, instanceIndex?: number | undefined): void {
+        this._applyToBodyOrInstances(
+            body,
+            (pluginRef) => {
+                this._hknp.HP_Body_SetTargetQTransform(pluginRef.hpBodyId, [this._bVecToV3(position), this._bQuatToV4(rotation)]);
+            },
+            instanceIndex
+        );
     }
 
     /**
@@ -1015,6 +1228,52 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
             this._hknp.HP_Body_Release(body._pluginData.hpBodyId);
             body._pluginData.hpBodyId = undefined;
         }
+    }
+
+    private _createOptionsFromGroundMesh(options: PhysicsShapeParameters) {
+        const mesh = options.groundMesh;
+        if (!mesh) {
+            return;
+        }
+        let pos = <FloatArray>mesh.getVerticesData(VertexBuffer.PositionKind);
+        const transform = mesh.computeWorldMatrix(true);
+        // convert rawVerts to object space
+        const transformedVertices: number[] = [];
+        let index: number;
+        for (index = 0; index < pos.length; index += 3) {
+            Vector3.FromArrayToRef(pos, index, TmpVectors.Vector3[0]);
+            Vector3.TransformCoordinatesToRef(TmpVectors.Vector3[0], transform, TmpVectors.Vector3[1]);
+            TmpVectors.Vector3[1].toArray(transformedVertices, index);
+        }
+        pos = transformedVertices;
+
+        const arraySize = ~~(Math.sqrt(pos.length / 3) - 1);
+        const boundingInfo = mesh.getBoundingInfo();
+        const dim = Math.min(boundingInfo.boundingBox.extendSizeWorld.x, boundingInfo.boundingBox.extendSizeWorld.z);
+        const minX = boundingInfo.boundingBox.minimumWorld.x;
+        const minY = boundingInfo.boundingBox.minimumWorld.y;
+        const minZ = boundingInfo.boundingBox.minimumWorld.z;
+
+        const matrix = new Float32Array((arraySize + 1) * (arraySize + 1));
+
+        const elementSize = (dim * 2) / arraySize;
+
+        for (let i = 0; i < matrix.length; i++) {
+            matrix[i] = minY;
+        }
+        for (let i = 0; i < pos.length; i = i + 3) {
+            const x = Math.round((pos[i + 0] - minX) / elementSize);
+            const z = arraySize - Math.round((pos[i + 2] - minZ) / elementSize);
+            const y = pos[i + 1] - minY;
+
+            matrix[z * (arraySize + 1) + x] = y;
+        }
+
+        options.numHeightFieldSamplesX = arraySize + 1;
+        options.numHeightFieldSamplesZ = arraySize + 1;
+        options.heightFieldSizeX = boundingInfo.boundingBox.extendSizeWorld.x * 2;
+        options.heightFieldSizeZ = boundingInfo.boundingBox.extendSizeWorld.z * 2;
+        options.heightFieldData = matrix;
     }
 
     /**
@@ -1074,17 +1333,17 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
                         const includeChildMeshes = !!options.includeChildMeshes;
                         const needIndices = type != PhysicsShapeType.CONVEX_HULL;
                         const accum = new MeshAccumulator(mesh, needIndices, mesh?.getScene());
-                        accum.addMesh(mesh, includeChildMeshes);
+                        accum.addNodeMeshes(mesh, includeChildMeshes);
 
                         const positions = accum.getVertices(this._hknp);
-                        const numVec3s = positions.length / 3;
+                        const numVec3s = positions.numObjects / 3;
 
                         if (type == PhysicsShapeType.CONVEX_HULL) {
-                            shape._pluginData = this._hknp.HP_Shape_CreateConvexHull(positions.byteOffset, numVec3s)[1];
+                            shape._pluginData = this._hknp.HP_Shape_CreateConvexHull(positions.offset, numVec3s)[1];
                         } else {
                             const triangles = accum.getTriangles(this._hknp);
-                            const numTriangles = triangles.length / 3;
-                            shape._pluginData = this._hknp.HP_Shape_CreateMesh(positions.byteOffset, numVec3s, triangles.byteOffset, numTriangles)[1];
+                            const numTriangles = triangles.numObjects / 3;
+                            shape._pluginData = this._hknp.HP_Shape_CreateMesh(positions.offset, numVec3s, triangles.offset, numTriangles)[1];
                             accum.freeBuffer(this._hknp, triangles);
                         }
                         accum.freeBuffer(this._hknp, positions);
@@ -1093,26 +1352,83 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
                     }
                 }
                 break;
+            case PhysicsShapeType.HEIGHTFIELD:
+                {
+                    if (options.groundMesh) {
+                        // update options with datas from groundMesh
+                        this._createOptionsFromGroundMesh(options);
+                    }
+                    if (options.numHeightFieldSamplesX && options.numHeightFieldSamplesZ && options.heightFieldSizeX && options.heightFieldSizeZ && options.heightFieldData) {
+                        const totalNumHeights = options.numHeightFieldSamplesX * options.numHeightFieldSamplesZ;
+                        const numBytes = totalNumHeights * 4;
+                        const bufferBegin = this._hknp._malloc(numBytes);
+
+                        const heightBuffer = new Float32Array(this._hknp.HEAPU8.buffer, bufferBegin, totalNumHeights);
+                        for (let x = 0; x < options.numHeightFieldSamplesX; x++) {
+                            for (let z = 0; z < options.numHeightFieldSamplesZ; z++) {
+                                const hkBufferIndex = z * options.numHeightFieldSamplesX + x;
+                                const bjsBufferIndex = (options.numHeightFieldSamplesX - 1 - x) * options.numHeightFieldSamplesZ + z;
+                                heightBuffer[hkBufferIndex] = options.heightFieldData[bjsBufferIndex];
+                            }
+                        }
+
+                        const scaleX = options.heightFieldSizeX / (options.numHeightFieldSamplesX - 1);
+                        const scaleZ = options.heightFieldSizeZ / (options.numHeightFieldSamplesZ - 1);
+                        shape._pluginData = this._hknp.HP_Shape_CreateHeightField(
+                            options.numHeightFieldSamplesX,
+                            options.numHeightFieldSamplesZ,
+                            [scaleX, 1, scaleZ],
+                            bufferBegin
+                        )[1];
+
+                        this._hknp._free(bufferBegin);
+                    } else {
+                        throw new Error("Missing required heightfield parameters");
+                    }
+                }
+                break;
             default:
                 throw new Error("Unsupported Shape Type.");
                 break;
         }
+
+        this._shapes.set(shape._pluginData[0], shape);
     }
 
+    /**
+     * Sets the shape filter membership mask of a body
+     * @param shape - The physics body to set the shape filter membership mask for.
+     * @param membershipMask - The shape filter membership mask to set.
+     */
     public setShapeFilterMembershipMask(shape: PhysicsShape, membershipMask: number): void {
         const collideWith = this._hknp.HP_Shape_GetFilterInfo(shape._pluginData)[1][1];
         this._hknp.HP_Shape_SetFilterInfo(shape._pluginData, [membershipMask, collideWith]);
     }
 
+    /**
+     * Gets the shape filter membership mask of a body
+     * @param shape - The physics body to get the shape filter membership mask from.
+     * @returns The shape filter membership mask of the given body.
+     */
     public getShapeFilterMembershipMask(shape: PhysicsShape): number {
         return this._hknp.HP_Shape_GetFilterInfo(shape._pluginData)[1][0];
     }
 
+    /**
+     * Sets the shape filter collide mask of a body
+     * @param shape - The physics body to set the shape filter collide mask for.
+     * @param collideMask - The shape filter collide mask to set.
+     */
     public setShapeFilterCollideMask(shape: PhysicsShape, collideMask: number): void {
         const membership = this._hknp.HP_Shape_GetFilterInfo(shape._pluginData)[1][0];
         this._hknp.HP_Shape_SetFilterInfo(shape._pluginData, [membership, collideMask]);
     }
 
+    /**
+     * Gets the shape filter collide mask of a body
+     * @param shape - The physics body to get the shape filter collide mask from.
+     * @returns The shape filter collide mask of the given body.
+     */
     public getShapeFilterCollideMask(shape: PhysicsShape): number {
         return this._hknp.HP_Shape_GetFilterInfo(shape._pluginData)[1][1];
     }
@@ -1132,6 +1448,22 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
 
         const hpMaterial = [staticFriction, dynamicFriction, restitution, this._materialCombineToNative(frictionCombine), this._materialCombineToNative(restitutionCombine)];
         this._hknp.HP_Shape_SetMaterial(shape._pluginData, hpMaterial);
+    }
+
+    /**
+     * Gets the material associated with a physics shape.
+     * @param shape - The shape to get the material from.
+     * @returns The material associated with the shape.
+     */
+    public getMaterial(shape: PhysicsShape): PhysicsMaterial {
+        const hkMaterial = this._hknp.HP_Shape_GetMaterial(shape._pluginData)[1];
+        return {
+            staticFriction: hkMaterial[0],
+            friction: hkMaterial[1],
+            restitution: hkMaterial[2],
+            frictionCombine: this._nativeToMaterialCombine(hkMaterial[3]),
+            restitutionCombine: this._nativeToMaterialCombine(hkMaterial[4]),
+        };
     }
 
     /**
@@ -1157,11 +1489,11 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
 
     /**
      * Gets the transform infos of a given transform node.
-     * @param node - The transform node.
-     * @returns An array containing the position and orientation of the node.
      * This code is useful for getting the position and orientation of a given transform node.
      * It first checks if the node has a rotation quaternion, and if not, it creates one from the node's rotation.
      * It then creates an array containing the position and orientation of the node and returns it.
+     * @param node - The transform node.
+     * @returns An array containing the position and orientation of the node.
      */
     private _getTransformInfos(node: TransformNode): any[] {
         if (node.parent) {
@@ -1184,7 +1516,9 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * Adds a child shape to the given shape.
      * @param shape - The parent shape.
      * @param newChild - The child shape to add.
-     * @param childTransform - The transform of the child shape relative to the parent shape.
+     * @param translation - The relative translation of the child from the parent shape
+     * @param rotation - The relative rotation of the child from the parent shape
+     * @param scale - The relative scale scale of the child from the parent shaep
      *
      */
     public addChild(shape: PhysicsShape, newChild: PhysicsShape, translation?: Vector3, rotation?: Quaternion, scale?: Vector3): void {
@@ -1218,17 +1552,50 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
     }
 
     /**
+     * Marks the shape as a trigger
+     * @param shape the shape to mark as a trigger
+     * @param isTrigger if the shape is a trigger
+     */
+    public setTrigger(shape: PhysicsShape, isTrigger: boolean): void {
+        this._hknp.HP_Shape_SetTrigger(shape._pluginData, isTrigger);
+    }
+
+    /**
      * Calculates the bounding box of a given physics shape.
      *
-     * @param shape - The physics shape to calculate the bounding box for.
+     * @param _shape - The physics shape to calculate the bounding box for.
      * @returns The calculated bounding box.
      *
      * This method is useful for physics engines as it allows to calculate the
      * boundaries of a given shape. Knowing the boundaries of a shape is important
      * for collision detection and other physics calculations.
      */
-    public getBoundingBox(shape: PhysicsShape): BoundingBox {
-        return {} as BoundingBox;
+    public getBoundingBox(_shape: PhysicsShape): BoundingBox {
+        // get local AABB
+        const aabb = this._hknp.HP_Shape_GetBoundingBox(_shape._pluginData, [
+            [0, 0, 0],
+            [0, 0, 0, 1],
+        ])[1];
+        TmpVectors.Vector3[0].set(aabb[0][0], aabb[0][1], aabb[0][2]); // min
+        TmpVectors.Vector3[1].set(aabb[1][0], aabb[1][1], aabb[1][2]); // max
+        const boundingbox = new BoundingBox(TmpVectors.Vector3[0], TmpVectors.Vector3[1], Matrix.IdentityReadOnly);
+        return boundingbox;
+    }
+
+    /**
+     * Calculates the world bounding box of a given physics body.
+     *
+     * @param body - The physics body to calculate the bounding box for.
+     * @returns The calculated bounding box.
+     *
+     * This method is useful for physics engines as it allows to calculate the
+     * boundaries of a given body.
+     */
+    public getBodyBoundingBox(body: PhysicsBody): BoundingBox {
+        // get local AABB
+        const aabb = this.getBoundingBox(body.shape!);
+        const boundingbox = new BoundingBox(aabb.minimum, aabb.maximum, body.transformNode.getWorldMatrix());
+        return boundingbox;
     }
 
     /**
@@ -1263,7 +1630,6 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * Releases a physics shape from the physics engine.
      *
      * @param shape - The physics shape to be released.
-     * @returns void
      *
      * This method is useful for releasing a physics shape from the physics engine, freeing up resources and preventing memory leaks.
      */
@@ -1297,14 +1663,17 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
             return;
         }
 
+        constraint._pluginData = constraint._pluginData ?? [];
         const jointId = this._hknp.HP_Constraint_Create()[1];
-        constraint._pluginData = jointId;
+        constraint._pluginData.push(jointId);
 
         // body parenting
         const bodyA = this._getPluginReference(body, instanceIndex).hpBodyId;
         const bodyB = this._getPluginReference(childBody, childInstanceIndex).hpBodyId;
         this._hknp.HP_Constraint_SetParentBody(jointId, bodyA);
         this._hknp.HP_Constraint_SetChildBody(jointId, bodyB);
+
+        this._constraintToBodyIdPair.set(jointId[0], [bodyA[0], bodyB[0]]);
 
         // anchors
         const pivotA = options.pivotA ? this._bVecToV3(options.pivotA) : this._bVecToV3(Vector3.Zero());
@@ -1325,6 +1694,19 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
             axisB.getNormalToRef(perpAxisB);
         }
         this._hknp.HP_Constraint_SetAnchorInChild(jointId, pivotB, this._bVecToV3(axisB), this._bVecToV3(perpAxisB));
+
+        // Save the options that were used for initializing the constraint for debugging purposes
+        // Check first to avoid copying the same options multiple times
+        if (!constraint._initOptions) {
+            constraint._initOptions = {
+                axisA: axisA.clone(),
+                axisB: axisB.clone(),
+                perpAxisA: perpAxisA.clone(),
+                perpAxisB: perpAxisB.clone(),
+                pivotA: new Vector3(pivotA[0], pivotA[1], pivotA[2]),
+                pivotB: new Vector3(pivotB[0], pivotB[1], pivotB[2]),
+            };
+        }
 
         if (type == PhysicsConstraintType.LOCK) {
             this._hknp.HP_Constraint_SetAxisMode(jointId, this._hknp.ConstraintAxis.LINEAR_X, this._hknp.ConstraintAxisLimitMode.LOCKED);
@@ -1377,6 +1759,12 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
                         this._hknp.HP_Constraint_SetAxisMaxLimit(jointId, axId, l.maxLimit);
                     }
                 }
+                if (l.stiffness) {
+                    this._hknp.HP_Constraint_SetAxisStiffness(jointId, axId, l.stiffness);
+                }
+                if (l.damping) {
+                    this._hknp.HP_Constraint_SetAxisDamping(jointId, axId, l.damping);
+                }
             }
         } else {
             throw new Error("Unsupported Constraint Type.");
@@ -1385,6 +1773,26 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
         const collisionEnabled = !!options.collision;
         this._hknp.HP_Constraint_SetCollisionsEnabled(jointId, collisionEnabled);
         this._hknp.HP_Constraint_SetEnabled(jointId, true);
+    }
+
+    /**
+     * Get a list of all the pairs of bodies that are connected by this constraint.
+     * @param constraint the constraint to search from
+     * @returns a list of parent, child pairs
+     */
+    getBodiesUsingConstraint(constraint: PhysicsConstraint): ConstrainedBodyPair[] {
+        const pairs: ConstrainedBodyPair[] = [];
+        for (const jointId of constraint._pluginData) {
+            const bodyIds = this._constraintToBodyIdPair.get(jointId[0]);
+            if (bodyIds) {
+                const parentBodyInfo = this._bodies.get(bodyIds[0]);
+                const childBodyInfo = this._bodies.get(bodyIds[1]);
+                if (parentBodyInfo && childBodyInfo) {
+                    pairs.push({ parentBody: parentBodyInfo.body, parentBodyIndex: parentBodyInfo.index, childBody: childBodyInfo.body, childBodyIndex: childBodyInfo.index });
+                }
+            }
+        }
+        return pairs;
     }
 
     /**
@@ -1408,7 +1816,9 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      *
      */
     public setEnabled(constraint: PhysicsConstraint, isEnabled: boolean): void {
-        this._hknp.HP_Constraint_SetEnabled(constraint._pluginData, isEnabled);
+        for (const jointId of constraint._pluginData) {
+            this._hknp.HP_Constraint_SetEnabled(jointId, isEnabled);
+        }
     }
 
     /**
@@ -1418,7 +1828,11 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      *
      */
     public getEnabled(constraint: PhysicsConstraint): boolean {
-        return this._hknp.HP_Constraint_GetEnabled(constraint._pluginData)[1];
+        const firstId = constraint._pluginData && constraint._pluginData[0];
+        if (firstId) {
+            return this._hknp.HP_Constraint_GetEnabled(firstId)[1];
+        }
+        return false;
     }
 
     /**
@@ -1428,7 +1842,9 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      *
      */
     public setCollisionsEnabled(constraint: PhysicsConstraint, isEnabled: boolean): void {
-        this._hknp.HP_Constraint_SetCollisionsEnabled(constraint._pluginData, isEnabled);
+        for (const jointId of constraint._pluginData) {
+            this._hknp.HP_Constraint_SetCollisionsEnabled(jointId, isEnabled);
+        }
     }
 
     /**
@@ -1438,7 +1854,11 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      *
      */
     public getCollisionsEnabled(constraint: PhysicsConstraint): boolean {
-        return this._hknp.HP_Constraint_GetCollisionsEnabled(constraint._pluginData)[1];
+        const firstId = constraint._pluginData && constraint._pluginData[0];
+        if (firstId) {
+            return this._hknp.HP_Constraint_GetCollisionsEnabled(firstId)[1];
+        }
+        return false;
     }
 
     /**
@@ -1447,11 +1867,12 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * @param constraint - The constraint to set the friction of.
      * @param axis - The axis of the constraint to set the friction of.
      * @param friction - The friction to set.
-     * @returns void
      *
      */
     public setAxisFriction(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, friction: number): void {
-        this._hknp.HP_Constraint_SetAxisFriction(constraint._pluginData, this._constraintAxisToNative(axis), friction);
+        for (const jointId of constraint._pluginData) {
+            this._hknp.HP_Constraint_SetAxisFriction(jointId, this._constraintAxisToNative(axis), friction);
+        }
     }
 
     /**
@@ -1462,8 +1883,12 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * @returns The friction value of the specified axis.
      *
      */
-    public getAxisFriction(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): number {
-        return this._hknp.HP_Constraint_GetAxisFriction(constraint._pluginData, this._constraintAxisToNative(axis))[1];
+    public getAxisFriction(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): Nullable<number> {
+        const firstId = constraint._pluginData && constraint._pluginData[0];
+        if (firstId) {
+            return this._hknp.HP_Constraint_GetAxisFriction(firstId, this._constraintAxisToNative(axis))[1];
+        }
+        return null;
     }
 
     /**
@@ -1473,7 +1898,9 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * @param limitMode - The limit mode to set.
      */
     public setAxisMode(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, limitMode: PhysicsConstraintAxisLimitMode): void {
-        this._hknp.HP_Constraint_SetAxisMode(constraint._pluginData, this._constraintAxisToNative(axis), this._limitModeToNative(limitMode));
+        for (const jointId of constraint._pluginData) {
+            this._hknp.HP_Constraint_SetAxisMode(jointId, this._constraintAxisToNative(axis), this._limitModeToNative(limitMode));
+        }
     }
 
     /**
@@ -1484,9 +1911,13 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * @returns The axis limit mode of the given constraint.
      *
      */
-    public getAxisMode(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): PhysicsConstraintAxisLimitMode {
-        const mode = this._hknp.HP_Constraint_GetAxisMode(constraint._pluginData, this._constraintAxisToNative(axis))[1];
-        return this._nativeToLimitMode(mode);
+    public getAxisMode(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): Nullable<PhysicsConstraintAxisLimitMode> {
+        const firstId = constraint._pluginData && constraint._pluginData[0];
+        if (firstId) {
+            const mode = this._hknp.HP_Constraint_GetAxisMode(firstId, this._constraintAxisToNative(axis))[1];
+            return this._nativeToLimitMode(mode);
+        }
+        return null;
     }
 
     /**
@@ -1497,7 +1928,9 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      *
      */
     public setAxisMinLimit(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, limit: number): void {
-        this._hknp.HP_Constraint_SetAxisMinLimit(constraint._pluginData, this._constraintAxisToNative(axis), limit);
+        for (const jointId of constraint._pluginData) {
+            this._hknp.HP_Constraint_SetAxisMinLimit(jointId, this._constraintAxisToNative(axis), limit);
+        }
     }
 
     /**
@@ -1507,8 +1940,12 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * @returns The minimum limit of the specified axis of the given constraint.
      *
      */
-    public getAxisMinLimit(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): number {
-        return this._hknp.HP_Constraint_GetAxisMinLimit(constraint._pluginData, this._constraintAxisToNative(axis))[1];
+    public getAxisMinLimit(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): Nullable<number> {
+        const firstId = constraint._pluginData && constraint._pluginData[0];
+        if (firstId) {
+            return this._hknp.HP_Constraint_GetAxisMinLimit(firstId, this._constraintAxisToNative(axis))[1];
+        }
+        return null;
     }
 
     /**
@@ -1519,7 +1956,9 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      *
      */
     public setAxisMaxLimit(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, limit: number): void {
-        this._hknp.HP_Constraint_SetAxisMaxLimit(constraint._pluginData, this._constraintAxisToNative(axis), limit);
+        for (const jointId of constraint._pluginData) {
+            this._hknp.HP_Constraint_SetAxisMaxLimit(jointId, this._constraintAxisToNative(axis), limit);
+        }
     }
 
     /**
@@ -1530,8 +1969,12 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * @returns The maximum limit of the given axis of the given constraint.
      *
      */
-    public getAxisMaxLimit(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): number {
-        return this._hknp.HP_Constraint_GetAxisMaxLimit(constraint._pluginData, this._constraintAxisToNative(axis))[1];
+    public getAxisMaxLimit(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): Nullable<number> {
+        const firstId = constraint._pluginData && constraint._pluginData[0];
+        if (firstId) {
+            return this._hknp.HP_Constraint_GetAxisMaxLimit(firstId, this._constraintAxisToNative(axis))[1];
+        }
+        return null;
     }
 
     /**
@@ -1539,11 +1982,12 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * @param constraint - The constraint to set the motor type of.
      * @param axis - The axis of the constraint to set the motor type of.
      * @param motorType - The motor type to set.
-     * @returns void
      *
      */
     public setAxisMotorType(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, motorType: PhysicsConstraintMotorType): void {
-        this._hknp.HP_Constraint_SetAxisMotorType(constraint._pluginData, this._constraintAxisToNative(axis), this._constraintMotorTypeToNative(motorType));
+        for (const jointId of constraint._pluginData) {
+            this._hknp.HP_Constraint_SetAxisMotorType(jointId, this._constraintAxisToNative(axis), this._constraintMotorTypeToNative(motorType));
+        }
     }
 
     /**
@@ -1553,8 +1997,12 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * @returns The motor type of the specified axis of the given constraint.
      *
      */
-    public getAxisMotorType(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): PhysicsConstraintMotorType {
-        return this._nativeToMotorType(this._hknp.HP_Constraint_GetAxisMotorType(constraint._pluginData, this._constraintAxisToNative(axis))[1]);
+    public getAxisMotorType(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): Nullable<PhysicsConstraintMotorType> {
+        const firstId = constraint._pluginData && constraint._pluginData[0];
+        if (firstId) {
+            return this._nativeToMotorType(this._hknp.HP_Constraint_GetAxisMotorType(firstId, this._constraintAxisToNative(axis))[1]);
+        }
+        return null;
     }
 
     /**
@@ -1566,7 +2014,9 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      *
      */
     public setAxisMotorTarget(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, target: number): void {
-        this._hknp.HP_Constraint_SetAxisMotorTarget(constraint._pluginData, this._constraintAxisToNative(axis), target);
+        for (const jointId of constraint._pluginData) {
+            this._hknp.HP_Constraint_SetAxisMotorTarget(jointId, this._constraintAxisToNative(axis), target);
+        }
     }
 
     /**
@@ -1577,8 +2027,12 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * @returns The target of the motor of the given axis of the given constraint.
      *
      */
-    public getAxisMotorTarget(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): number {
-        return this._hknp.HP_Constraint_GetAxisMotorTarget(constraint._pluginData, this._constraintAxisToNative(axis))[1];
+    public getAxisMotorTarget(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): Nullable<number> {
+        const firstId = constraint._pluginData && constraint._pluginData[0];
+        if (firstId) {
+            return this._hknp.HP_Constraint_GetAxisMotorTarget(constraint._pluginData, this._constraintAxisToNative(axis))[1];
+        }
+        return null;
     }
 
     /**
@@ -1589,7 +2043,9 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      *
      */
     public setAxisMotorMaxForce(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, maxForce: number): void {
-        this._hknp.HP_Constraint_SetAxisMotorMaxForce(constraint._pluginData, this._constraintAxisToNative(axis), maxForce);
+        for (const jointId of constraint._pluginData) {
+            this._hknp.HP_Constraint_SetAxisMotorMaxForce(jointId, this._constraintAxisToNative(axis), maxForce);
+        }
     }
 
     /**
@@ -1600,8 +2056,12 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * @returns The maximum force of the motor of the given constraint axis.
      *
      */
-    public getAxisMotorMaxForce(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): number {
-        return this._hknp.HP_Constraint_GetAxisMotorMaxForce(constraint._pluginData, this._constraintAxisToNative(axis))[1];
+    public getAxisMotorMaxForce(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): Nullable<number> {
+        const firstId = constraint._pluginData && constraint._pluginData[0];
+        if (firstId) {
+            return this._hknp.HP_Constraint_GetAxisMotorMaxForce(firstId, this._constraintAxisToNative(axis))[1];
+        }
+        return null;
     }
 
     /**
@@ -1613,10 +2073,25 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * the Havok constraint, when it is no longer needed. This is important for avoiding memory leaks.
      */
     public disposeConstraint(constraint: PhysicsConstraint): void {
-        const jointId = constraint._pluginData;
-        this._hknp.HP_Constraint_SetEnabled(jointId, false);
-        this._hknp.HP_Constraint_Release(jointId);
-        constraint._pluginData = undefined;
+        for (const jointId of constraint._pluginData) {
+            this._hknp.HP_Constraint_SetEnabled(jointId, false);
+            this._hknp.HP_Constraint_Release(jointId);
+        }
+        constraint._pluginData.length = 0;
+    }
+
+    private _populateHitData(hitData: any, result: ProximityCastResult | PhysicsRaycastResult | ShapeCastResult): void {
+        const hitBody = this._bodies.get(hitData[0][0]);
+        result.body = hitBody?.body;
+        result.bodyIndex = hitBody?.index;
+        const hitShape = this._shapes.get(hitData[1][0]);
+        result.shape = hitShape;
+
+        const hitPos = hitData[3];
+        const hitNormal = hitData[4];
+        const hitTriangle = hitData[5];
+
+        result.setHitData({ x: hitNormal[0], y: hitNormal[1], z: hitNormal[2] }, { x: hitPos[0], y: hitPos[1], z: hitPos[2] }, hitTriangle);
     }
 
     /**
@@ -1625,35 +2100,112 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * @param from - The start point of the raycast.
      * @param to - The end point of the raycast.
      * @param result - The PhysicsRaycastResult object to store the result of the raycast.
+     * @param query - The raycast query options. See [[IRaycastQuery]] for more information.
      *
      * Performs a raycast. It takes in two points, from and to, and a PhysicsRaycastResult object to store the result of the raycast.
      * It then performs the raycast and stores the hit data in the PhysicsRaycastResult object.
      */
-    public raycast(from: Vector3, to: Vector3, result: PhysicsRaycastResult): void {
-        const queryMembership = ~0;
-        const queryCollideWith = ~0;
+    public raycast(from: Vector3, to: Vector3, result: PhysicsRaycastResult, query?: IRaycastQuery): void {
+        const queryMembership = query?.membership ?? ~0;
+        const queryCollideWith = query?.collideWith ?? ~0;
 
         result.reset(from, to);
 
-        const query = [this._bVecToV3(from), this._bVecToV3(to), [queryMembership, queryCollideWith]];
-        this._hknp.HP_World_CastRayWithCollector(this.world, this._queryCollector, query);
+        const shouldHitTriggers = false;
+        const bodyToIgnore = [BigInt(0)];
+        const hkQuery = [this._bVecToV3(from), this._bVecToV3(to), [queryMembership, queryCollideWith], shouldHitTriggers, bodyToIgnore];
+        this._hknp.HP_World_CastRayWithCollector(this.world, this._queryCollector, hkQuery);
 
         if (this._hknp.HP_QueryCollector_GetNumHits(this._queryCollector)[1] > 0) {
-            const hitData = this._hknp.HP_QueryCollector_GetCastRayResult(this._queryCollector, 0)[1];
+            const [, hitData] = this._hknp.HP_QueryCollector_GetCastRayResult(this._queryCollector, 0)[1];
 
-            const hitPos = hitData[1][3];
-            const hitNormal = hitData[1][4];
-            result.setHitData({ x: hitNormal[0], y: hitNormal[1], z: hitNormal[2] }, { x: hitPos[0], y: hitPos[1], z: hitPos[2] });
+            this._populateHitData(hitData, result);
             result.calculateHitDistance();
-            const hitBody = this._bodies.get(hitData[1][0][0]);
-            result.body = hitBody?.body;
-            result.bodyIndex = hitBody?.index;
+        }
+    }
+
+    /**
+     * Given a point, returns the closest physics
+     * body to that point.
+     * @param query the query to perform. @see IPhysicsPointProximityQuery
+     * @param result contact point on the hit shape, in world space
+     */
+    public pointProximity(query: IPhysicsPointProximityQuery, result: ProximityCastResult): void {
+        const queryMembership = query?.collisionFilter?.membership ?? ~0;
+        const queryCollideWith = query?.collisionFilter?.collideWith ?? ~0;
+
+        result.reset();
+
+        const bodyToIgnore = query.ignoreBody ? [BigInt(query.ignoreBody._pluginData.hpBodyId[0])] : [BigInt(0)];
+
+        const hkQuery = [this._bVecToV3(query.position), query.maxDistance, [queryMembership, queryCollideWith], query.shouldHitTriggers, bodyToIgnore];
+        this._hknp.HP_World_PointProximityWithCollector(this.world, this._queryCollector, hkQuery);
+
+        if (this._hknp.HP_QueryCollector_GetNumHits(this._queryCollector)[1] > 0) {
+            const [distance, hitData] = this._hknp.HP_QueryCollector_GetPointProximityResult(this._queryCollector, 0)[1];
+
+            this._populateHitData(hitData, result);
+            result.setHitDistance(distance);
+        }
+    }
+
+    /**
+     * Given a shape in a specific position and orientation, returns the closest point to that shape.
+     * @param query the query to perform. @see IPhysicsShapeProximityCastQuery
+     * @param inputShapeResult contact point on input shape, in input shape space
+     * @param hitShapeResult contact point on hit shape, in world space
+     */
+    public shapeProximity(query: IPhysicsShapeProximityCastQuery, inputShapeResult: ProximityCastResult, hitShapeResult: ProximityCastResult): void {
+        inputShapeResult.reset();
+        hitShapeResult.reset();
+        const shapeId = query.shape._pluginData;
+        const bodyToIgnore = query.ignoreBody ? [BigInt(query.ignoreBody._pluginData.hpBodyId[0])] : [BigInt(0)];
+
+        const hkQuery = [shapeId, this._bVecToV3(query.position), this._bQuatToV4(query.rotation), query.maxDistance, query.shouldHitTriggers, bodyToIgnore];
+        this._hknp.HP_World_ShapeProximityWithCollector(this.world, this._queryCollector, hkQuery);
+
+        if (this._hknp.HP_QueryCollector_GetNumHits(this._queryCollector)[1] > 0) {
+            const [distance, hitInputData, hitShapeData] = this._hknp.HP_QueryCollector_GetShapeProximityResult(this._queryCollector, 0)[1];
+
+            this._populateHitData(hitInputData, inputShapeResult);
+            this._populateHitData(hitShapeData, hitShapeResult);
+
+            inputShapeResult.setHitDistance(distance);
+            hitShapeResult.setHitDistance(distance);
+        }
+    }
+
+    /**
+     * Given a shape in a specific orientation, cast it from the start to end position specified by the query, and return the first hit.
+     * @param query the query to perform. @see IPhysicsShapeCastQuery
+     * @param inputShapeResult contact point on input shape, in input shape space
+     * @param hitShapeResult contact point on hit shape, in world space
+     */
+    public shapeCast(query: IPhysicsShapeCastQuery, inputShapeResult: ShapeCastResult, hitShapeResult: ShapeCastResult): void {
+        inputShapeResult.reset();
+        hitShapeResult.reset();
+
+        const shapeId = query.shape._pluginData;
+        const bodyToIgnore = query.ignoreBody ? [BigInt(query.ignoreBody._pluginData.hpBodyId[0])] : [BigInt(0)];
+
+        const hkQuery = [shapeId, this._bQuatToV4(query.rotation), this._bVecToV3(query.startPosition), this._bVecToV3(query.endPosition), query.shouldHitTriggers, bodyToIgnore];
+        this._hknp.HP_World_ShapeCastWithCollector(this.world, this._queryCollector, hkQuery);
+
+        if (this._hknp.HP_QueryCollector_GetNumHits(this._queryCollector)[1] > 0) {
+            const [fractionAlongRay, hitInputData, hitShapeData] = this._hknp.HP_QueryCollector_GetShapeCastResult(this._queryCollector, 0)[1];
+
+            this._populateHitData(hitInputData, inputShapeResult);
+            this._populateHitData(hitShapeData, hitShapeResult);
+
+            inputShapeResult.setHitFraction(fractionAlongRay);
+            hitShapeResult.setHitFraction(fractionAlongRay);
         }
     }
 
     /**
      * Return the collision observable for a particular physics body.
      * @param body the physics body
+     * @returns the collision observable for the body
      */
     public getCollisionObservable(body: PhysicsBody): Observable<IPhysicsCollisionEvent> {
         const bodyId = body._pluginData.hpBodyId[0];
@@ -1666,9 +2218,24 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
     }
 
     /**
-     * Enable collision to be reported for a body when a callback is settup on the world
+     * Return the collision ended observable for a particular physics body.
      * @param body the physics body
-     * @param enabled
+     * @returns
+     */
+    public getCollisionEndedObservable(body: PhysicsBody): Observable<IBasePhysicsCollisionEvent> {
+        const bodyId = body._pluginData.hpBodyId[0];
+        let observable = this._bodyCollisionEndedObservable.get(bodyId);
+        if (!observable) {
+            observable = new Observable<IBasePhysicsCollisionEvent>();
+            this._bodyCollisionEndedObservable.set(bodyId, observable);
+        }
+        return observable;
+    }
+
+    /**
+     * Enable collision to be reported for a body when a callback is setup on the world
+     * @param body the physics body
+     * @param enabled whether to enable or disable collision events
      */
     public setCollisionCallbackEnabled(body: PhysicsBody, enabled: boolean): void {
         // Register for collide events by default
@@ -1683,6 +2250,53 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
     }
 
     /**
+     * Enable collision ended to be reported for a body when a callback is setup on the world
+     * @param body the physics body
+     * @param enabled whether to enable or disable collision ended events
+     */
+    public setCollisionEndedCallbackEnabled(body: PhysicsBody, enabled: boolean): void {
+        // Register to collide ended events
+        const pluginRef = this._getPluginReference(body);
+        let currentCollideEvents = this._hknp.HP_Body_GetEventMask(pluginRef.hpBodyId)[1];
+        // update with the ended mask
+        currentCollideEvents = enabled
+            ? currentCollideEvents | this._hknp.EventType.COLLISION_FINISHED.value
+            : currentCollideEvents & ~this._hknp.EventType.COLLISION_FINISHED.value;
+        if (body._pluginDataInstances && body._pluginDataInstances.length) {
+            body._pluginDataInstances.forEach((bodyId) => {
+                this._hknp.HP_Body_SetEventMask(bodyId.hpBodyId, currentCollideEvents);
+            });
+        } else if (body._pluginData) {
+            this._hknp.HP_Body_SetEventMask(body._pluginData.hpBodyId, currentCollideEvents);
+        }
+    }
+
+    private _notifyTriggers() {
+        let eventAddress = this._hknp.HP_World_GetTriggerEvents(this.world)[1];
+        const event = new TriggerEvent();
+        while (eventAddress) {
+            TriggerEvent.readToRef(this._hknp.HEAPU8.buffer, eventAddress, event);
+
+            const bodyInfoA = this._bodies.get(event.bodyIdA);
+            const bodyInfoB = this._bodies.get(event.bodyIdB);
+
+            // Bodies may have been disposed between events. Check both still exist.
+            if (bodyInfoA && bodyInfoB) {
+                const triggerCollisionInfo: IBasePhysicsCollisionEvent = {
+                    collider: bodyInfoA.body,
+                    colliderIndex: bodyInfoA.index,
+                    collidedAgainst: bodyInfoB.body,
+                    collidedAgainstIndex: bodyInfoB.index,
+                    type: this._nativeTriggerCollisionValueToCollisionType(event.type),
+                };
+                this.onTriggerCollisionObservable.notifyObservers(triggerCollisionInfo);
+            }
+
+            eventAddress = this._hknp.HP_World_GetNextTriggerEvent(this.world, eventAddress);
+        }
+    }
+
+    /**
      * Runs thru all detected collisions and filter by body
      */
     private _notifyCollisions() {
@@ -1691,37 +2305,74 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
         const worldAddr = Number(this.world);
         while (eventAddress) {
             CollisionEvent.readToRef(this._hknp.HEAPU8.buffer, eventAddress, event);
-            event.contactOnB.position.subtractToRef(event.contactOnA.position, this._tmpVec3[0]);
-            const distance = Vector3.Dot(this._tmpVec3[0], event.contactOnA.normal);
-            const bodyInfoA = this._bodies.get(event.contactOnA.bodyId)!;
-            const bodyInfoB = this._bodies.get(event.contactOnB.bodyId)!;
-            const collisionInfo = {
-                collider: bodyInfoA.body,
-                colliderIndex: bodyInfoA.index,
-                collidedAgainst: bodyInfoB.body,
-                collidedAgainstIndex: bodyInfoB.index,
-                point: event.contactOnA.position,
-                distance: distance,
-                impulse: event.impulseApplied,
-                normal: event.contactOnA.normal,
-            };
-            this.onCollisionObservable.notifyObservers(collisionInfo);
+            const bodyInfoA = this._bodies.get(event.contactOnA.bodyId);
+            const bodyInfoB = this._bodies.get(event.contactOnB.bodyId);
 
-            if (this._bodyCollisionObservable.size) {
-                const observableA = this._bodyCollisionObservable.get(event.contactOnA.bodyId);
-                const observableB = this._bodyCollisionObservable.get(event.contactOnB.bodyId);
+            // Bodies may have been disposed between events. Check both still exist.
+            if (bodyInfoA && bodyInfoB) {
+                const collisionInfo: any = {
+                    collider: bodyInfoA.body,
+                    colliderIndex: bodyInfoA.index,
+                    collidedAgainst: bodyInfoB.body,
+                    collidedAgainstIndex: bodyInfoB.index,
+                    type: this._nativeCollisionValueToCollisionType(event.type),
+                };
+                if (collisionInfo.type === PhysicsEventType.COLLISION_FINISHED) {
+                    this.onCollisionEndedObservable.notifyObservers(collisionInfo);
+                } else {
+                    event.contactOnB.position.subtractToRef(event.contactOnA.position, this._tmpVec3[0]);
+                    const distance = Vector3.Dot(this._tmpVec3[0], event.contactOnA.normal);
+                    collisionInfo.point = event.contactOnA.position;
+                    collisionInfo.distance = distance;
+                    collisionInfo.impulse = event.impulseApplied;
+                    collisionInfo.normal = event.contactOnA.normal;
+                    this.onCollisionObservable.notifyObservers(collisionInfo);
+                }
 
-                if (observableA) {
-                    observableA.notifyObservers(collisionInfo);
-                } else if (observableB) {
-                    //<todo This seems like it would give unexpected results when both bodies have observers?
-                    // Flip collision info:
-                    collisionInfo.collider = bodyInfoB.body;
-                    collisionInfo.colliderIndex = bodyInfoB.index;
-                    collisionInfo.collidedAgainst = bodyInfoA.body;
-                    collisionInfo.collidedAgainstIndex = bodyInfoA.index;
-                    collisionInfo.normal = event.contactOnB.normal;
-                    observableB.notifyObservers(collisionInfo);
+                if (this._bodyCollisionObservable.size && collisionInfo.type !== PhysicsEventType.COLLISION_FINISHED) {
+                    const observableA = this._bodyCollisionObservable.get(event.contactOnA.bodyId);
+                    const observableB = this._bodyCollisionObservable.get(event.contactOnB.bodyId);
+                    event.contactOnA.position.subtractToRef(event.contactOnB.position, this._tmpVec3[0]);
+                    const distance = Vector3.Dot(this._tmpVec3[0], event.contactOnB.normal);
+                    if (observableA) {
+                        observableA.notifyObservers(collisionInfo);
+                    }
+                    if (observableB) {
+                        const collisionInfoB: any = {
+                            collider: bodyInfoB.body,
+                            colliderIndex: bodyInfoB.index,
+                            collidedAgainst: bodyInfoA.body,
+                            collidedAgainstIndex: bodyInfoA.index,
+                            point: event.contactOnB.position,
+                            distance: distance,
+                            impulse: event.impulseApplied,
+                            normal: event.contactOnB.normal,
+                            type: this._nativeCollisionValueToCollisionType(event.type),
+                        };
+                        observableB.notifyObservers(collisionInfoB);
+                    }
+                } else if (this._bodyCollisionEndedObservable.size) {
+                    const observableA = this._bodyCollisionEndedObservable.get(event.contactOnA.bodyId);
+                    const observableB = this._bodyCollisionEndedObservable.get(event.contactOnB.bodyId);
+                    event.contactOnA.position.subtractToRef(event.contactOnB.position, this._tmpVec3[0]);
+                    const distance = Vector3.Dot(this._tmpVec3[0], event.contactOnB.normal);
+                    if (observableA) {
+                        observableA.notifyObservers(collisionInfo);
+                    }
+                    if (observableB) {
+                        const collisionInfoB: any = {
+                            collider: bodyInfoB.body,
+                            colliderIndex: bodyInfoB.index,
+                            collidedAgainst: bodyInfoA.body,
+                            collidedAgainstIndex: bodyInfoA.index,
+                            point: event.contactOnB.position,
+                            distance: distance,
+                            impulse: event.impulseApplied,
+                            normal: event.contactOnB.normal,
+                            type: this._nativeCollisionValueToCollisionType(event.type),
+                        };
+                        observableB.notifyObservers(collisionInfoB);
+                    }
                 }
             }
 
@@ -1740,10 +2391,14 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
      * Dispose the world and free resources
      */
     public dispose(): void {
-        this._hknp.HP_QueryCollector_Release(this._queryCollector);
-        this._queryCollector = BigInt(0);
-        this._hknp.HP_World_Release(this.world);
-        this.world = undefined;
+        if (this._queryCollector) {
+            this._hknp.HP_QueryCollector_Release(this._queryCollector);
+            this._queryCollector = undefined;
+        }
+        if (this.world) {
+            this._hknp.HP_World_Release(this.world);
+            this.world = undefined;
+        }
     }
 
     private _v3ToBvecRef(v: any, vec3: Vector3): void {
@@ -1793,6 +2448,23 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
         }
     }
 
+    private _nativeToMaterialCombine(mat: any): PhysicsMaterialCombineMode | undefined {
+        switch (mat) {
+            case this._hknp.MaterialCombine.GEOMETRIC_MEAN:
+                return PhysicsMaterialCombineMode.GEOMETRIC_MEAN;
+            case this._hknp.MaterialCombine.MINIMUM:
+                return PhysicsMaterialCombineMode.MINIMUM;
+            case this._hknp.MaterialCombine.MAXIMUM:
+                return PhysicsMaterialCombineMode.MAXIMUM;
+            case this._hknp.MaterialCombine.ARITHMETIC_MEAN:
+                return PhysicsMaterialCombineMode.ARITHMETIC_MEAN;
+            case this._hknp.MaterialCombine.MULTIPLY:
+                return PhysicsMaterialCombineMode.MULTIPLY;
+            default:
+                return undefined;
+        }
+    }
+
     private _constraintAxisToNative(axId: PhysicsConstraintAxis): any {
         switch (axId) {
             case PhysicsConstraintAxis.LINEAR_X:
@@ -1834,5 +2506,28 @@ export class HavokPlugin implements IPhysicsEnginePluginV2 {
             case PhysicsConstraintAxisLimitMode.LOCKED:
                 return this._hknp.ConstraintAxisLimitMode.LOCKED;
         }
+    }
+
+    private _nativeCollisionValueToCollisionType(type: number): PhysicsEventType {
+        switch (type) {
+            case this._hknp.EventType.COLLISION_STARTED.value:
+                return PhysicsEventType.COLLISION_STARTED;
+            case this._hknp.EventType.COLLISION_FINISHED.value:
+                return PhysicsEventType.COLLISION_FINISHED;
+            case this._hknp.EventType.COLLISION_CONTINUED.value:
+                return PhysicsEventType.COLLISION_CONTINUED;
+        }
+
+        return PhysicsEventType.COLLISION_STARTED;
+    }
+
+    private _nativeTriggerCollisionValueToCollisionType(type: number): PhysicsEventType {
+        switch (type) {
+            case 8:
+                return PhysicsEventType.TRIGGER_ENTERED;
+            case 16:
+                return PhysicsEventType.TRIGGER_EXITED;
+        }
+        return PhysicsEventType.TRIGGER_ENTERED;
     }
 }

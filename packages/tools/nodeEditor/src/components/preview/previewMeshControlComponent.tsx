@@ -9,9 +9,10 @@ import { NodeMaterialModes } from "core/Materials/Node/Enums/nodeMaterialModes";
 
 import popUpIcon from "./svgs/popOut.svg";
 import colorPicker from "./svgs/colorPicker.svg";
+import envPicker from "./svgs/envPicker.svg";
 import pauseIcon from "./svgs/pauseIcon.svg";
 import playIcon from "./svgs/playIcon.svg";
-import { OptionsLineComponent } from "shared-ui-components/lines/optionsLineComponent";
+import { OptionsLine } from "shared-ui-components/lines/optionsLineComponent";
 
 interface IPreviewMeshControlComponent {
     globalState: GlobalState;
@@ -21,6 +22,7 @@ interface IPreviewMeshControlComponent {
 export class PreviewMeshControlComponent extends React.Component<IPreviewMeshControlComponent> {
     private _colorInputRef: React.RefObject<HTMLInputElement>;
     private _filePickerRef: React.RefObject<HTMLInputElement>;
+    private _envPickerRef: React.RefObject<HTMLInputElement>;
     private _onResetRequiredObserver: Nullable<Observer<boolean>>;
     private _onDropEventObserver: Nullable<Observer<DragEvent>>;
     private _onRefreshPreviewMeshControlComponentRequiredObserver: Nullable<Observer<void>>;
@@ -29,6 +31,7 @@ export class PreviewMeshControlComponent extends React.Component<IPreviewMeshCon
         super(props);
         this._colorInputRef = React.createRef();
         this._filePickerRef = React.createRef();
+        this._envPickerRef = React.createRef();
 
         this._onResetRequiredObserver = this.props.globalState.onResetRequiredObservable.add(() => {
             this.forceUpdate();
@@ -43,7 +46,7 @@ export class PreviewMeshControlComponent extends React.Component<IPreviewMeshCon
         });
     }
 
-    componentWillUnmount() {
+    override componentWillUnmount() {
         this.props.globalState.onResetRequiredObservable.remove(this._onResetRequiredObserver);
         this.props.globalState.onDropEventReceivedObservable.remove(this._onDropEventObserver);
         this.props.globalState.onRefreshPreviewMeshControlComponentRequiredObservable.remove(this._onRefreshPreviewMeshControlComponentRequiredObserver);
@@ -77,6 +80,19 @@ export class PreviewMeshControlComponent extends React.Component<IPreviewMeshCon
             this._filePickerRef.current.value = "";
         }
     }
+    useCustomEnv(evt: any) {
+        const files: File[] = evt.target?.files || evt.dataTransfer?.files;
+        if (files && files.length) {
+            const file = files[0];
+            this.props.globalState.envFile = file;
+            this.props.globalState.envType = PreviewType.Custom;
+            this.props.globalState.onPreviewCommandActivated.notifyObservers(false);
+            this.forceUpdate();
+        }
+        if (this._envPickerRef.current) {
+            this._envPickerRef.current.value = "";
+        }
+    }
 
     onPopUp() {
         this.props.togglePreviewAreaComponent();
@@ -104,7 +120,7 @@ export class PreviewMeshControlComponent extends React.Component<IPreviewMeshCon
         this._colorInputRef.current?.click();
     }
 
-    render() {
+    override render() {
         const meshTypeOptions = [
             { label: "Cube", value: PreviewType.Box },
             { label: "Cylinder", value: PreviewType.Cylinder },
@@ -143,7 +159,7 @@ export class PreviewMeshControlComponent extends React.Component<IPreviewMeshCon
             <div id="preview-mesh-bar">
                 {(this.props.globalState.mode === NodeMaterialModes.Material || this.props.globalState.mode === NodeMaterialModes.Particle) && (
                     <>
-                        <OptionsLineComponent
+                        <OptionsLine
                             label=""
                             options={options}
                             target={this.props.globalState}
@@ -164,11 +180,15 @@ export class PreviewMeshControlComponent extends React.Component<IPreviewMeshCon
                             title="Preview with a custom mesh"
                         >
                             <input ref={this._filePickerRef} multiple id="file-picker" type="file" onChange={(evt) => this.useCustomMesh(evt)} accept={accept} />
+                            <input ref={this._envPickerRef} id="env-picker" accept=".env" type="file" onChange={(evt) => this.useCustomEnv(evt)}></input>
                         </div>
                     </>
                 )}
                 {this.props.globalState.mode === NodeMaterialModes.Material && (
                     <>
+                        <div id="env-button" title="Environment image" className="button" onClick={(_) => this._envPickerRef.current?.click()}>
+                            <img src={envPicker} alt="" id="env-picker-image" />
+                        </div>
                         <div title="Turn-table animation" onClick={() => this.changeAnimation()} className="button" id="play-button">
                             {this.props.globalState.rotatePreview ? <img src={pauseIcon} alt="" /> : <img src={playIcon} alt="" />}
                         </div>

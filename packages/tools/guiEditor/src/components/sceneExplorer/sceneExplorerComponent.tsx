@@ -10,6 +10,7 @@ import type { GlobalState } from "../../globalState";
 import type { PropertyChangedEvent } from "shared-ui-components/propertyChangedEvent";
 
 import "./sceneExplorer.scss";
+import { Logger } from "core/Misc/logger";
 
 interface ISceneExplorerFilterComponentProps {
     onFilter: (filter: string) => void;
@@ -20,7 +21,7 @@ export class SceneExplorerFilterComponent extends React.Component<ISceneExplorer
         super(props);
     }
 
-    render() {
+    override render() {
         return (
             <div className="filter">
                 <input type="text" placeholder="Filter" onChange={(evt) => this.props.onFilter(evt.target.value)} />
@@ -68,7 +69,7 @@ export class SceneExplorerComponent extends React.Component<ISceneExplorerCompon
         });
     }
 
-    componentDidMount() {
+    override componentDidMount() {
         this._onSelectionChangeObserver = this.props.globalState.onSelectionChangedObservable.add((entity) => {
             if (this.state.selectedEntity !== entity) {
                 this.setState({ selectedEntity: entity });
@@ -84,7 +85,7 @@ export class SceneExplorerComponent extends React.Component<ISceneExplorerCompon
         });
     }
 
-    componentWillUnmount() {
+    override componentWillUnmount() {
         if (this._onSelectionChangeObserver) {
             this.props.globalState.onSelectionChangedObservable.remove(this._onSelectionChangeObserver);
         }
@@ -179,7 +180,7 @@ export class SceneExplorerComponent extends React.Component<ISceneExplorerCompon
             case "ArrowLeft":
                 this.props.globalState.selectedControls.forEach((node) => {
                     const reservedDataStore = (node as any).reservedDataStore;
-                    console.log(reservedDataStore);
+                    Logger.Log(reservedDataStore);
                     if (reservedDataStore && reservedDataStore.setExpandedState) {
                         reservedDataStore.setExpandedState(false);
                     }
@@ -269,7 +270,7 @@ export class SceneExplorerComponent extends React.Component<ISceneExplorerCompon
         this.props.onPopup();
     }
 
-    render() {
+    override render() {
         return (
             <div id="ge-sceneExplorer" tabIndex={0} onKeyDown={(keyEvent) => this.processKeys(keyEvent)}>
                 {this.props.children}

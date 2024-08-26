@@ -9,6 +9,7 @@ import type { NodeMaterial, NodeMaterialDefines } from "../../nodeMaterial";
 import type { Mesh } from "../../../../Meshes/mesh";
 import type { AbstractMesh } from "../../../../Meshes/abstractMesh";
 import { bindClipPlane } from "../../../../Materials/clipPlaneMaterialHelper";
+import { ShaderLanguage } from "core/Materials/shaderLanguage";
 /**
  * Block used to implement clip planes
  */
@@ -27,7 +28,7 @@ export class ClipPlanesBlock extends NodeMaterialBlock {
      * Gets the current class name
      * @returns the class name
      */
-    public getClassName() {
+    public override getClassName() {
         return "ClipPlanesBlock";
     }
 
@@ -35,7 +36,7 @@ export class ClipPlanesBlock extends NodeMaterialBlock {
      * Initialize the block and prepare the context for build
      * @param state defines the state that will be used for the build
      */
-    public initialize(state: NodeMaterialBuildState) {
+    public override initialize(state: NodeMaterialBuildState) {
         state._excludeVariableName("vClipPlane");
         state._excludeVariableName("fClipDistance");
         state._excludeVariableName("vClipPlane2");
@@ -48,6 +49,31 @@ export class ClipPlanesBlock extends NodeMaterialBlock {
         state._excludeVariableName("fClipDistance5");
         state._excludeVariableName("vClipPlane6");
         state._excludeVariableName("fClipDistance6");
+
+        this._initShaderSourceAsync(state.shaderLanguage);
+    }
+
+    private async _initShaderSourceAsync(shaderLanguage: ShaderLanguage) {
+        this._codeIsReady = false;
+
+        if (shaderLanguage === ShaderLanguage.WGSL) {
+            await Promise.all([
+                import("../../../../ShadersWGSL/ShadersInclude/clipPlaneFragment"),
+                import("../../../../ShadersWGSL/ShadersInclude/clipPlaneFragmentDeclaration"),
+                import("../../../../ShadersWGSL/ShadersInclude/clipPlaneVertex"),
+                import("../../../../ShadersWGSL/ShadersInclude/clipPlaneVertexDeclaration"),
+            ]);
+        } else {
+            await Promise.all([
+                import("../../../../Shaders/ShadersInclude/clipPlaneFragment"),
+                import("../../../../Shaders/ShadersInclude/clipPlaneFragmentDeclaration"),
+                import("../../../../Shaders/ShadersInclude/clipPlaneVertex"),
+                import("../../../../Shaders/ShadersInclude/clipPlaneVertexDeclaration"),
+            ]);
+        }
+
+        this._codeIsReady = true;
+        this.onCodeIsReadyObservable.notifyObservers(this);
     }
 
     /**
@@ -57,21 +83,21 @@ export class ClipPlanesBlock extends NodeMaterialBlock {
         return this._inputs[0];
     }
 
-    public get target() {
+    public override get target() {
         return NodeMaterialBlockTargets.VertexAndFragment;
     }
 
-    public set target(value: NodeMaterialBlockTargets) {}
+    public override set target(value: NodeMaterialBlockTargets) {}
 
-    public prepareDefines(mesh: AbstractMesh, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines) {
+    public override prepareDefines(mesh: AbstractMesh, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines) {
         const scene = mesh.getScene();
 
-        const useClipPlane1 = nodeMaterial.clipPlane ?? scene.clipPlane ? true : false;
-        const useClipPlane2 = nodeMaterial.clipPlane2 ?? scene.clipPlane2 ? true : false;
-        const useClipPlane3 = nodeMaterial.clipPlane3 ?? scene.clipPlane3 ? true : false;
-        const useClipPlane4 = nodeMaterial.clipPlane4 ?? scene.clipPlane4 ? true : false;
-        const useClipPlane5 = nodeMaterial.clipPlane5 ?? scene.clipPlane5 ? true : false;
-        const useClipPlane6 = nodeMaterial.clipPlane6 ?? scene.clipPlane6 ? true : false;
+        const useClipPlane1 = (nodeMaterial.clipPlane ?? scene.clipPlane) ? true : false;
+        const useClipPlane2 = (nodeMaterial.clipPlane2 ?? scene.clipPlane2) ? true : false;
+        const useClipPlane3 = (nodeMaterial.clipPlane3 ?? scene.clipPlane3) ? true : false;
+        const useClipPlane4 = (nodeMaterial.clipPlane4 ?? scene.clipPlane4) ? true : false;
+        const useClipPlane5 = (nodeMaterial.clipPlane5 ?? scene.clipPlane5) ? true : false;
+        const useClipPlane6 = (nodeMaterial.clipPlane6 ?? scene.clipPlane6) ? true : false;
 
         defines.setValue("CLIPPLANE", useClipPlane1, true);
         defines.setValue("CLIPPLANE2", useClipPlane2, true);
@@ -81,7 +107,7 @@ export class ClipPlanesBlock extends NodeMaterialBlock {
         defines.setValue("CLIPPLANE6", useClipPlane6, true);
     }
 
-    public bind(effect: Effect, nodeMaterial: NodeMaterial, mesh?: Mesh) {
+    public override bind(effect: Effect, nodeMaterial: NodeMaterial, mesh?: Mesh) {
         if (!mesh) {
             return;
         }
@@ -91,7 +117,7 @@ export class ClipPlanesBlock extends NodeMaterialBlock {
         bindClipPlane(effect, nodeMaterial, scene);
     }
 
-    protected _buildBlock(state: NodeMaterialBuildState) {
+    protected override _buildBlock(state: NodeMaterialBuildState) {
         super._buildBlock(state);
 
         const comments = `//${this.name}`;
@@ -106,12 +132,12 @@ export class ClipPlanesBlock extends NodeMaterialBlock {
                 replaceStrings: [{ search: /worldPos/g, replace: worldPos.associatedVariableName }],
             });
 
-            state._emitUniformFromString("vClipPlane", "vec4");
-            state._emitUniformFromString("vClipPlane2", "vec4");
-            state._emitUniformFromString("vClipPlane3", "vec4");
-            state._emitUniformFromString("vClipPlane4", "vec4");
-            state._emitUniformFromString("vClipPlane5", "vec4");
-            state._emitUniformFromString("vClipPlane6", "vec4");
+            state._emitUniformFromString("vClipPlane", NodeMaterialBlockConnectionPointTypes.Vector4);
+            state._emitUniformFromString("vClipPlane2", NodeMaterialBlockConnectionPointTypes.Vector4);
+            state._emitUniformFromString("vClipPlane3", NodeMaterialBlockConnectionPointTypes.Vector4);
+            state._emitUniformFromString("vClipPlane4", NodeMaterialBlockConnectionPointTypes.Vector4);
+            state._emitUniformFromString("vClipPlane5", NodeMaterialBlockConnectionPointTypes.Vector4);
+            state._emitUniformFromString("vClipPlane6", NodeMaterialBlockConnectionPointTypes.Vector4);
 
             return;
         }

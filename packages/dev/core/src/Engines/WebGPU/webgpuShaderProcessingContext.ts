@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/naming-convention */
+/* eslint-disable babylonjs/available */
+/* eslint-disable jsdoc/require-jsdoc */
 import type { ShaderLanguage } from "../../Materials/shaderLanguage";
 import type { ShaderProcessingContext } from "../Processors/shaderProcessingOptions";
 
@@ -167,10 +169,12 @@ export class WebGPUShaderProcessingContext implements ShaderProcessingContext {
     public attributeNamesFromEffect: string[];
     public attributeLocationsFromEffect: number[];
 
+    public vertexBufferKindToNumberOfComponents: { [kind: string]: number } = {};
+
     private _attributeNextLocation: number;
     private _varyingNextLocation: number;
 
-    constructor(shaderLanguage: ShaderLanguage) {
+    constructor(shaderLanguage: ShaderLanguage, pureMode = false) {
         this.shaderLanguage = shaderLanguage;
 
         this._attributeNextLocation = 0;
@@ -194,7 +198,9 @@ export class WebGPUShaderProcessingContext implements ShaderProcessingContext {
 
         this.leftOverUniforms = [];
 
-        this._findStartingGroupBinding();
+        if (!pureMode) {
+            this._findStartingGroupBinding();
+        }
     }
 
     private _findStartingGroupBinding(): void {
@@ -249,6 +255,7 @@ export class WebGPUShaderProcessingContext implements ShaderProcessingContext {
         }
 
         if (this.freeGroupIndex === _maxGroups) {
+            // eslint-disable-next-line no-throw-literal
             throw "Too many textures or UBOs have been declared and it is not supported in WebGPU.";
         }
 

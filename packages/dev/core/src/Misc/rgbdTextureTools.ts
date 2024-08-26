@@ -1,19 +1,21 @@
 import { Constants } from "../Engines/constants";
 import { PostProcess } from "../PostProcesses/postProcess";
-import "../Shaders/rgbdDecode.fragment";
 import type { Engine } from "../Engines/engine";
 
 import "../Engines/Extensions/engine.renderTarget";
 import { ApplyPostProcess } from "./textureTools";
 
-declare type Texture = import("../Materials/Textures/texture").Texture;
-declare type InternalTexture = import("../Materials/Textures/internalTexture").InternalTexture;
-declare type Scene = import("../scene").Scene;
+import type { Texture } from "../Materials/Textures/texture";
+import type { InternalTexture } from "../Materials/Textures/internalTexture";
+import type { Scene } from "../scene";
+import { ShaderLanguage } from "core/Materials";
 
 /**
  * Class used to host RGBD texture specific utilities
  */
 export class RGBDTextureTools {
+    private static _ShaderImported = false;
+
     /**
      * Expand the RGBD Texture from RGBD to Half Float if possible.
      * @param texture the texture to expand.
@@ -48,39 +50,54 @@ export class RGBDTextureTools {
             internalTexture.invertY = false;
         }
 
-        const expandRGBDTexture = () => {
+        const expandRGBDTexture = async () => {
+            const isWebGPU = engine.isWebGPU;
+            const shaderLanguage = isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL;
+            internalTexture.isReady = false;
+
+            if (!this._ShaderImported) {
+                this._ShaderImported = true;
+                if (isWebGPU) {
+                    await Promise.all([import("../ShadersWGSL/rgbdDecode.fragment"), import("../ShadersWGSL/rgbdEncode.fragment")]);
+                } else {
+                    await Promise.all([import("../Shaders/rgbdDecode.fragment"), import("../Shaders/rgbdEncode.fragment")]);
+                }
+            }
+
             // Expand the texture if possible
-            if (expandTexture) {
-                // Simply run through the decode PP.
-                const rgbdPostProcess = new PostProcess(
-                    "rgbdDecode",
-                    "rgbdDecode",
-                    null,
-                    null,
-                    1,
-                    null,
-                    Constants.TEXTURE_TRILINEAR_SAMPLINGMODE,
-                    engine,
-                    false,
-                    undefined,
-                    internalTexture.type,
-                    undefined,
-                    null,
-                    false
-                );
-                rgbdPostProcess.externalTextureSamplerBinding = true;
+            // Simply run through the decode PP.
+            const rgbdPostProcess = new PostProcess(
+                "rgbdDecode",
+                "rgbdDecode",
+                null,
+                null,
+                1,
+                null,
+                Constants.TEXTURE_TRILINEAR_SAMPLINGMODE,
+                engine,
+                false,
+                undefined,
+                internalTexture.type,
+                undefined,
+                null,
+                false,
+                undefined,
+                shaderLanguage
+            );
+            rgbdPostProcess.externalTextureSamplerBinding = true;
 
-                // Hold the output of the decoding.
-                const expandedTexture = engine.createRenderTargetTexture(internalTexture.width, {
-                    generateDepthBuffer: false,
-                    generateMipMaps: false,
-                    generateStencilBuffer: false,
-                    samplingMode: internalTexture.samplingMode,
-                    type: internalTexture.type,
-                    format: Constants.TEXTUREFORMAT_RGBA,
-                });
+            // Hold the output of the decoding.
+            const expandedTexture = engine.createRenderTargetTexture(internalTexture.width, {
+                generateDepthBuffer: false,
+                generateMipMaps: false,
+                generateStencilBuffer: false,
+                samplingMode: internalTexture.samplingMode,
+                type: internalTexture.type,
+                format: Constants.TEXTUREFORMAT_RGBA,
+            });
 
-                rgbdPostProcess.getEffect().executeWhenCompiled(() => {
+            rgbdPostProcess.onEffectCreatedObservable.addOnce((e) => {
+                e.executeWhenCompiled(() => {
                     // PP Render Pass
                     rgbdPostProcess.onApply = (effect) => {
                         effect._bindTexture("textureSampler", internalTexture);
@@ -101,13 +118,15 @@ export class RGBDTextureTools {
                     // Ready to get rolling again.
                     internalTexture.isReady = true;
                 });
-            }
+            });
         };
 
-        if (isReady) {
-            expandRGBDTexture();
-        } else {
-            texture.onLoadObservable.addOnce(expandRGBDTexture);
+        if (expandTexture) {
+            if (isReady) {
+                expandRGBDTexture();
+            } else {
+                texture.onLoadObservable.addOnce(expandRGBDTexture);
+            }
         }
     }
 

@@ -2,7 +2,7 @@ import { Utilities } from "./tools/utilities";
 import type { CompilationError } from "./components/errorDisplayComponent";
 import { Observable } from "@dev/core";
 
-declare type Nullable<T> = import("@dev/core").Nullable<T>;
+import type { Nullable } from "@dev/core";
 
 export enum EditionMode {
     Desktop,
@@ -44,6 +44,7 @@ export class GlobalState {
     public onRunExecutedObservable = new Observable<void>();
     public onSavedObservable = new Observable<void>();
     public onNewRequiredObservable = new Observable<void>();
+    public onInsertSnippetRequiredObservable = new Observable<string>();
     public onClearRequiredObservable = new Observable<void>();
     public onSaveRequiredObservable = new Observable<void>();
     public onLoadRequiredObservable = new Observable<string>();

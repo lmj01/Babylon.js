@@ -7,7 +7,7 @@ import { GizmoManager } from "core/Gizmos/gizmoManager";
 import type { Scene } from "core/scene";
 
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faSyncAlt, faImage, faCrosshairs, faArrowsAlt, faCompress, faRedoAlt, faVectorSquare } from "@fortawesome/free-solid-svg-icons";
+import { faSyncAlt, faImage, faCrosshairs, faArrowsAlt, faCompress, faRedoAlt, faVectorSquare, faLocationDot } from "@fortawesome/free-solid-svg-icons";
 import { ExtensionsComponent } from "../extensionsComponent";
 import * as React from "react";
 
@@ -18,6 +18,10 @@ import type { LightGizmo } from "core/Gizmos/lightGizmo";
 import type { CameraGizmo } from "core/Gizmos/cameraGizmo";
 import type { Camera } from "core/Cameras/camera";
 import { TmpVectors, Vector3 } from "core/Maths/math";
+import { GizmoCoordinatesMode } from "core/Gizmos/gizmo";
+import type { Bone } from "core/Bones/bone";
+
+import { setDebugNode } from "../treeNodeDebugger";
 
 interface ISceneTreeItemComponentProps {
     scene: Scene;
@@ -29,7 +33,10 @@ interface ISceneTreeItemComponentProps {
     globalState: GlobalState;
 }
 
-export class SceneTreeItemComponent extends React.Component<ISceneTreeItemComponentProps, { isSelected: boolean; isInPickingMode: boolean; gizmoMode: number }> {
+export class SceneTreeItemComponent extends React.Component<
+    ISceneTreeItemComponentProps,
+    { isSelected: boolean; isInPickingMode: boolean; gizmoMode: number; isInWorldCoodinatesMode: boolean }
+> {
     private _gizmoLayerOnPointerObserver: Nullable<Observer<PointerInfo>>;
     private _onPointerObserver: Nullable<Observer<PointerInfo>>;
     private _onSelectionChangeObserver: Nullable<Observer<any>>;
@@ -59,10 +66,10 @@ export class SceneTreeItemComponent extends React.Component<ISceneTreeItemCompon
             manager.enableAutoPicking = false;
         }
 
-        this.state = { isSelected: false, isInPickingMode: false, gizmoMode: gizmoMode };
+        this.state = { isSelected: false, isInPickingMode: false, gizmoMode: gizmoMode, isInWorldCoodinatesMode: false };
     }
 
-    shouldComponentUpdate(nextProps: ISceneTreeItemComponentProps, nextState: { isSelected: boolean; isInPickingMode: boolean }) {
+    override shouldComponentUpdate(nextProps: ISceneTreeItemComponentProps, nextState: { isSelected: boolean; isInPickingMode: boolean }) {
         if (nextProps.selectedEntity) {
             if (nextProps.scene === nextProps.selectedEntity) {
                 nextState.isSelected = true;
@@ -83,7 +90,7 @@ export class SceneTreeItemComponent extends React.Component<ISceneTreeItemCompon
         }
     }
 
-    componentDidMount() {
+    override componentDidMount() {
         if (!this.props.onSelectionChangedObservable) {
             return;
         }
@@ -100,18 +107,21 @@ export class SceneTreeItemComponent extends React.Component<ISceneTreeItemCompon
                     manager.attachToMesh(entity);
                 } else if (className.indexOf("Light") !== -1) {
                     if (!this._selectedEntity.reservedDataStore || !this._selectedEntity.reservedDataStore.lightGizmo) {
-                        this.props.globalState.enableLightGizmo(this._selectedEntity, true);
+                        this.props.globalState.enableLightGizmo(this._selectedEntity, true, this.props.gizmoCamera);
                         this.forceUpdate();
                     }
                     manager.attachToNode(this._selectedEntity.reservedDataStore.lightGizmo.attachedNode);
                 } else if (className.indexOf("Camera") !== -1) {
                     if (!this._selectedEntity.reservedDataStore || !this._selectedEntity.reservedDataStore.cameraGizmo) {
-                        this.props.globalState.enableCameraGizmo(this._selectedEntity, true);
+                        this.props.globalState.enableCameraGizmo(this._selectedEntity, true, this.props.gizmoCamera);
                         this.forceUpdate();
                     }
                     manager.attachToNode(this._selectedEntity.reservedDataStore.cameraGizmo.attachedNode);
                 } else if (className.indexOf("Bone") !== -1) {
                     manager.attachToMesh(this._selectedEntity._linkedTransformNode ? this._selectedEntity._linkedTransformNode : this._selectedEntity);
+                    if (!this._selectedEntity._linkedTransformNode) {
+                        manager.additionalTransformNode = this._getMeshFromBone(this._selectedEntity, scene);
+                    }
                 } else {
                     manager.attachToNode(null);
                 }
@@ -119,7 +129,28 @@ export class SceneTreeItemComponent extends React.Component<ISceneTreeItemCompon
         });
     }
 
-    componentWillUnmount() {
+    private _getMeshFromBone(bone: Bone, scene: Scene) {
+        const skeleton = bone.getSkeleton();
+
+        // First try to find a mesh for which we've enabled the skeleton viewer
+        for (const mesh of scene.meshes) {
+            const skeletonViewer = mesh.reservedDataStore?.skeletonViewer;
+            if (skeletonViewer && skeletonViewer.skeleton === skeleton) {
+                return mesh;
+            }
+        }
+
+        // Not found, return the first mesh that uses the skeleton
+        for (const mesh of scene.meshes) {
+            if (mesh.skeleton === skeleton) {
+                return mesh;
+            }
+        }
+
+        return undefined;
+    }
+
+    override componentWillUnmount() {
         const scene = this.props.scene;
 
         if (this._onPointerObserver) {
@@ -142,9 +173,18 @@ export class SceneTreeItemComponent extends React.Component<ISceneTreeItemCompon
             return;
         }
         const scene = this.props.scene;
+        // Put scene object into window.debugNode
+        setDebugNode(scene);
         this.props.onSelectionChangedObservable.notifyObservers(scene);
     }
 
+    onCoordinatesMode() {
+        const scene = this.props.scene;
+        const manager: GizmoManager = scene.reservedDataStore.gizmoManager;
+        // flip coordinate system
+        manager.coordinatesMode = this.state.isInWorldCoodinatesMode ? GizmoCoordinatesMode.Local : GizmoCoordinatesMode.World;
+        this.setState({ isInWorldCoodinatesMode: !this.state.isInWorldCoodinatesMode });
+    }
     onPickingMode() {
         const scene = this.props.scene;
 
@@ -396,18 +436,21 @@ export class SceneTreeItemComponent extends React.Component<ISceneTreeItemCompon
                     manager.attachToMesh(this._selectedEntity);
                 } else if (className.indexOf("Light") !== -1) {
                     if (!this._selectedEntity.reservedDataStore || !this._selectedEntity.reservedDataStore.lightGizmo) {
-                        this.props.globalState.enableLightGizmo(this._selectedEntity, true);
+                        this.props.globalState.enableLightGizmo(this._selectedEntity, true, this.props.gizmoCamera);
                         this.forceUpdate();
                     }
                     manager.attachToNode(this._selectedEntity.reservedDataStore.lightGizmo.attachedNode);
                 } else if (className.indexOf("Camera") !== -1) {
                     if (!this._selectedEntity.reservedDataStore || !this._selectedEntity.reservedDataStore.cameraGizmo) {
-                        this.props.globalState.enableCameraGizmo(this._selectedEntity, true);
+                        this.props.globalState.enableCameraGizmo(this._selectedEntity, true, this.props.gizmoCamera);
                         this.forceUpdate();
                     }
                     manager.attachToNode(this._selectedEntity.reservedDataStore.cameraGizmo.attachedNode);
                 } else if (className.indexOf("Bone") !== -1) {
                     manager.attachToMesh(this._selectedEntity._linkedTransformNode ? this._selectedEntity._linkedTransformNode : this._selectedEntity);
+                    if (!this._selectedEntity._linkedTransformNode) {
+                        manager.additionalTransformNode = this._getMeshFromBone(this._selectedEntity, scene);
+                    }
                 }
             }
         }
@@ -415,7 +458,7 @@ export class SceneTreeItemComponent extends React.Component<ISceneTreeItemCompon
         this.setState({ gizmoMode: mode });
     }
 
-    render() {
+    override render() {
         return (
             <div className={this.state.isSelected ? "itemContainer selected" : "itemContainer"}>
                 <div className="sceneNode">
@@ -454,6 +497,13 @@ export class SceneTreeItemComponent extends React.Component<ISceneTreeItemCompon
                         title="Turn picking mode on/off"
                     >
                         <FontAwesomeIcon icon={faCrosshairs} />
+                    </div>
+                    <div
+                        className={this.state.isInWorldCoodinatesMode ? "coordinates selected icon" : "coordinates icon"}
+                        onClick={() => this.onCoordinatesMode()}
+                        title="Switch between world and local coordinates"
+                    >
+                        <FontAwesomeIcon icon={faLocationDot} />
                     </div>
                     <div className="refresh icon" onClick={() => this.props.onRefresh()} title="Refresh the explorer">
                         <FontAwesomeIcon icon={faSyncAlt} />

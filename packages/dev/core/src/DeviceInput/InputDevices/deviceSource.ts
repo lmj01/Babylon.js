@@ -10,10 +10,10 @@ import type { IKeyboardEvent, IPointerEvent, IWheelEvent } from "../../Events/de
 export type DeviceSourceEvent<T extends DeviceType> = T extends DeviceType.Keyboard
     ? IKeyboardEvent
     : T extends DeviceType.Mouse
-    ? IWheelEvent | IPointerEvent
-    : T extends DeviceType.Touch
-    ? IPointerEvent
-    : never;
+      ? IWheelEvent | IPointerEvent
+      : T extends DeviceType.Touch
+        ? IPointerEvent
+        : never;
 
 /**
  * Class that handles all input for a specific device
@@ -38,7 +38,7 @@ export class DeviceSource<T extends DeviceType> {
         deviceInputSystem: IDeviceInputSystem,
         /** Type of device */
         public readonly deviceType: T,
-        /** "Slot" or index that device is referenced in */
+        /** [0] "Slot" or index that device is referenced in */
         public readonly deviceSlot: number = 0
     ) {
         this._deviceInputSystem = deviceInputSystem;

@@ -3,13 +3,12 @@ import type { Effect } from "../Materials/effect";
 import { PostProcess } from "./postProcess";
 import { Constants } from "../Engines/constants";
 
-import "../Shaders/tonemap.fragment";
 import type { Nullable } from "../types";
 
-declare type Engine = import("../Engines/engine").Engine;
+import type { Engine } from "../Engines/engine";
 
 /** Defines operator used for tonemapping */
-export enum TonemappingOperator {
+export const enum TonemappingOperator {
     /** Hable */
     Hable = 0,
     /** Reinhard */
@@ -28,7 +27,7 @@ export class TonemapPostProcess extends PostProcess {
      * Gets a string identifying the name of the class
      * @returns "TonemapPostProcess" string
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "TonemapPostProcess";
     }
 
@@ -74,5 +73,16 @@ export class TonemapPostProcess extends PostProcess {
         this.onApply = (effect: Effect) => {
             effect.setFloat("_ExposureAdjustment", this.exposureAdjustment);
         };
+    }
+
+    protected override _gatherImports(useWebGPU: boolean, list: Promise<any>[]) {
+        if (useWebGPU) {
+            this._webGPUReady = true;
+            list.push(Promise.all([import("../ShadersWGSL/tonemap.fragment")]));
+        } else {
+            list.push(Promise.all([import("../Shaders/tonemap.fragment")]));
+        }
+
+        super._gatherImports(useWebGPU, list);
     }
 }

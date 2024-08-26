@@ -8,13 +8,12 @@ import { Texture } from "../Materials/Textures/texture";
 import type { InternalTexture } from "../Materials/Textures/internalTexture";
 import { MultiRenderTarget } from "../Materials/Textures/multiRenderTarget";
 import type { PrePassRenderer } from "../Rendering/prePassRenderer";
-import { MaterialHelper } from "../Materials/materialHelper";
 import type { Scene } from "../scene";
 import type { AbstractMesh } from "../Meshes/abstractMesh";
 import { Color4 } from "../Maths/math.color";
 import { _WarnImport } from "../Misc/devTools";
 import type { Observer } from "../Misc/observable";
-import type { Engine } from "../Engines/engine";
+import type { AbstractEngine } from "../Engines/abstractEngine";
 import type { Nullable } from "../types";
 import { Material } from "../Materials/material";
 
@@ -22,6 +21,10 @@ import "../Shaders/geometry.fragment";
 import "../Shaders/geometry.vertex";
 import { MaterialFlags } from "../Materials/materialFlags";
 import { addClipPlaneUniforms, bindClipPlane, prepareStringDefinesForClipPlanes } from "../Materials/clipPlaneMaterialHelper";
+import { BindMorphTargetParameters, BindSceneUniformBuffer, PrepareAttributesForMorphTargetsInfluencers, PushAttributesForInstances } from "../Materials/materialHelper.functions";
+
+import "../Engines/Extensions/engine.multiRender";
+import { ShaderLanguage } from "core/Materials/shaderLanguage";
 
 /** @internal */
 interface ISavedTransformationMatrix {
@@ -49,8 +52,10 @@ const uniforms = [
     "vTangentSpaceParams",
     "vBumpInfos",
     "morphTargetInfluences",
+    "morphTargetCount",
     "morphTargetTextureInfo",
     "morphTargetTextureIndices",
+    "boneTextureWidth",
 ];
 addClipPlaneUniforms(uniforms);
 
@@ -58,6 +63,11 @@ addClipPlaneUniforms(uniforms);
  * This renderer is helpful to fill one of the render target with a geometry buffer.
  */
 export class GeometryBufferRenderer {
+    /**
+     * Force all the standard materials to compile to glsl even on WebGPU engines.
+     * False by default. This is mostly meant for backward compatibility.
+     */
+    public static ForceGLSL = false;
     /**
      * Constant used to retrieve the depth texture index in the G-Buffer textures array
      * using getIndex(GeometryBufferRenderer.DEPTH_TEXTURE_INDEX)
@@ -105,10 +115,25 @@ export class GeometryBufferRenderer {
     /** Gets or sets a boolean indicating if transparent meshes should be rendered */
     public renderTransparentMeshes = true;
 
+    /**
+     * Gets or sets a boolean indicating if normals should be generated in world space (default: false, meaning normals are generated in view space)
+     */
+    public generateNormalsInWorldSpace = false;
+
+    private _normalsAreUnsigned = false;
+
+    /**
+     * Gets a boolean indicating if normals are encoded in the [0,1] range in the render target. If true, you should do `normal = normal_rt * 2.0 - 1.0` to get the right normal
+     */
+    public get normalsAreUnsigned() {
+        return this._normalsAreUnsigned;
+    }
+
     private _scene: Scene;
-    private _resizeObserver: Nullable<Observer<Engine>> = null;
+    private _resizeObserver: Nullable<Observer<AbstractEngine>> = null;
     private _multiRenderTarget: MultiRenderTarget;
-    private _ratio: number;
+    private _textureTypesAndFormats: { [key: number]: { textureType: number; textureFormat: number } };
+    private _ratioOrDimensions: number | { width: number; height: number };
     private _enablePosition: boolean = false;
     private _enableVelocity: boolean = false;
     private _enableReflectivity: boolean = false;
@@ -243,13 +268,17 @@ export class GeometryBufferRenderer {
                 return this._velocityIndex;
             case GeometryBufferRenderer.REFLECTIVITY_TEXTURE_TYPE:
                 return this._reflectivityIndex;
+            case GeometryBufferRenderer.DEPTH_TEXTURE_TYPE:
+                return this._linkedWithPrePass ? this._depthIndex : 0;
+            case GeometryBufferRenderer.NORMAL_TEXTURE_TYPE:
+                return this._linkedWithPrePass ? this._normalIndex : 1;
             default:
                 return -1;
         }
     }
 
     /**
-     * Gets a boolean indicating if objects positions are enabled for the G buffer.
+     * @returns a boolean indicating if objects positions are enabled for the G buffer.
      */
     public get enablePosition(): boolean {
         return this._enablePosition;
@@ -269,7 +298,7 @@ export class GeometryBufferRenderer {
     }
 
     /**
-     * Gets a boolean indicating if objects velocities are enabled for the G buffer.
+     * @returns a boolean indicating if objects velocities are enabled for the G buffer.
      */
     public get enableVelocity(): boolean {
         return this._enableVelocity;
@@ -334,7 +363,17 @@ export class GeometryBufferRenderer {
      * How big is the buffer related to the main canvas.
      */
     public get ratio(): number {
-        return this._ratio;
+        return typeof this._ratioOrDimensions === "object" ? 1 : this._ratioOrDimensions;
+    }
+
+    /** Shader language used by the material */
+    protected _shaderLanguage = ShaderLanguage.GLSL;
+
+    /**
+     * Gets the shader language used in this material.
+     */
+    public get shaderLanguage(): ShaderLanguage {
+        return this._shaderLanguage;
     }
 
     /**
@@ -347,19 +386,44 @@ export class GeometryBufferRenderer {
     /**
      * Creates a new G Buffer for the scene
      * @param scene The scene the buffer belongs to
-     * @param ratio How big is the buffer related to the main canvas (default: 1)
+     * @param ratioOrDimensions How big is the buffer related to the main canvas (default: 1). You can also directly pass a width and height for the generated textures
      * @param depthFormat Format of the depth texture (default: Constants.TEXTUREFORMAT_DEPTH16)
+     * @param textureTypesAndFormats The types and formats of textures to create as render targets. If not provided, all textures will be RGBA and float or half float, depending on the engine capabilities.
      */
-    constructor(scene: Scene, ratio: number = 1, depthFormat = Constants.TEXTUREFORMAT_DEPTH16) {
+    constructor(
+        scene: Scene,
+        ratioOrDimensions: number | { width: number; height: number } = 1,
+        depthFormat = Constants.TEXTUREFORMAT_DEPTH16,
+        textureTypesAndFormats?: { [key: number]: { textureType: number; textureFormat: number } }
+    ) {
         this._scene = scene;
-        this._ratio = ratio;
+        this._ratioOrDimensions = ratioOrDimensions;
         this._useUbo = scene.getEngine().supportsUniformBuffers;
         this._depthFormat = depthFormat;
+        this._textureTypesAndFormats = textureTypesAndFormats || {};
+
+        this._initShaderSourceAsync();
 
         GeometryBufferRenderer._SceneComponentInitialization(this._scene);
 
         // Render target
         this._createRenderTargets();
+    }
+
+    private _shadersLoaded = false;
+
+    private async _initShaderSourceAsync() {
+        const engine = this._scene.getEngine();
+
+        if (engine.isWebGPU && !GeometryBufferRenderer.ForceGLSL) {
+            this._shaderLanguage = ShaderLanguage.WGSL;
+
+            await Promise.all([import("../ShadersWGSL/geometry.vertex"), import("../ShadersWGSL/geometry.fragment")]);
+        } else {
+            await Promise.all([import("../Shaders/geometry.vertex"), import("../Shaders/geometry.fragment")]);
+        }
+
+        this._shadersLoaded = true;
     }
 
     /**
@@ -369,6 +433,10 @@ export class GeometryBufferRenderer {
      * @returns true if ready otherwise false
      */
     public isReady(subMesh: SubMesh, useInstances: boolean): boolean {
+        if (!this._shadersLoaded) {
+            return false;
+        }
+
         const material = <any>subMesh.getMaterial();
 
         if (material && material.disableDepthWrite) {
@@ -379,15 +447,16 @@ export class GeometryBufferRenderer {
         const attribs = [VertexBuffer.PositionKind, VertexBuffer.NormalKind];
         const mesh = subMesh.getMesh();
 
-        // Alpha test
         if (material) {
             let needUv = false;
+            // Alpha test
             if (material.needAlphaTesting() && material.getAlphaTestTexture()) {
                 defines.push("#define ALPHATEST");
                 defines.push(`#define ALPHATEST_UV${material.getAlphaTestTexture().coordinatesIndex + 1}`);
                 needUv = true;
             }
 
+            // Normal map texture
             if (material.bumpTexture && MaterialFlags.BumpTextureEnabled) {
                 defines.push("#define BUMP");
                 defines.push(`#define BUMP_UV${material.bumpTexture.coordinatesIndex + 1}`);
@@ -399,25 +468,27 @@ export class GeometryBufferRenderer {
                 // for PBR materials: cf. https://doc.babylonjs.com/features/featuresDeepDive/materials/using/masterPBR
                 if (material.getClassName() === "PBRMetallicRoughnessMaterial") {
                     // if it is a PBR material in MetallicRoughness Mode:
-                    if (material.metallicRoughnessTexture !== null) {
+                    if (material.metallicRoughnessTexture) {
                         defines.push("#define ORMTEXTURE");
                         defines.push(`#define REFLECTIVITY_UV${material.metallicRoughnessTexture.coordinatesIndex + 1}`);
                         defines.push("#define METALLICWORKFLOW");
                         needUv = true;
                         metallicWorkflow = true;
                     }
-                    if (material.metallic !== null) {
+                    // null or undefined
+                    if (material.metallic != null) {
                         defines.push("#define METALLIC");
                         defines.push("#define METALLICWORKFLOW");
                         metallicWorkflow = true;
                     }
-                    if (material.roughness !== null) {
+                    // null or undefined
+                    if (material.roughness != null) {
                         defines.push("#define ROUGHNESS");
                         defines.push("#define METALLICWORKFLOW");
                         metallicWorkflow = true;
                     }
                     if (metallicWorkflow) {
-                        if (material.baseTexture !== null) {
+                        if (material.baseTexture) {
                             defines.push("#define ALBEDOTEXTURE");
                             defines.push(`#define ALBEDO_UV${material.baseTexture.coordinatesIndex + 1}`);
                             if (material.baseTexture.gammaSpace) {
@@ -425,13 +496,13 @@ export class GeometryBufferRenderer {
                             }
                             needUv = true;
                         }
-                        if (material.baseColor !== null) {
+                        if (material.baseColor) {
                             defines.push("#define ALBEDOCOLOR");
                         }
                     }
                 } else if (material.getClassName() === "PBRSpecularGlossinessMaterial") {
                     // if it is a PBR material in Specular/Glossiness Mode:
-                    if (material.specularGlossinessTexture !== null) {
+                    if (material.specularGlossinessTexture) {
                         defines.push("#define SPECULARGLOSSINESSTEXTURE");
                         defines.push(`#define REFLECTIVITY_UV${material.specularGlossinessTexture.coordinatesIndex + 1}`);
                         needUv = true;
@@ -439,36 +510,39 @@ export class GeometryBufferRenderer {
                             defines.push("#define GAMMAREFLECTIVITYTEXTURE");
                         }
                     } else {
-                        if (material.specularColor !== null) {
+                        if (material.specularColor) {
                             defines.push("#define REFLECTIVITYCOLOR");
                         }
                     }
-                    if (material.glossiness !== null) {
-                        defines.push("#define GLOSSINESSS");
+                    // null or undefined
+                    if (material.glossiness != null) {
+                        defines.push("#define GLOSSINESS");
                     }
                 } else if (material.getClassName() === "PBRMaterial") {
                     // if it is the bigger PBRMaterial
-                    if (material.metallicTexture !== null) {
+                    if (material.metallicTexture) {
                         defines.push("#define ORMTEXTURE");
                         defines.push(`#define REFLECTIVITY_UV${material.metallicTexture.coordinatesIndex + 1}`);
                         defines.push("#define METALLICWORKFLOW");
                         needUv = true;
                         metallicWorkflow = true;
                     }
-                    if (material.metallic !== null) {
+                    // null or undefined
+                    if (material.metallic != null) {
                         defines.push("#define METALLIC");
                         defines.push("#define METALLICWORKFLOW");
                         metallicWorkflow = true;
                     }
 
-                    if (material.roughness !== null) {
+                    // null or undefined
+                    if (material.roughness != null) {
                         defines.push("#define ROUGHNESS");
                         defines.push("#define METALLICWORKFLOW");
                         metallicWorkflow = true;
                     }
 
                     if (metallicWorkflow) {
-                        if (material.albedoTexture !== null) {
+                        if (material.albedoTexture) {
                             defines.push("#define ALBEDOTEXTURE");
                             defines.push(`#define ALBEDO_UV${material.albedoTexture.coordinatesIndex + 1}`);
                             if (material.albedoTexture.gammaSpace) {
@@ -476,28 +550,29 @@ export class GeometryBufferRenderer {
                             }
                             needUv = true;
                         }
-                        if (material.albedoColor !== null) {
+                        if (material.albedoColor) {
                             defines.push("#define ALBEDOCOLOR");
                         }
                     } else {
                         // SpecularGlossiness Model
-                        if (material.reflectivityTexture !== null) {
+                        if (material.reflectivityTexture) {
                             defines.push("#define SPECULARGLOSSINESSTEXTURE");
                             defines.push(`#define REFLECTIVITY_UV${material.reflectivityTexture.coordinatesIndex + 1}`);
                             if (material.reflectivityTexture.gammaSpace) {
                                 defines.push("#define GAMMAREFLECTIVITYTEXTURE");
                             }
                             needUv = true;
-                        } else if (material.reflectivityColor !== null) {
+                        } else if (material.reflectivityColor) {
                             defines.push("#define REFLECTIVITYCOLOR");
                         }
-                        if (material.microSurface !== null) {
-                            defines.push("#define GLOSSINESSS");
+                        // null or undefined
+                        if (material.microSurface != null) {
+                            defines.push("#define GLOSSINESS");
                         }
                     }
                 } else if (material.getClassName() === "StandardMaterial") {
                     // if StandardMaterial:
-                    if (material.specularTexture !== null) {
+                    if (material.specularTexture) {
                         defines.push("#define REFLECTIVITYTEXTURE");
                         defines.push(`#define REFLECTIVITY_UV${material.specularTexture.coordinatesIndex + 1}`);
                         if (material.specularTexture.gammaSpace) {
@@ -505,7 +580,7 @@ export class GeometryBufferRenderer {
                         }
                         needUv = true;
                     }
-                    if (material.specularColor !== null) {
+                    if (material.specularColor) {
                         defines.push("#define REFLECTIVITYCOLOR");
                     }
                 }
@@ -556,8 +631,16 @@ export class GeometryBufferRenderer {
             defines.push("#define REFLECTIVITY_INDEX " + this._reflectivityIndex);
         }
 
+        if (this.generateNormalsInWorldSpace) {
+            defines.push("#define NORMAL_WORLDSPACE");
+        }
+
+        if (this._normalsAreUnsigned) {
+            defines.push("#define ENCODE_NORMAL");
+        }
+
         // Bones
-        if (mesh.useBones && mesh.computeBonesUsingShaders) {
+        if (mesh.useBones && mesh.computeBonesUsingShaders && mesh.skeleton) {
             attribs.push(VertexBuffer.MatricesIndicesKind);
             attribs.push(VertexBuffer.MatricesWeightsKind);
             if (mesh.numBoneInfluencers > 4) {
@@ -565,31 +648,33 @@ export class GeometryBufferRenderer {
                 attribs.push(VertexBuffer.MatricesWeightsExtraKind);
             }
             defines.push("#define NUM_BONE_INFLUENCERS " + mesh.numBoneInfluencers);
-            defines.push("#define BonesPerMesh " + (mesh.skeleton ? mesh.skeleton.bones.length + 1 : 0));
+            defines.push("#define BONETEXTURE " + mesh.skeleton.isUsingTextureForMatrices);
+            defines.push("#define BonesPerMesh " + (mesh.skeleton.bones.length + 1));
         } else {
             defines.push("#define NUM_BONE_INFLUENCERS 0");
+            defines.push("#define BONETEXTURE false");
+            defines.push("#define BonesPerMesh 0");
         }
 
         // Morph targets
         const morphTargetManager = (mesh as Mesh).morphTargetManager;
         let numMorphInfluencers = 0;
         if (morphTargetManager) {
-            if (morphTargetManager.numInfluencers > 0) {
-                numMorphInfluencers = morphTargetManager.numInfluencers;
-
+            numMorphInfluencers = morphTargetManager.numMaxInfluencers || morphTargetManager.numInfluencers;
+            if (numMorphInfluencers > 0) {
                 defines.push("#define MORPHTARGETS");
                 defines.push("#define NUM_MORPH_INFLUENCERS " + numMorphInfluencers);
                 if (morphTargetManager.isUsingTextureForTargets) {
                     defines.push("#define MORPHTARGETS_TEXTURE");
                 }
-                MaterialHelper.PrepareAttributesForMorphTargetsInfluencers(attribs, mesh, numMorphInfluencers);
+                PrepareAttributesForMorphTargetsInfluencers(attribs, mesh, numMorphInfluencers);
             }
         }
 
         // Instances
         if (useInstances) {
             defines.push("#define INSTANCES");
-            MaterialHelper.PushAttributesForInstances(attribs, this._enableVelocity);
+            PushAttributesForInstances(attribs, this._enableVelocity);
             if (subMesh.getRenderingMesh().hasThinInstances) {
                 defines.push("#define THIN_INSTANCES");
             }
@@ -597,9 +682,9 @@ export class GeometryBufferRenderer {
 
         // Setup textures count
         if (this._linkedWithPrePass) {
-            defines.push("#define RENDER_TARGET_COUNT " + this._attachmentsFromPrePass.length);
+            defines.push("#define SCENE_MRT_COUNT " + this._attachmentsFromPrePass.length);
         } else {
-            defines.push("#define RENDER_TARGET_COUNT " + this._multiRenderTarget.textures.length);
+            defines.push("#define SCENE_MRT_COUNT " + this._multiRenderTarget.textures.length);
         }
 
         prepareStringDefinesForClipPlanes(material, this._scene, defines);
@@ -616,13 +701,14 @@ export class GeometryBufferRenderer {
                     {
                         attributes: attribs,
                         uniformsNames: uniforms,
-                        samplers: ["diffuseSampler", "bumpSampler", "reflectivitySampler", "albedoSampler", "morphTargets"],
+                        samplers: ["diffuseSampler", "bumpSampler", "reflectivitySampler", "albedoSampler", "morphTargets", "boneSampler"],
                         defines: join,
                         onCompiled: null,
                         fallbacks: null,
                         onError: null,
                         uniformBuffersNames: ["Scene"],
                         indexParameters: { buffersCount: this._multiRenderTarget.textures.length - 1, maxSimultaneousMorphTargets: numMorphInfluencers },
+                        shaderLanguage: this.shaderLanguage,
                     },
                     engine
                 ),
@@ -667,36 +753,43 @@ export class GeometryBufferRenderer {
         this.getGBuffer().dispose();
     }
 
-    private _assignRenderTargetIndices(): [number, string[]] {
+    private _assignRenderTargetIndices(): [number, string[], Array<{ textureType: number; textureFormat: number } | undefined>] {
         const textureNames: string[] = [];
+        const textureTypesAndFormats: Array<{ textureType: number; textureFormat: number } | undefined> = [];
         let count = 2;
 
         textureNames.push("gBuffer_Depth", "gBuffer_Normal");
+
+        textureTypesAndFormats.push(this._textureTypesAndFormats[GeometryBufferRenderer.DEPTH_TEXTURE_TYPE]);
+        textureTypesAndFormats.push(this._textureTypesAndFormats[GeometryBufferRenderer.NORMAL_TEXTURE_TYPE]);
 
         if (this._enablePosition) {
             this._positionIndex = count;
             count++;
             textureNames.push("gBuffer_Position");
+            textureTypesAndFormats.push(this._textureTypesAndFormats[GeometryBufferRenderer.POSITION_TEXTURE_TYPE]);
         }
 
         if (this._enableVelocity) {
             this._velocityIndex = count;
             count++;
             textureNames.push("gBuffer_Velocity");
+            textureTypesAndFormats.push(this._textureTypesAndFormats[GeometryBufferRenderer.VELOCITY_TEXTURE_TYPE]);
         }
 
         if (this._enableReflectivity) {
             this._reflectivityIndex = count;
             count++;
             textureNames.push("gBuffer_Reflectivity");
+            textureTypesAndFormats.push(this._textureTypesAndFormats[GeometryBufferRenderer.REFLECTIVITY_TEXTURE_TYPE]);
         }
 
-        return [count, textureNames];
+        return [count, textureNames, textureTypesAndFormats];
     }
 
     protected _createRenderTargets(): void {
         const engine = this._scene.getEngine();
-        const [count, textureNames] = this._assignRenderTargetIndices();
+        const [count, textureNames, textureTypesAndFormat] = this._assignRenderTargetIndices();
 
         let type = Constants.TEXTURETYPE_UNSIGNED_BYTE;
         if (engine._caps.textureFloat && engine._caps.textureFloatLinearFiltering) {
@@ -705,12 +798,34 @@ export class GeometryBufferRenderer {
             type = Constants.TEXTURETYPE_HALF_FLOAT;
         }
 
+        const dimensions =
+            (this._ratioOrDimensions as any).width !== undefined
+                ? (this._ratioOrDimensions as { width: number; height: number })
+                : { width: engine.getRenderWidth() * (this._ratioOrDimensions as number), height: engine.getRenderHeight() * (this._ratioOrDimensions as number) };
+
+        const textureTypes: number[] = [];
+        const textureFormats: number[] = [];
+
+        for (const typeAndFormat of textureTypesAndFormat) {
+            if (typeAndFormat) {
+                textureTypes.push(typeAndFormat.textureType);
+                textureFormats.push(typeAndFormat.textureFormat);
+            } else {
+                textureTypes.push(type);
+                textureFormats.push(Constants.TEXTUREFORMAT_RGBA);
+            }
+        }
+
+        this._normalsAreUnsigned =
+            textureTypes[GeometryBufferRenderer.NORMAL_TEXTURE_TYPE] === Constants.TEXTURETYPE_UNSIGNED_INT_2_10_10_10_REV ||
+            textureTypes[GeometryBufferRenderer.NORMAL_TEXTURE_TYPE] === Constants.TEXTURETYPE_UNSIGNED_INT_10F_11F_11F_REV;
+
         this._multiRenderTarget = new MultiRenderTarget(
             "gBuffer",
-            { width: engine.getRenderWidth() * this._ratio, height: engine.getRenderHeight() * this._ratio },
+            dimensions,
             count,
             this._scene,
-            { generateMipMaps: false, generateDepthTexture: true, defaultType: type, depthTextureFormat: this._depthFormat },
+            { generateMipMaps: false, generateDepthTexture: true, types: textureTypes, formats: textureFormats, depthTextureFormat: this._depthFormat },
             textureNames.concat("gBuffer_DepthBuffer")
         );
         if (!this.isSupported) {
@@ -749,7 +864,11 @@ export class GeometryBufferRenderer {
 
         this._resizeObserver = engine.onResizeObservable.add(() => {
             if (this._multiRenderTarget) {
-                this._multiRenderTarget.resize({ width: engine.getRenderWidth() * this._ratio, height: engine.getRenderHeight() * this._ratio });
+                const dimensions =
+                    (this._ratioOrDimensions as any).width !== undefined
+                        ? (this._ratioOrDimensions as { width: number; height: number })
+                        : { width: engine.getRenderWidth() * (this._ratioOrDimensions as number), height: engine.getRenderHeight() * (this._ratioOrDimensions as number) };
+                this._multiRenderTarget.resize(dimensions);
             }
         });
 
@@ -811,19 +930,17 @@ export class GeometryBufferRenderer {
                     effect.setMatrix("viewProjection", scene.getTransformMatrix());
                     effect.setMatrix("view", scene.getViewMatrix());
                 } else {
-                    MaterialHelper.BindSceneUniformBuffer(effect, this._scene.getSceneUniformBuffer());
+                    BindSceneUniformBuffer(effect, this._scene.getSceneUniformBuffer());
                     this._scene.finalizeSceneUbo();
                 }
 
                 let sideOrientation: Nullable<number>;
                 const instanceDataStorage = (renderingMesh as Mesh)._instanceDataStorage;
 
-                if (!instanceDataStorage.isFrozen && (material.backFaceCulling || renderingMesh.overrideMaterialSideOrientation !== null)) {
+                if (!instanceDataStorage.isFrozen && (material.backFaceCulling || material.sideOrientation !== null)) {
                     const mainDeterminant = effectiveMesh._getWorldMatrixDeterminant();
-                    sideOrientation = renderingMesh.overrideMaterialSideOrientation;
-                    if (sideOrientation === null) {
-                        sideOrientation = material.sideOrientation;
-                    }
+                    sideOrientation = material._getEffectiveOrientation(renderingMesh);
+
                     if (mainDeterminant < 0) {
                         sideOrientation = sideOrientation === Material.ClockWiseSideOrientation ? Material.CounterClockWiseSideOrientation : Material.ClockWiseSideOrientation;
                     }
@@ -937,14 +1054,23 @@ export class GeometryBufferRenderer {
 
                 // Bones
                 if (renderingMesh.useBones && renderingMesh.computeBonesUsingShaders && renderingMesh.skeleton) {
-                    effect.setMatrices("mBones", renderingMesh.skeleton.getTransformMatrices(renderingMesh));
+                    const skeleton = renderingMesh.skeleton;
+
+                    if (skeleton.isUsingTextureForMatrices && effect.getUniformIndex("boneTextureWidth") > -1) {
+                        const boneTexture = skeleton.getTransformMatrixTexture(renderingMesh);
+                        effect.setTexture("boneSampler", boneTexture);
+                        effect.setFloat("boneTextureWidth", 4.0 * (skeleton.bones.length + 1));
+                    } else {
+                        effect.setMatrices("mBones", renderingMesh.skeleton.getTransformMatrices(renderingMesh));
+                    }
+
                     if (this._enableVelocity) {
                         effect.setMatrices("mPreviousBones", this._previousBonesTransformationMatrices[renderingMesh.uniqueId]);
                     }
                 }
 
                 // Morph targets
-                MaterialHelper.BindMorphTargetParameters(renderingMesh, effect);
+                BindMorphTargetParameters(renderingMesh, effect);
                 if (renderingMesh.morphTargetManager && renderingMesh.morphTargetManager.isUsingTextureForTargets) {
                     renderingMesh.morphTargetManager._bind(effect);
                 }

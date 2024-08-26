@@ -1,4 +1,4 @@
-import { SerializationHelper } from "../../Misc/decorators";
+import { SerializationHelper } from "../../Misc/decorators.serialization";
 import { _UpdateRGBDAsync as UpdateRGBDAsyncEnvTools } from "../../Misc/environmentTextureTools";
 import type { Nullable } from "../../types";
 import type { Scene } from "../../scene";
@@ -69,7 +69,7 @@ export class RawCubeTexture extends CubeTexture {
      * Clones the raw cube texture.
      * @returns a new cube texture
      */
-    public clone(): CubeTexture {
+    public override clone(): CubeTexture {
         return SerializationHelper.Clone(() => {
             const scene = this.getScene()!;
             const internalTexture = this._texture!;

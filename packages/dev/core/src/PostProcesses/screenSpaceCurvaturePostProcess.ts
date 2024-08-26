@@ -11,10 +11,11 @@ import "../Rendering/geometryBufferRendererSceneComponent";
 import "../Shaders/screenSpaceCurvature.fragment";
 import { EngineStore } from "../Engines/engineStore";
 import { RegisterClass } from "../Misc/typeStore";
-import { serialize, SerializationHelper } from "../Misc/decorators";
+import { serialize } from "../Misc/decorators";
+import { SerializationHelper } from "../Misc/decorators.serialization";
 
-declare type Engine = import("../Engines/engine").Engine;
-declare type Scene = import("../scene").Scene;
+import type { AbstractEngine } from "../Engines/abstractEngine";
+import type { Scene } from "../scene";
 
 /**
  * The Screen Space curvature effect can help highlighting ridge and valley of a model.
@@ -38,7 +39,7 @@ export class ScreenSpaceCurvaturePostProcess extends PostProcess {
      * Gets a string identifying the name of the class
      * @returns "ScreenSpaceCurvaturePostProcess" string
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "ScreenSpaceCurvaturePostProcess";
     }
 
@@ -60,7 +61,7 @@ export class ScreenSpaceCurvaturePostProcess extends PostProcess {
         options: number | PostProcessOptions,
         camera: Nullable<Camera>,
         samplingMode?: number,
-        engine?: Engine,
+        engine?: AbstractEngine,
         reusable?: boolean,
         textureType: number = Constants.TEXTURETYPE_UNSIGNED_INT,
         blockCompilation = false
@@ -88,6 +89,10 @@ export class ScreenSpaceCurvaturePostProcess extends PostProcess {
             // Geometry buffer renderer is not supported. So, work as a passthrough.
             Logger.Error("Multiple Render Target support needed for screen space curvature post process. Please use IsSupported test first.");
         } else {
+            if (this._geometryBufferRenderer.generateNormalsInWorldSpace) {
+                Logger.Error("ScreenSpaceCurvaturePostProcess does not support generateNormalsInWorldSpace=true for the geometry buffer renderer!");
+            }
+
             // Geometry buffer renderer is supported.
             this.onApply = (effect: Effect) => {
                 effect.setFloat("curvature_ridge", 0.5 / Math.max(this.ridge * this.ridge, 1e-4));
@@ -114,7 +119,7 @@ export class ScreenSpaceCurvaturePostProcess extends PostProcess {
     /**
      * @internal
      */
-    public static _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string) {
+    public static override _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string) {
         return SerializationHelper.Parse(
             () => {
                 return new ScreenSpaceCurvaturePostProcess(

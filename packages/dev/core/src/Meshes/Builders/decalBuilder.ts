@@ -6,7 +6,7 @@ import { VertexBuffer } from "../../Buffers/buffer";
 import { VertexData } from "../mesh.vertexData";
 import type { AbstractMesh } from "../abstractMesh";
 import type { Camera } from "../../Cameras/camera";
-import { CompatibilityOptions } from "../../Compat/compatibilityOptions";
+import { useOpenGLOrientationForUV } from "../../Compat/compatibilityOptions";
 
 const xpAxis = new Vector3(1, 0, 0);
 const xnAxis = new Vector3(-1, 0, 0);
@@ -58,13 +58,6 @@ class DecalVertex {
  * @param name defines the name of the mesh
  * @param sourceMesh defines the mesh where the decal must be applied
  * @param options defines the options used to create the mesh
- * @param options.position
- * @param options.normal
- * @param options.size
- * @param options.angle
- * @param options.captureUVS
- * @param options.cullBackFaces
- * @param options.localMode
  * @returns the decal mesh
  * @see https://doc.babylonjs.com/features/featuresDeepDive/mesh/decals
  */
@@ -75,7 +68,6 @@ export function CreateDecal(
 ): Mesh {
     const hasSkeleton = !!sourceMesh.skeleton;
     const useLocalComputation = options.localMode || hasSkeleton;
-    const meshHasOverridenMaterial = (sourceMesh as Mesh).overrideMaterialSideOrientation !== null && (sourceMesh as Mesh).overrideMaterialSideOrientation !== undefined;
 
     const indices = <IndicesArray>sourceMesh.getIndices();
     const positions = hasSkeleton ? sourceMesh.getPositionData(true, true) : sourceMesh.getVerticesData(VertexBuffer.PositionKind);
@@ -139,7 +131,7 @@ export function CreateDecal(
 
         if (options.captureUVS && uvs) {
             const v = uvs[vertexId * 2 + 1];
-            result.uv = new Vector2(uvs[vertexId * 2], CompatibilityOptions.UseOpenGLOrientationForUV ? 1 - v : v);
+            result.uv = new Vector2(uvs[vertexId * 2], useOpenGLOrientationForUV ? 1 - v : v);
         }
 
         return result;
@@ -209,21 +201,21 @@ export function CreateDecal(
                 weights[3] /= sumw;
             }
 
-            const v0LocalPositionX = v0.localPositionOverride ? v0.localPositionOverride[0] : localPositions?.[v0.vertexIdx] ?? 0;
-            const v0LocalPositionY = v0.localPositionOverride ? v0.localPositionOverride[1] : localPositions?.[v0.vertexIdx + 1] ?? 0;
-            const v0LocalPositionZ = v0.localPositionOverride ? v0.localPositionOverride[2] : localPositions?.[v0.vertexIdx + 2] ?? 0;
+            const v0LocalPositionX = v0.localPositionOverride ? v0.localPositionOverride[0] : (localPositions?.[v0.vertexIdx] ?? 0);
+            const v0LocalPositionY = v0.localPositionOverride ? v0.localPositionOverride[1] : (localPositions?.[v0.vertexIdx + 1] ?? 0);
+            const v0LocalPositionZ = v0.localPositionOverride ? v0.localPositionOverride[2] : (localPositions?.[v0.vertexIdx + 2] ?? 0);
 
-            const v1LocalPositionX = v1.localPositionOverride ? v1.localPositionOverride[0] : localPositions?.[v1.vertexIdx] ?? 0;
-            const v1LocalPositionY = v1.localPositionOverride ? v1.localPositionOverride[1] : localPositions?.[v1.vertexIdx + 1] ?? 0;
-            const v1LocalPositionZ = v1.localPositionOverride ? v1.localPositionOverride[2] : localPositions?.[v1.vertexIdx + 2] ?? 0;
+            const v1LocalPositionX = v1.localPositionOverride ? v1.localPositionOverride[0] : (localPositions?.[v1.vertexIdx] ?? 0);
+            const v1LocalPositionY = v1.localPositionOverride ? v1.localPositionOverride[1] : (localPositions?.[v1.vertexIdx + 1] ?? 0);
+            const v1LocalPositionZ = v1.localPositionOverride ? v1.localPositionOverride[2] : (localPositions?.[v1.vertexIdx + 2] ?? 0);
 
-            const v0LocalNormalX = v0.localNormalOverride ? v0.localNormalOverride[0] : localNormals?.[v0.vertexIdx] ?? 0;
-            const v0LocalNormalY = v0.localNormalOverride ? v0.localNormalOverride[1] : localNormals?.[v0.vertexIdx + 1] ?? 0;
-            const v0LocalNormalZ = v0.localNormalOverride ? v0.localNormalOverride[2] : localNormals?.[v0.vertexIdx + 2] ?? 0;
+            const v0LocalNormalX = v0.localNormalOverride ? v0.localNormalOverride[0] : (localNormals?.[v0.vertexIdx] ?? 0);
+            const v0LocalNormalY = v0.localNormalOverride ? v0.localNormalOverride[1] : (localNormals?.[v0.vertexIdx + 1] ?? 0);
+            const v0LocalNormalZ = v0.localNormalOverride ? v0.localNormalOverride[2] : (localNormals?.[v0.vertexIdx + 2] ?? 0);
 
-            const v1LocalNormalX = v1.localNormalOverride ? v1.localNormalOverride[0] : localNormals?.[v1.vertexIdx] ?? 0;
-            const v1LocalNormalY = v1.localNormalOverride ? v1.localNormalOverride[1] : localNormals?.[v1.vertexIdx + 1] ?? 0;
-            const v1LocalNormalZ = v1.localNormalOverride ? v1.localNormalOverride[2] : localNormals?.[v1.vertexIdx + 2] ?? 0;
+            const v1LocalNormalX = v1.localNormalOverride ? v1.localNormalOverride[0] : (localNormals?.[v1.vertexIdx] ?? 0);
+            const v1LocalNormalY = v1.localNormalOverride ? v1.localNormalOverride[1] : (localNormals?.[v1.vertexIdx + 1] ?? 0);
+            const v1LocalNormalZ = v1.localNormalOverride ? v1.localNormalOverride[2] : (localNormals?.[v1.vertexIdx + 2] ?? 0);
 
             const interpNormalX = v0LocalNormalX + (v1LocalNormalX - v0LocalNormalX) * clipFactor;
             const interpNormalY = v0LocalNormalY + (v1LocalNormalY - v0LocalNormalY) * clipFactor;
@@ -253,7 +245,7 @@ export function CreateDecal(
         let clipResult: Nullable<DecalVertex[]> = null;
 
         if (vertices.length > 3) {
-            clipResult = new Array<DecalVertex>();
+            clipResult = [] as DecalVertex[];
         }
 
         for (let index = 0; index < vertices.length; index += 3) {
@@ -359,16 +351,16 @@ export function CreateDecal(
         return clipResult;
     };
 
-    const sourceMeshAsMesh = sourceMesh as Mesh;
-    const matrixData = sourceMeshAsMesh._thinInstanceDataStorage.matrixData;
+    const sourceMeshAsMesh = sourceMesh instanceof Mesh ? sourceMesh : null;
+    const matrixData = sourceMeshAsMesh?._thinInstanceDataStorage.matrixData;
 
-    const numMatrices = sourceMeshAsMesh.thinInstanceCount || 1;
+    const numMatrices = sourceMeshAsMesh?.thinInstanceCount || 1;
     const thinInstanceMatrix = TmpVectors.Matrix[0];
 
     thinInstanceMatrix.copyFrom(Matrix.IdentityReadOnly);
 
     for (let m = 0; m < numMatrices; ++m) {
-        if (sourceMeshAsMesh.hasThinInstances && matrixData) {
+        if (sourceMeshAsMesh?.hasThinInstances && matrixData) {
             const ofst = m * 16;
 
             thinInstanceMatrix.setRowFromFloats(0, matrixData[ofst + 0], matrixData[ofst + 1], matrixData[ofst + 2], matrixData[ofst + 3]);
@@ -389,13 +381,8 @@ export function CreateDecal(
             let faceVertices: Nullable<DecalVertex[]> = oneFaceVertices;
 
             faceVertices[0] = extractDecalVector3(index, transformMatrix);
-            if (meshHasOverridenMaterial && useLocalComputation) {
-                faceVertices[1] = extractDecalVector3(index + 2, transformMatrix);
-                faceVertices[2] = extractDecalVector3(index + 1, transformMatrix);
-            } else {
-                faceVertices[1] = extractDecalVector3(index + 1, transformMatrix);
-                faceVertices[2] = extractDecalVector3(index + 2, transformMatrix);
-            }
+            faceVertices[1] = extractDecalVector3(index + 1, transformMatrix);
+            faceVertices[2] = extractDecalVector3(index + 2, transformMatrix);
 
             if (options.cullBackFaces) {
                 // If all the normals of the vertices of the face are pointing away from the view direction we discard the face.
@@ -492,7 +479,7 @@ export function CreateDecal(
                 if (!options.captureUVS) {
                     (<number[]>vertexData.uvs).push(0.5 + vertex.position.x / size.x);
                     const v = 0.5 + vertex.position.y / size.y;
-                    (<number[]>vertexData.uvs).push(CompatibilityOptions.UseOpenGLOrientationForUV ? 1 - v : v);
+                    (<number[]>vertexData.uvs).push(useOpenGLOrientationForUV ? 1 - v : v);
                 } else {
                     vertex.uv.toArray(vertexData.uvs, currentVertexDataIndex * 2);
                 }
@@ -538,7 +525,7 @@ export const DecalBuilder = {
     CreateDecal,
 };
 
-(Mesh as any).CreateDecal = (name: string, sourceMesh: AbstractMesh, position: Vector3, normal: Vector3, size: Vector3, angle: number): Mesh => {
+Mesh.CreateDecal = (name: string, sourceMesh: AbstractMesh, position: Vector3, normal: Vector3, size: Vector3, angle: number): Mesh => {
     const options = {
         position,
         normal,

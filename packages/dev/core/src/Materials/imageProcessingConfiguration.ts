@@ -1,65 +1,17 @@
 /* eslint-disable @typescript-eslint/naming-convention */
-import { serialize, SerializationHelper, serializeAsTexture, serializeAsColorCurves, serializeAsColor4 } from "../Misc/decorators";
+import { serialize, serializeAsTexture, serializeAsColorCurves, serializeAsColor4 } from "../Misc/decorators";
 import { Observable } from "../Misc/observable";
-import { Tools } from "../Misc/tools";
 import type { Nullable } from "../types";
 import { Color4 } from "../Maths/math.color";
-import { MaterialDefines } from "../Materials/materialDefines";
 import { ColorCurves } from "../Materials/colorCurves";
 
-declare type BaseTexture = import("../Materials/Textures/baseTexture").BaseTexture;
-declare type Effect = import("../Materials/effect").Effect;
-
-/**
- * Interface to follow in your material defines to integrate easily the
- * Image processing functions.
- * @internal
- */
-export interface IImageProcessingConfigurationDefines {
-    IMAGEPROCESSING: boolean;
-    VIGNETTE: boolean;
-    VIGNETTEBLENDMODEMULTIPLY: boolean;
-    VIGNETTEBLENDMODEOPAQUE: boolean;
-    TONEMAPPING: boolean;
-    TONEMAPPING_ACES: boolean;
-    CONTRAST: boolean;
-    EXPOSURE: boolean;
-    COLORCURVES: boolean;
-    COLORGRADING: boolean;
-    COLORGRADING3D: boolean;
-    SAMPLER3DGREENDEPTH: boolean;
-    SAMPLER3DBGRMAP: boolean;
-    DITHER: boolean;
-    IMAGEPROCESSINGPOSTPROCESS: boolean;
-    SKIPFINALCOLORCLAMP: boolean;
-}
-
-/**
- * @internal
- */
-export class ImageProcessingConfigurationDefines extends MaterialDefines implements IImageProcessingConfigurationDefines {
-    public IMAGEPROCESSING = false;
-    public VIGNETTE = false;
-    public VIGNETTEBLENDMODEMULTIPLY = false;
-    public VIGNETTEBLENDMODEOPAQUE = false;
-    public TONEMAPPING = false;
-    public TONEMAPPING_ACES = false;
-    public CONTRAST = false;
-    public COLORCURVES = false;
-    public COLORGRADING = false;
-    public COLORGRADING3D = false;
-    public SAMPLER3DGREENDEPTH = false;
-    public SAMPLER3DBGRMAP = false;
-    public DITHER = false;
-    public IMAGEPROCESSINGPOSTPROCESS = false;
-    public EXPOSURE = false;
-    public SKIPFINALCOLORCLAMP = false;
-
-    constructor() {
-        super();
-        this.rebuild();
-    }
-}
+import type { BaseTexture } from "../Materials/Textures/baseTexture";
+import type { Effect } from "../Materials/effect";
+import { Mix } from "../Misc/tools.functions";
+import { SerializationHelper } from "../Misc/decorators.serialization";
+import type { IImageProcessingConfigurationDefines } from "./imageProcessingConfiguration.defines";
+import { PrepareSamplersForImageProcessing, PrepareUniformsForImageProcessing } from "./imageProcessingConfiguration.functions";
+import { RegisterClass } from "../Misc/typeStore";
 
 /**
  * This groups together the common properties used for image processing either in direct forward pass
@@ -77,6 +29,12 @@ export class ImageProcessingConfiguration {
      * to other engines rendering to increase portability.
      */
     public static readonly TONEMAPPING_ACES = 1;
+
+    /**
+     * Neutral Tone mapping developped by the Khronos group in order to constrain
+     * values between 0 and 1 without shifting Hue.
+     */
+    public static readonly TONEMAPPING_KHR_PBR_NEUTRAL = 2;
 
     /**
      * Color curves setup used in the effect if colorCurvesEnabled is set to true
@@ -410,14 +368,14 @@ export class ImageProcessingConfiguration {
     @serialize()
     public _skipFinalColorClamp = false;
     /**
-     * If apply by post process is set to true, setting this to true will skip the the final color clamp step in the fragment shader
+     * If apply by post process is set to true, setting this to true will skip the final color clamp step in the fragment shader
      * Applies to PBR materials.
      */
     public get skipFinalColorClamp(): boolean {
         return this._skipFinalColorClamp;
     }
     /**
-     * If apply by post process is set to true, setting this to true will skip the the final color clamp step in the fragment shader
+     * If apply by post process is set to true, setting this to true will skip the final color clamp step in the fragment shader
      * Applies to PBR materials.
      */
     public set skipFinalColorClamp(value: boolean) {
@@ -495,41 +453,14 @@ export class ImageProcessingConfiguration {
      * @param uniforms The list of uniforms used in the effect
      * @param defines the list of defines currently in use
      */
-    public static PrepareUniforms(uniforms: string[], defines: IImageProcessingConfigurationDefines): void {
-        if (defines.EXPOSURE) {
-            uniforms.push("exposureLinear");
-        }
-        if (defines.CONTRAST) {
-            uniforms.push("contrast");
-        }
-        if (defines.COLORGRADING) {
-            uniforms.push("colorTransformSettings");
-        }
-        if (defines.VIGNETTE || defines.DITHER) {
-            uniforms.push("vInverseScreenSize");
-        }
-        if (defines.VIGNETTE) {
-            uniforms.push("vignetteSettings1");
-            uniforms.push("vignetteSettings2");
-        }
-        if (defines.COLORCURVES) {
-            ColorCurves.PrepareUniforms(uniforms);
-        }
-        if (defines.DITHER) {
-            uniforms.push("ditherIntensity");
-        }
-    }
+    public static PrepareUniforms: (uniforms: string[], defines: IImageProcessingConfigurationDefines) => void = PrepareUniformsForImageProcessing;
 
     /**
      * Prepare the list of samplers associated with the Image Processing effects.
      * @param samplersList The list of uniforms used in the effect
      * @param defines the list of defines currently in use
      */
-    public static PrepareSamplers(samplersList: string[], defines: IImageProcessingConfigurationDefines): void {
-        if (defines.COLORGRADING) {
-            samplersList.push("txColorTransform");
-        }
-    }
+    public static PrepareSamplers: (samplersList: string[], defines: IImageProcessingConfigurationDefines) => void = PrepareSamplersForImageProcessing;
 
     /**
      * Prepare the list of defines associated to the shader.
@@ -539,8 +470,7 @@ export class ImageProcessingConfiguration {
     public prepareDefines(defines: IImageProcessingConfigurationDefines, forPostProcess = false): void {
         if (forPostProcess !== this.applyByPostProcess || !this._isEnabled) {
             defines.VIGNETTE = false;
-            defines.TONEMAPPING = false;
-            defines.TONEMAPPING_ACES = false;
+            defines.TONEMAPPING = 0;
             defines.CONTRAST = false;
             defines.EXPOSURE = false;
             defines.COLORCURVES = false;
@@ -557,14 +487,20 @@ export class ImageProcessingConfiguration {
         defines.VIGNETTEBLENDMODEMULTIPLY = this.vignetteBlendMode === ImageProcessingConfiguration._VIGNETTEMODE_MULTIPLY;
         defines.VIGNETTEBLENDMODEOPAQUE = !defines.VIGNETTEBLENDMODEMULTIPLY;
 
-        defines.TONEMAPPING = this.toneMappingEnabled;
-        switch (this._toneMappingType) {
-            case ImageProcessingConfiguration.TONEMAPPING_ACES:
-                defines.TONEMAPPING_ACES = true;
-                break;
-            default:
-                defines.TONEMAPPING_ACES = false;
-                break;
+        if (!this._toneMappingEnabled) {
+            defines.TONEMAPPING = 0;
+        } else {
+            switch (this._toneMappingType) {
+                case ImageProcessingConfiguration.TONEMAPPING_KHR_PBR_NEUTRAL:
+                    defines.TONEMAPPING = 3;
+                    break;
+                case ImageProcessingConfiguration.TONEMAPPING_ACES:
+                    defines.TONEMAPPING = 2;
+                    break;
+                default:
+                    defines.TONEMAPPING = 1;
+                    break;
+            }
         }
 
         defines.CONTRAST = this.contrast !== 1.0;
@@ -581,7 +517,8 @@ export class ImageProcessingConfiguration {
         defines.DITHER = this._ditheringEnabled;
         defines.IMAGEPROCESSINGPOSTPROCESS = this.applyByPostProcess;
         defines.SKIPFINALCOLORCLAMP = this.skipFinalColorClamp;
-        defines.IMAGEPROCESSING = defines.VIGNETTE || defines.TONEMAPPING || defines.CONTRAST || defines.EXPOSURE || defines.COLORCURVES || defines.COLORGRADING || defines.DITHER;
+        defines.IMAGEPROCESSING =
+            defines.VIGNETTE || !!defines.TONEMAPPING || defines.CONTRAST || defines.EXPOSURE || defines.COLORCURVES || defines.COLORGRADING || defines.DITHER;
     }
 
     /**
@@ -621,8 +558,8 @@ export class ImageProcessingConfiguration {
                 let vignetteScaleX = vignetteScaleY * aspectRatio;
 
                 const vignetteScaleGeometricMean = Math.sqrt(vignetteScaleX * vignetteScaleY);
-                vignetteScaleX = Tools.Mix(vignetteScaleX, vignetteScaleGeometricMean, this.vignetteStretch);
-                vignetteScaleY = Tools.Mix(vignetteScaleY, vignetteScaleGeometricMean, this.vignetteStretch);
+                vignetteScaleX = Mix(vignetteScaleX, vignetteScaleGeometricMean, this.vignetteStretch);
+                vignetteScaleY = Mix(vignetteScaleY, vignetteScaleGeometricMean, this.vignetteStretch);
 
                 effect.setFloat4("vignetteSettings1", vignetteScaleX, vignetteScaleY, -vignetteScaleX * this.vignetteCenterX, -vignetteScaleY * this.vignetteCenterY);
 
@@ -707,3 +644,6 @@ export class ImageProcessingConfiguration {
 
 // References the dependencies.
 SerializationHelper._ImageProcessingConfigurationParser = ImageProcessingConfiguration.Parse;
+
+// Register Class Name
+RegisterClass("BABYLON.ImageProcessingConfiguration", ImageProcessingConfiguration);

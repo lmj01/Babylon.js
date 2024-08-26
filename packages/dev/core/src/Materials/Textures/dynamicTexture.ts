@@ -4,8 +4,9 @@ import type { Scene } from "../../scene";
 import type { ISize } from "../../Maths/math.size";
 import { Texture } from "../../Materials/Textures/texture";
 import { Constants } from "../../Engines/constants";
-import "../../Engines/Extensions/engine.dynamicTexture";
 import type { ICanvas, ICanvasRenderingContext } from "../../Engines/ICanvas";
+
+import "../../Engines/Extensions/engine.dynamicTexture";
 
 /**
  * A class extending Texture allowing drawing on a texture
@@ -14,6 +15,7 @@ import type { ICanvas, ICanvasRenderingContext } from "../../Engines/ICanvas";
 export class DynamicTexture extends Texture {
     private _generateMipMaps: boolean;
     private _canvas: ICanvas;
+    private _ownCanvas: boolean;
     private _context: ICanvasRenderingContext;
 
     /**
@@ -51,9 +53,11 @@ export class DynamicTexture extends Texture {
 
         if (options.getContext) {
             this._canvas = options;
+            this._ownCanvas = false;
             this._texture = engine.createDynamicTexture(options.width, options.height, generateMipMaps, samplingMode);
         } else {
             this._canvas = engine.createCanvas(1, 1);
+            this._ownCanvas = true;
 
             if (options.width || options.width === 0) {
                 this._texture = engine.createDynamicTexture(options.width, options.height, generateMipMaps, samplingMode);
@@ -77,14 +81,14 @@ export class DynamicTexture extends Texture {
      * Get the current class name of the texture useful for serialization or dynamic coding.
      * @returns "DynamicTexture"
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "DynamicTexture";
     }
 
     /**
      * Gets the current state of canRescale
      */
-    public get canRescale(): boolean {
+    public override get canRescale(): boolean {
         return true;
     }
 
@@ -101,7 +105,7 @@ export class DynamicTexture extends Texture {
      * Scales the texture
      * @param ratio the scale factor to apply to both width and height
      */
-    public scale(ratio: number): void {
+    public override scale(ratio: number): void {
         const textureSize = this.getSize();
 
         textureSize.width *= ratio;
@@ -134,10 +138,14 @@ export class DynamicTexture extends Texture {
 
     /**
      * Clears the texture
+     * @param clearColor Defines the clear color to use
      */
-    public clear(): void {
+    public clear(clearColor?: string): void {
         const size = this.getSize();
-        this._context.fillRect(0, 0, size.width, size.height);
+        if (clearColor) {
+            this._context.fillStyle = clearColor;
+        }
+        this._context.clearRect(0, 0, size.width, size.height);
     }
 
     /**
@@ -165,7 +173,7 @@ export class DynamicTexture extends Texture {
      * @param y defines the placement of the text from the top when invertY is true and from the bottom when false
      * @param font defines the font to be used with font-style, font-size, font-name
      * @param color defines the color used for the text
-     * @param clearColor defines the color for the canvas, use null to not overwrite canvas
+     * @param fillColor defines the color for the canvas, use null to not overwrite canvas (this bleands with the background to replace, use the clear function)
      * @param invertY defines the direction for the Y axis (default is true - y increases downwards)
      * @param update defines whether texture is immediately update (default is true)
      */
@@ -175,13 +183,13 @@ export class DynamicTexture extends Texture {
         y: number | null | undefined,
         font: string,
         color: string | null,
-        clearColor: string | null,
+        fillColor: string | null,
         invertY?: boolean,
         update = true
     ) {
         const size = this.getSize();
-        if (clearColor) {
-            this._context.fillStyle = clearColor;
+        if (fillColor) {
+            this._context.fillStyle = fillColor;
             this._context.fillRect(0, 0, size.width, size.height);
         }
 
@@ -204,10 +212,23 @@ export class DynamicTexture extends Texture {
     }
 
     /**
+     * Disposes the dynamic texture.
+     */
+    public override dispose(): void {
+        super.dispose();
+
+        if (this._ownCanvas) {
+            this._canvas?.remove?.();
+        }
+        (this._canvas as any) = null;
+        (this._context as any) = null;
+    }
+
+    /**
      * Clones the texture
      * @returns the clone of the texture.
      */
-    public clone(): DynamicTexture {
+    public override clone(): DynamicTexture {
         const scene = this.getScene();
 
         if (!scene) {
@@ -232,7 +253,7 @@ export class DynamicTexture extends Texture {
      * Serializes the dynamic texture.  The scene should be ready before the dynamic texture is serialized
      * @returns a serialized dynamic texture object
      */
-    public serialize(): any {
+    public override serialize(): any {
         const scene = this.getScene();
         if (scene && !scene.isReady()) {
             Logger.Warn("The scene must be ready before serializing the dynamic texture");
@@ -254,7 +275,7 @@ export class DynamicTexture extends Texture {
     }
 
     /** @internal */
-    public _rebuild(): void {
+    public override _rebuild(): void {
         this.update();
     }
 }

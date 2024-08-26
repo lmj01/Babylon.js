@@ -4,10 +4,10 @@ import type { IMatrixLike, IVector3Like, IVector4Like, IColor3Like, IColor4Like 
 import type { Effect } from "./effect";
 import type { ThinTexture } from "../Materials/Textures/thinTexture";
 import type { DataBuffer } from "../Buffers/dataBuffer";
-import type { ThinEngine } from "../Engines/thinEngine";
+import type { InternalTexture } from "./Textures/internalTexture";
 import { Tools } from "../Misc/tools";
-
 import "../Engines/Extensions/engine.uniformBuffer";
+import type { AbstractEngine } from "core/Engines/abstractEngine";
 
 /**
  * Uniform buffer objects.
@@ -23,7 +23,7 @@ export class UniformBuffer {
     /** @internal */
     public static _UpdatedUbosInFrame: { [name: string]: number } = {};
 
-    private _engine: ThinEngine;
+    private _engine: AbstractEngine;
     private _buffer: Nullable<DataBuffer>;
     private _buffers: Array<[DataBuffer, Float32Array | undefined]>;
     private _bufferIndex: number;
@@ -238,7 +238,7 @@ export class UniformBuffer {
      * @param name to assign to the buffer (debugging purpose)
      * @param forceNoUniformBuffer define that this object must not rely on UBO objects
      */
-    constructor(engine: ThinEngine, data?: number[], dynamic?: boolean, name?: string, forceNoUniformBuffer = false) {
+    constructor(engine: AbstractEngine, data?: number[], dynamic?: boolean, name?: string, forceNoUniformBuffer = false) {
         this._engine = engine;
         this._noUBO = !engine.supportsUniformBuffers || forceNoUniformBuffer;
         this._dynamic = dynamic;
@@ -412,6 +412,7 @@ export class UniformBuffer {
         // std140 FTW...
         if (arraySize > 0) {
             if (size instanceof Array) {
+                // eslint-disable-next-line no-throw-literal
                 throw "addUniform should not be use with Array in UBO: " + name;
             }
 
@@ -464,7 +465,7 @@ export class UniformBuffer {
      * @param mat A 4x4 matrix.
      */
     public addMatrix(name: string, mat: IMatrixLike) {
-        this.addUniform(name, Array.prototype.slice.call(mat.toArray()));
+        this.addUniform(name, Array.prototype.slice.call(mat.asArray()));
     }
 
     /**
@@ -557,6 +558,22 @@ export class UniformBuffer {
         this._needSync = true;
     }
 
+    // The result of this method is used for debugging purpose, as part of the buffer name
+    // It is meant to more easily know what this buffer is about when debugging
+    // Some buffers can have a lot of uniforms (several dozens), so the method only returns the first 10 of them
+    // (should be enough to understand what the buffer is for)
+    private _getNames() {
+        const names = [];
+        let i = 0;
+        for (const name in this._uniformLocations) {
+            names.push(name);
+            if (++i === 10) {
+                break;
+            }
+        }
+        return names.join(",");
+    }
+
     /** @internal */
     public _rebuild(): void {
         if (this._noUBO || !this._bufferData) {
@@ -564,9 +581,9 @@ export class UniformBuffer {
         }
 
         if (this._dynamic) {
-            this._buffer = this._engine.createDynamicUniformBuffer(this._bufferData);
+            this._buffer = this._engine.createDynamicUniformBuffer(this._bufferData, this._name + "_UniformList:" + this._getNames());
         } else {
-            this._buffer = this._engine.createUniformBuffer(this._bufferData);
+            this._buffer = this._engine.createUniformBuffer(this._bufferData, this._name + "_UniformList:" + this._getNames());
         }
 
         if (this._engine._features.trackUbosInFrame) {
@@ -574,6 +591,15 @@ export class UniformBuffer {
             this._bufferIndex = this._buffers.length - 1;
             this._createBufferOnWrite = false;
         }
+    }
+
+    /** @internal */
+    public _rebuildAfterContextLost(): void {
+        if (this._engine._features.trackUbosInFrame) {
+            this._buffers = [];
+            this._currentFrameId = 0;
+        }
+        this._rebuild();
     }
 
     /** @internal */
@@ -694,7 +720,7 @@ export class UniformBuffer {
         if (location === undefined) {
             if (this._buffer) {
                 // Cannot add an uniform if the buffer is already created
-                Logger.Error("Cannot add an uniform after UBO has been created.");
+                Logger.Error("Cannot add an uniform after UBO has been created. uniformName=" + uniformName);
                 return;
             }
             this.addUniform(uniformName, size);
@@ -712,7 +738,7 @@ export class UniformBuffer {
             for (let i = 0; i < size; i++) {
                 // We are checking the matrix cache before calling updateUniform so we do not need to check it here
                 // Hence the test for size === 16 to simply commit the matrix values
-                if ((size === 16 && !this._engine._features.uniformBufferHardCheckMatrix) || this._bufferData[location + i] !== Tools.FloatRound(data[i])) {
+                if ((size === 16 && !this._engine._features.uniformBufferHardCheckMatrix) || this._bufferData[location + i] !== Math.fround(data[i])) {
                     changed = true;
                     if (this._createBufferOnWrite) {
                         this._createNewBuffer();
@@ -914,7 +940,7 @@ export class UniformBuffer {
 
     private _updateMatrixForUniform(name: string, mat: IMatrixLike) {
         if (this._cacheMatrix(name, mat)) {
-            this.updateUniform(name, <any>mat.toArray(), 16);
+            this.updateUniform(name, <any>mat.asArray(), 16);
         }
     }
 
@@ -1075,6 +1101,15 @@ export class UniformBuffer {
      */
     public setTexture(name: string, texture: Nullable<ThinTexture>) {
         this._currentEffect.setTexture(name, texture);
+    }
+
+    /**
+     * Sets a sampler uniform on the effect.
+     * @param name Define the name of the sampler.
+     * @param texture Define the (internal) texture to set in the sampler
+     */
+    public bindTexture(name: string, texture: Nullable<InternalTexture>) {
+        this._currentEffect._bindTexture(name, texture);
     }
 
     /**

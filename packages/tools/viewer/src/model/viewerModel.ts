@@ -1,7 +1,7 @@
 /* eslint-disable import/no-internal-modules */
 import type { IDisposable } from "core/scene";
 import type { ISceneLoaderPlugin, ISceneLoaderPluginAsync, ISceneLoaderProgressEvent } from "core/Loading/sceneLoader";
-import { AbstractMesh } from "core/Meshes/abstractMesh";
+import type { AbstractMesh } from "core/Meshes/abstractMesh";
 import type { IParticleSystem } from "core/Particles/IParticleSystem";
 import type { Skeleton } from "core/Bones/skeleton";
 import { Observable } from "core/Misc/observable";
@@ -38,6 +38,8 @@ import { GroupModelAnimation, AnimationPlayMode, EasingFunction, AnimationState 
 import { deepmerge, extendClassWithConfig } from "../helper/index";
 import type { ObservablesManager } from "../managers/observablesManager";
 import type { ConfigurationContainer } from "../configuration/configurationContainer";
+import { TransformNode } from "core/Meshes/transformNode";
+import { Mesh } from "core/Meshes/mesh";
 
 /**
  * The current state of the model
@@ -74,7 +76,7 @@ export class ViewerModel implements IDisposable {
      */
     public rootMesh: AbstractMesh;
 
-    private _pivotMesh: AbstractMesh;
+    private _pivotMesh: TransformNode;
     /**
      * ParticleSystems connected to this model
      */
@@ -133,7 +135,11 @@ export class ViewerModel implements IDisposable {
 
     private _shadowsRenderedAfterLoad: boolean = false;
 
-    constructor(private _observablesManager: ObservablesManager, modelConfiguration: IModelConfiguration, private _configurationContainer?: ConfigurationContainer) {
+    constructor(
+        private _observablesManager: ObservablesManager,
+        modelConfiguration: IModelConfiguration,
+        private _configurationContainer?: ConfigurationContainer
+    ) {
         this.onLoadedObservable = new Observable();
         this.onLoadErrorObservable = new Observable();
         this.onLoadProgressObservable = new Observable();
@@ -144,8 +150,8 @@ export class ViewerModel implements IDisposable {
 
         const scene = this._configurationContainer && this._configurationContainer.scene;
 
-        this.rootMesh = new AbstractMesh("modelRootMesh", scene);
-        this._pivotMesh = new AbstractMesh("pivotMesh", scene);
+        this.rootMesh = new Mesh("modelRootMesh", scene);
+        this._pivotMesh = new TransformNode("pivotMesh", scene);
         this._pivotMesh.parent = this.rootMesh;
         // rotate 180, gltf fun
         this._pivotMesh.rotation.y += Math.PI;
@@ -224,6 +230,7 @@ export class ViewerModel implements IDisposable {
      *
      * @param mesh the new mesh to add
      * @param triggerLoaded should this mesh trigger the onLoaded observable. Used when adding meshes manually.
+     * @returns a promise that will resolve when the model is done loading
      */
     public addMesh(mesh: AbstractMesh, triggerLoaded?: boolean) {
         if (!mesh.parent) {
@@ -373,6 +380,7 @@ export class ViewerModel implements IDisposable {
 
     /**
      * Get the ModelAnimation array
+     * @returns the array of ModelAnimations
      */
     public getAnimations(): Array<IModelAnimation> {
         return this._animations;
@@ -380,6 +388,7 @@ export class ViewerModel implements IDisposable {
 
     /**
      * Get the animations' names. Using the names you can play a specific animation.
+     * @returns the array of ModelAnimations
      */
     public getAnimationNames(): Array<string> {
         return this._animations.map((a) => a.name);
@@ -388,12 +397,12 @@ export class ViewerModel implements IDisposable {
     /**
      * Get an animation by the provided name. Used mainly when playing n animation.
      * @param name the name of the animation to find
+     * @returns the ModelAnimation object
      */
     protected _getAnimationByName(name: string): Nullable<IModelAnimation> {
         // can't use .find, noe available on IE
         const filtered = this._animations.filter((a) => a.name === name.trim());
-        // what the next line means - if two animations have the same name, they will not be returned!
-        if (filtered.length === 1) {
+        if (filtered.length >= 1) {
             return filtered[0];
         } else {
             return null;
@@ -428,11 +437,11 @@ export class ViewerModel implements IDisposable {
 
     private _configureModel() {
         // this can be changed to the meshes that have rootMesh a parent without breaking anything.
-        const meshesWithNoParent: Array<AbstractMesh> = [this.rootMesh]; //this._meshes.filter(m => m.parent === this.rootMesh);
+        const meshesWithNoParent: Array<TransformNode> = [this.rootMesh]; //this._meshes.filter(m => m.parent === this.rootMesh);
         const updateMeshesWithNoParent = (variable: string, value: any, param?: string) => {
             meshesWithNoParent.forEach((mesh) => {
                 if (param) {
-                    mesh[variable as keyof AbstractMesh][param] = value;
+                    mesh[variable as keyof TransformNode][param] = value;
                 } else {
                     (mesh as any)[variable] = value;
                 }
@@ -466,7 +475,7 @@ export class ViewerModel implements IDisposable {
                 parentIndex = this._modelConfiguration.normalize.parentIndex;
             }
 
-            let meshesToNormalize: Array<AbstractMesh> = [];
+            let meshesToNormalize: Array<TransformNode> = [];
             if (parentIndex !== undefined) {
                 meshesToNormalize.push(this._meshes[parentIndex]);
             } else {
@@ -774,8 +783,6 @@ export class ViewerModel implements IDisposable {
     public remove() {
         this.stopAllAnimations();
 
-        // hide it
-        this.rootMesh.isVisible = false;
         if (this._observablesManager) {
             this._observablesManager.onModelRemovedObservable.notifyObservers(this);
         }

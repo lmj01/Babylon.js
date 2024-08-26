@@ -1,4 +1,4 @@
-import type { Engine } from "../Engines/engine";
+import type { AbstractEngine } from "../Engines/abstractEngine";
 import type { Scene } from "../scene";
 import type { ISceneLoaderProgressEvent } from "../Loading/sceneLoader";
 import { SceneLoader } from "../Loading/sceneLoader";
@@ -19,22 +19,27 @@ export class FilesInput {
 
     /**
      * Callback called when a file is processed
+     * @returns false to abort the process
      */
     public onProcessFileCallback: (file: File, name: string, extension: string, setSceneFileToLoad: (sceneFile: File) => void) => boolean = () => {
         return true;
     };
 
+    /**
+     * If a loading UI should be displayed while loading a file
+     */
     public displayLoadingUI: boolean = true;
 
     /**
      * Function used when loading the scene file
-     * @param sceneFile
-     * @param onProgress
+     * @param sceneFile defines the file to load
+     * @param onProgress onProgress callback called while loading the file
+     * @returns a promise completing when the load is complete
      */
     public loadAsync: (sceneFile: File, onProgress: Nullable<(event: ISceneLoaderProgressEvent) => void>) => Promise<Scene> = (sceneFile, onProgress) =>
         this.useAppend ? SceneLoader.AppendAsync("file:", sceneFile, this._currentScene, onProgress) : SceneLoader.LoadAsync("file:", sceneFile, this._engine, onProgress);
 
-    private _engine: Engine;
+    private _engine: AbstractEngine;
     private _currentScene: Nullable<Scene>;
     private _sceneLoadedCallback: Nullable<(sceneFile: File, scene: Scene) => void>;
     private _progressCallback: Nullable<(progress: ISceneLoaderProgressEvent) => void>;
@@ -62,7 +67,7 @@ export class FilesInput {
      * @param useAppend defines if the file loaded must be appended (true) or have the scene replaced (false, default behavior)
      */
     constructor(
-        engine: Engine,
+        engine: AbstractEngine,
         scene: Nullable<Scene>,
         sceneLoadedCallback: Nullable<(sceneFile: File, scene: Scene) => void>,
         progressCallback: Nullable<(progress: ISceneLoaderProgressEvent) => void>,
@@ -227,7 +232,7 @@ export class FilesInput {
         }
 
         if (this._filesToLoad && this._filesToLoad.length > 0) {
-            const files = new Array<File>();
+            const files: File[] = [];
             const folders = [];
             const items = event.dataTransfer ? event.dataTransfer.items : null;
 
@@ -341,6 +346,19 @@ export class FilesInput {
                     }
                 });
         } else {
+            if (this._filesToLoad.length === 1) {
+                const name = this._filesToLoad[0].name.toLowerCase();
+                const extension = name.split(".").pop();
+                if (extension) {
+                    switch (extension.toLowerCase()) {
+                        case "dds":
+                        case "env":
+                        case "hdr": {
+                            return; // Ignore error in that case
+                        }
+                    }
+                }
+            }
             Logger.Error("Please provide a valid .babylon file.");
         }
     }

@@ -1,6 +1,7 @@
+/* eslint-disable no-console */
 import * as fs from "fs";
 import * as path from "path";
-import { checkDirectorySync, checkArgs, getHashOfFile, getHashOfContent } from "./utils";
+import { checkDirectorySync, checkArgs, getHashOfFile, getHashOfContent } from "./utils.js";
 // import * as glob from "glob";
 // import * as chokidar from "chokidar";
 // import { DevPackageName } from "./packageMapping";
@@ -28,6 +29,7 @@ ShaderStore.##SHADERSTORE_PLACEHOLDER##[name] = shader;
 /**
  * Get the shaders name from their path.
  * @param filename
+ * @returns the shader name
  */
 function getShaderName(filename: string) {
     const parts = filename.split(".");
@@ -41,6 +43,7 @@ function getShaderName(filename: string) {
 /**
  * Get the shaders included in the current one to generate to proper imports.
  * @param sourceCode
+ * @returns the includes
  */
 function getIncludes(sourceCode: string) {
     const regex = /#include<(.+)>(\((.*)\))*(\[(.*)\])*/g;
@@ -86,9 +89,9 @@ export function buildShader(filePath: string, basePackageName: string = "core", 
     const filename = path.basename(filePath);
     const normalized = path.normalize(filePath);
     const directory = path.dirname(normalized);
-    const shaderName = getShaderName(filename);
-    const tsFilename = filename.replace(".fx", ".ts").replace(".wgsl", ".ts");
     const isWGSL = directory.indexOf("ShadersWGSL") > -1;
+    const tsFilename = filename.replace(".fx", ".ts").replace(".wgsl", ".ts");
+    const shaderName = getShaderName(filename);
     const appendDirName = isWGSL ? "WGSL" : "";
     let fxData = content.toString();
 
@@ -99,13 +102,13 @@ export function buildShader(filePath: string, basePackageName: string = "core", 
     // Remove Trailing whitespace...
     fxData = fxData
         .replace(/^\uFEFF/, "")
+        .replace(/\r\n/g, "\n")
         .replace(/(\/\/)+.*$/gm, "")
         .replace(/\t+/gm, " ")
         .replace(/^\s+/gm, "")
-        // .replace(/[^\S\r\n]{2,}$/gm, "")
         // eslint-disable-next-line no-useless-escape
         .replace(/ ([\*\/\=\+\-\>\<]+) /g, "$1")
-        .replace(/,[ \n]/g, ",")
+        .replace(/,[ ]/g, ",")
         .replace(/ {1,}/g, " ")
         // .replace(/;\s*/g, ";")
         .replace(/^#(.*)/gm, "#$1\n")
@@ -148,18 +151,19 @@ export function buildShader(filePath: string, basePackageName: string = "core", 
 
     // Fill template in.
     let tsContent = tsShaderTemplate.replace("##SHADERSTORELOCATION_PLACEHOLDER##", shaderStoreLocation);
-    tsContent = tsContent.replace("##INCLUDES_PLACEHOLDER##", includeText);
-    tsContent = tsContent.replace("##NAME_PLACEHOLDER##", shaderName);
-    tsContent = tsContent.replace("##SHADER_PLACEHOLDER##", fxData);
-    tsContent = tsContent.replace("##SHADERSTORE_PLACEHOLDER##", shaderStore);
-    tsContent = tsContent.replace(
-        "##EXPORT_PLACEHOLDER##",
-        `/** @internal */
-export const ${shaderName} = { name, shader };`
-    );
+    tsContent = tsContent
+        .replace("##INCLUDES_PLACEHOLDER##", includeText)
+        .replace("##NAME_PLACEHOLDER##", shaderName)
+        .replace("##SHADER_PLACEHOLDER##", fxData)
+        .replace("##SHADERSTORE_PLACEHOLDER##", shaderStore)
+        .replace(
+            "##EXPORT_PLACEHOLDER##",
+            `/** @internal */
+export const ${shaderName + (isWGSL ? "WGSL" : "")} = { name, shader };`
+        );
 
     // Go to disk.
-    const tsShaderFilename = path.join(directory /*.replace("src", "dist")*/, tsFilename);
+    const tsShaderFilename = path.join(directory, tsFilename);
     checkDirectorySync(path.dirname(tsShaderFilename));
     // check hash
     if (fs.existsSync(tsShaderFilename)) {
@@ -172,35 +176,3 @@ export const ${shaderName} = { name, shader };`
     fs.writeFileSync(tsShaderFilename, tsContent);
     isVerbose && console.log("Generated " + tsShaderFilename);
 }
-
-// export const buildShaders = () => {
-//     const isCore = checkArgs("--isCore", true);
-//     const global = checkArgs("--global", true);
-//     // global watch - watch all files in dev
-//     const globDirectory = global ? `./packages/dev/**/*.fx` : `./src/**/*.fx`;
-//     let basePackageName: DevPackageName = "core";
-//     if (!isCore) {
-//         const cliPackage = checkArgs("--package", false, true);
-//         if (cliPackage) {
-//             basePackageName = cliPackage as DevPackageName;
-//         }
-//     }
-//     const files = glob.sync(globDirectory);
-//     files.forEach((file: string) => {
-//         buildShader(file, basePackageName, isCore);
-//     });
-
-//     if (checkArgs("--watch", true)) {
-//         chokidar.watch(globDirectory, { ignoreInitial: true, awaitWriteFinish: true }).on("all", (_event, path) => {
-//             if (_event === "add") {
-//                 // check the date on both compiled and source files
-//                 const compiledFile = path.replace(".fx", ".ts");
-//                 if (fs.statSync(compiledFile).mtime > fs.statSync(path).mtime) {
-//                     return;
-//                 }
-//             }
-//             console.log("file changed", path);
-//             buildShader(path, basePackageName, isCore);
-//         });
-//     }
-// };

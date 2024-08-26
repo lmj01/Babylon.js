@@ -3,11 +3,10 @@ import type { Camera } from "../Cameras/camera";
 import type { Effect } from "../Materials/effect";
 import type { PostProcessOptions } from "./postProcess";
 import { PostProcess } from "./postProcess";
-import type { Engine } from "../Engines/engine";
+import type { AbstractEngine } from "../Engines/abstractEngine";
 import { ToGammaSpace } from "../Maths/math.constants";
 import { Constants } from "../Engines/constants";
 
-import "../Shaders/extractHighlights.fragment";
 import { serialize } from "../Misc/decorators";
 import { RegisterClass } from "../Misc/typeStore";
 
@@ -34,7 +33,7 @@ export class ExtractHighlightsPostProcess extends PostProcess {
      * Gets a string identifying the name of the class
      * @returns "ExtractHighlightsPostProcess" string
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "ExtractHighlightsPostProcess";
     }
 
@@ -43,7 +42,7 @@ export class ExtractHighlightsPostProcess extends PostProcess {
         options: number | PostProcessOptions,
         camera: Nullable<Camera>,
         samplingMode?: number,
-        engine?: Engine,
+        engine?: AbstractEngine,
         reusable?: boolean,
         textureType: number = Constants.TEXTURETYPE_UNSIGNED_INT,
         blockCompilation = false
@@ -57,6 +56,17 @@ export class ExtractHighlightsPostProcess extends PostProcess {
             effect.setFloat("threshold", Math.pow(this.threshold, ToGammaSpace));
             effect.setFloat("exposure", this._exposure);
         });
+    }
+
+    protected override _gatherImports(useWebGPU: boolean, list: Promise<any>[]) {
+        if (useWebGPU) {
+            this._webGPUReady = true;
+            list.push(import("../ShadersWGSL/extractHighlights.fragment"));
+        } else {
+            list.push(import("../Shaders/extractHighlights.fragment"));
+        }
+
+        super._gatherImports(useWebGPU, list);
     }
 }
 

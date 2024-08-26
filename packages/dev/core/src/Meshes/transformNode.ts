@@ -1,5 +1,6 @@
 import type { DeepImmutable, Nullable } from "../types";
-import { serialize, serializeAsVector3, serializeAsQuaternion, SerializationHelper } from "../Misc/decorators";
+import { serialize, serializeAsVector3, serializeAsQuaternion } from "../Misc/decorators";
+import { SerializationHelper } from "../Misc/decorators.serialization";
 import { Observable } from "../Misc/observable";
 
 import type { Camera } from "../Cameras/camera";
@@ -9,6 +10,7 @@ import { Node } from "../node";
 import type { Bone } from "../Bones/bone";
 import type { AbstractMesh } from "../Meshes/abstractMesh";
 import { Space } from "../Maths/math.axis";
+import { GetClass } from "../Misc/typeStore";
 
 const convertRHSToLHS = Matrix.Compose(Vector3.One(), Quaternion.FromEulerAngles(0, Math.PI, 0), Vector3.Zero());
 
@@ -183,7 +185,7 @@ export class TransformNode extends Node {
     public onAfterWorldMatrixUpdateObservable = new Observable<TransformNode>();
 
     constructor(name: string, scene: Nullable<Scene> = null, isPure = true) {
-        super(name, scene);
+        super(name, scene, false);
 
         if (isPure) {
             this.getScene().addTransformNode(this);
@@ -194,7 +196,7 @@ export class TransformNode extends Node {
      * Gets a string identifying the name of the class
      * @returns "TransformNode" string
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "TransformNode";
     }
 
@@ -216,6 +218,13 @@ export class TransformNode extends Node {
      */
     public isUsingPivotMatrix(): boolean {
         return this._usePivotMatrix;
+    }
+
+    /**
+     * @returns true if pivot matrix must be cancelled in the world matrix. When this parameter is set to true (default), the inverse of the pivot matrix is also applied at the end to cancel the transformation effect.
+     */
+    public isUsingPostMultiplyPivotMatrix(): boolean {
+        return this._postMultiplyPivotMatrix;
     }
 
     /**
@@ -311,7 +320,7 @@ export class TransformNode extends Node {
     }
 
     /** @internal */
-    public _isSynchronized(): boolean {
+    public override _isSynchronized(): boolean {
         const cache = this._cache;
 
         if (this._billboardMode !== cache.billboardMode || this._billboardMode !== TransformNode.BILLBOARDMODE_NONE) {
@@ -342,7 +351,7 @@ export class TransformNode extends Node {
     }
 
     /** @internal */
-    public _initCache() {
+    public override _initCache() {
         super._initCache();
 
         const cache = this._cache;
@@ -742,7 +751,7 @@ export class TransformNode extends Node {
      * @param property if set to "rotation" the objects rotationQuaternion will be set to null
      * @returns this  node
      */
-    public markAsDirty(property?: string): Node {
+    public override markAsDirty(property?: string): Node {
         if (this._isDirty) {
             return this;
         }
@@ -819,6 +828,28 @@ export class TransformNode extends Node {
         return this;
     }
 
+    /**
+     * Adds the passed mesh as a child to the current mesh
+     * @param mesh defines the child mesh
+     * @param preserveScalingSign if true, keep scaling sign of child. Otherwise, scaling sign might change.
+     * @returns the current mesh
+     */
+    public addChild(mesh: TransformNode, preserveScalingSign: boolean = false): this {
+        mesh.setParent(this, preserveScalingSign);
+        return this;
+    }
+
+    /**
+     * Removes the passed mesh from the current mesh children list
+     * @param mesh defines the child mesh
+     * @param preserveScalingSign if true, keep scaling sign of child. Otherwise, scaling sign might change.
+     * @returns the current mesh
+     */
+    public removeChild(mesh: TransformNode, preserveScalingSign: boolean = false): this {
+        mesh.setParent(null, preserveScalingSign);
+        return this;
+    }
+
     private _nonUniformScaling = false;
     /**
      * True if the scaling property of this object is non uniform eg. (1,2,1)
@@ -850,9 +881,9 @@ export class TransformNode extends Node {
         this._transformToBoneReferal = affectedTransformNode;
         this.parent = bone;
 
-        bone.getSkeleton().prepare();
+        bone.getSkeleton().prepare(true); // make sure bone.getFinalMatrix() is up to date
 
-        if (bone.getWorldMatrix().determinant() < 0) {
+        if (bone.getFinalMatrix().determinant() < 0) {
             this.scalingDeterminant *= -1;
         }
         return this;
@@ -906,9 +937,14 @@ export class TransformNode extends Node {
             this.rotationQuaternion.multiplyToRef(rotationQuaternion, this.rotationQuaternion);
         } else {
             if (this.parent) {
+                const parentWorldMatrix = this.parent.getWorldMatrix();
                 const invertParentWorldMatrix = TmpVectors.Matrix[0];
-                this.parent.getWorldMatrix().invertToRef(invertParentWorldMatrix);
+                parentWorldMatrix.invertToRef(invertParentWorldMatrix);
                 axis = Vector3.TransformNormal(axis, invertParentWorldMatrix);
+
+                if (parentWorldMatrix.determinant() < 0) {
+                    amount *= -1;
+                }
             }
             rotationQuaternion = Quaternion.RotationAxisToRef(axis, amount, TransformNode._RotationAxisCache);
             rotationQuaternion.multiplyToRef(this.rotationQuaternion, this.rotationQuaternion);
@@ -1035,7 +1071,7 @@ export class TransformNode extends Node {
      * @param camera defines the camera used if different from the scene active camera (This is used with modes like Billboard or infinite distance)
      * @returns the world matrix
      */
-    public computeWorldMatrix(force: boolean = false, camera: Nullable<Camera> = null): Matrix {
+    public override computeWorldMatrix(force: boolean = false, camera: Nullable<Camera> = null): Matrix {
         if (this._isWorldMatrixFrozen && !this._isDirty) {
             return this._worldMatrix;
         }
@@ -1128,7 +1164,9 @@ export class TransformNode extends Node {
             }
             if (cache.useBillboardPath) {
                 if (this._transformToBoneReferal) {
-                    parent.getWorldMatrix().multiplyToRef(this._transformToBoneReferal.getWorldMatrix(), TmpVectors.Matrix[7]);
+                    const bone = this.parent as Bone;
+                    bone.getSkeleton().prepare();
+                    bone.getFinalMatrix().multiplyToRef(this._transformToBoneReferal.getWorldMatrix(), TmpVectors.Matrix[7]);
                 } else {
                     TmpVectors.Matrix[7].copyFrom(parent.getWorldMatrix());
                 }
@@ -1150,7 +1188,9 @@ export class TransformNode extends Node {
                 this._localMatrix.multiplyToRef(TmpVectors.Matrix[7], this._worldMatrix);
             } else {
                 if (this._transformToBoneReferal) {
-                    this._localMatrix.multiplyToRef(parent.getWorldMatrix(), TmpVectors.Matrix[6]);
+                    const bone = this.parent as Bone;
+                    bone.getSkeleton().prepare();
+                    this._localMatrix.multiplyToRef(bone.getFinalMatrix(), TmpVectors.Matrix[6]);
                     TmpVectors.Matrix[6].multiplyToRef(this._transformToBoneReferal.getWorldMatrix(), this._worldMatrix);
                 } else {
                     this._localMatrix.multiplyToRef(parent.getWorldMatrix(), this._worldMatrix);
@@ -1373,7 +1413,7 @@ export class TransformNode extends Node {
      * @param doNotCloneChildren Do not clone children hierarchy
      * @returns the new transform node
      */
-    public clone(name: string, newParent: Nullable<Node>, doNotCloneChildren?: boolean): Nullable<TransformNode> {
+    public override clone(name: string, newParent: Nullable<Node>, doNotCloneChildren?: boolean): Nullable<TransformNode> {
         const result = SerializationHelper.Clone(() => new TransformNode(name, this.getScene()), this);
 
         result.name = name;
@@ -1417,6 +1457,10 @@ export class TransformNode extends Node {
 
         serializationObject.isEnabled = this.isEnabled();
 
+        // Animations
+        SerializationHelper.AppendSerializedAnimations(this, serializationObject);
+        serializationObject.ranges = this.serializeAnimationRanges();
+
         return serializationObject;
     }
 
@@ -1450,6 +1494,28 @@ export class TransformNode extends Node {
             transformNode._waitingParentInstanceIndex = parsedTransformNode.parentInstanceIndex;
         }
 
+        // Animations
+        if (parsedTransformNode.animations) {
+            for (let animationIndex = 0; animationIndex < parsedTransformNode.animations.length; animationIndex++) {
+                const parsedAnimation = parsedTransformNode.animations[animationIndex];
+                const internalClass = GetClass("BABYLON.Animation");
+                if (internalClass) {
+                    transformNode.animations.push(internalClass.Parse(parsedAnimation));
+                }
+            }
+            Node.ParseAnimationRanges(transformNode, parsedTransformNode, scene);
+        }
+
+        if (parsedTransformNode.autoAnimate) {
+            scene.beginAnimation(
+                transformNode,
+                parsedTransformNode.autoAnimateFrom,
+                parsedTransformNode.autoAnimateTo,
+                parsedTransformNode.autoAnimateLoop,
+                parsedTransformNode.autoAnimateSpeed || 1.0
+            );
+        }
+
         return transformNode;
     }
 
@@ -1472,7 +1538,7 @@ export class TransformNode extends Node {
      * @param doNotRecurse Set to true to not recurse into each children (recurse into each children by default)
      * @param disposeMaterialAndTextures Set to true to also dispose referenced materials and textures (false by default)
      */
-    public dispose(doNotRecurse?: boolean, disposeMaterialAndTextures = false): void {
+    public override dispose(doNotRecurse?: boolean, disposeMaterialAndTextures = false): void {
         // Animations
         this.getScene().stopAnimation(this);
 

@@ -72,6 +72,11 @@ export interface PhysicsAggregateParameters {
      * Physics engine will try to make this body sleeping and not active
      */
     startAsleep?: boolean;
+
+    /**
+     * If true, mark the created shape as a trigger shape
+     */
+    isTriggerShape?: boolean;
 }
 /**
  * Helper class to create and interact with a PhysicsAggregate.
@@ -149,6 +154,10 @@ export class PhysicsAggregate {
             this.shape = new PhysicsShape({ type: type as PhysicsShapeType, parameters: this._options as any }, this._scene);
         }
 
+        if (this._options.isTriggerShape) {
+            this.shape.isTrigger = true;
+        }
+
         this.material = { friction: this._options.friction, restitution: this._options.restitution };
         this.body.shape = this.shape;
         this.shape.material = this.material;
@@ -178,16 +187,20 @@ export class PhysicsAggregate {
         const extents = TmpVectors.Vector3[0];
         extents.copyFrom(bb.extendSize);
         extents.scaleInPlace(2);
-        extents.multiplyInPlace(this.transformNode.scaling);
+        extents.multiplyInPlace(this.transformNode.absoluteScaling);
+        // In case we had any negative scaling, we need to take the absolute value of the extents.
+        extents.x = Math.abs(extents.x);
+        extents.y = Math.abs(extents.y);
+        extents.z = Math.abs(extents.z);
 
         const min = TmpVectors.Vector3[1];
         min.copyFrom(bb.minimum);
-        min.multiplyInPlace(this.transformNode.scaling);
+        min.multiplyInPlace(this.transformNode.absoluteScaling);
 
         if (!this._options.center) {
             const center = new Vector3();
             center.copyFrom(bb.center);
-            center.multiplyInPlace(this.transformNode.scaling);
+            center.multiplyInPlace(this.transformNode.absoluteScaling);
             this._options.center = center;
         }
 
@@ -218,6 +231,7 @@ export class PhysicsAggregate {
                 break;
             case PhysicsShapeType.MESH:
             case PhysicsShapeType.CONVEX_HULL:
+            case PhysicsShapeType.HEIGHTFIELD:
                 if (!this._options.mesh && this._hasVertices(this.transformNode)) {
                     this._options.mesh = this.transformNode as Mesh;
                 } else if (!this._options.mesh || !this._hasVertices(this._options.mesh)) {

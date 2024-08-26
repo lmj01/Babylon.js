@@ -5,10 +5,13 @@ import { GUIEditor } from "gui-editor/guiEditor";
 
 declare let BABYLON: any;
 
-let editorUrl = `https://unpkg.com/babylonjs-gui-editor@${Engine.Version}/babylon.guiEditor.js`;
+let editorUrl = `${Tools._DefaultCdnUrl}/v${Engine.Version}/guiEditor/babylon.guiEditor.js`;
 // eslint-disable-next-line @typescript-eslint/naming-convention
 let guiEditorContainer: { GUIEditor: typeof GUIEditor };
-/** Get the inspector from bundle or global */
+/** Get the inspector from bundle or global
+ * @internal
+ */
+// eslint-disable-next-line @typescript-eslint/naming-convention
 function _getGlobalGUIEditor(): { GUIEditor: typeof GUIEditor } | undefined {
     // UMD Global name detection from Webpack Bundle UMD Name.
     if (typeof GUIEditor !== "undefined") {
@@ -46,6 +49,7 @@ export function SetGUIEditorURL(guiEditorURL: string) {
  * If you are in a UMD environment, it will load the package from a URL
  * @param adt
  * @param embed defines whether editor is being opened from the Playground
+ * @returns a promise that resolves when the editor is opened
  */
 export async function EditAdvancedDynamicTexture(adt: AdvancedDynamicTexture, embed?: boolean) {
     guiEditorContainer = guiEditorContainer || _getGlobalGUIEditor();
@@ -58,11 +62,13 @@ export async function EditAdvancedDynamicTexture(adt: AdvancedDynamicTexture, em
                     await Tools.LoadScriptAsync(editorUrl);
                     guiEditorContainer = guiEditorContainer || _getGlobalGUIEditor();
                 } catch {
+                    // eslint-disable-next-line no-throw-literal
                     throw `Failed to load GUI editor from ${editorUrl}`;
                 }
             }
         } else {
             // we are in ES6 environment
+            // eslint-disable-next-line no-throw-literal
             throw `Tried to call EditAdvancedDynamicTexture without first injecting the GUI editor. You need to call InjectGUIEditor() with a reference to @babylonjs/gui-editor. It can be imported at runtime using await import("@babylonjs/gui-editor").`;
         }
     }

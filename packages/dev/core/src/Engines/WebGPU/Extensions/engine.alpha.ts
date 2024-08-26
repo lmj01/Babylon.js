@@ -1,6 +1,20 @@
+import { AbstractEngine } from "core/Engines/abstractEngine";
 import { Constants } from "../../constants";
-import { Engine } from "../../engine";
 import { WebGPUEngine } from "../../webgpuEngine";
+
+import "../../AbstractEngine/abstractEngine.alpha";
+
+declare module "../../abstractEngine" {
+    export interface AbstractEngine {
+        /**
+         * Sets the current alpha mode
+         * @param mode defines the mode to use (one of the Engine.ALPHA_XXX)
+         * @param noDepthWriteChange defines if depth writing state should remains unchanged (false by default)
+         * @see https://doc.babylonjs.com/features/featuresDeepDive/materials/advanced/transparent_rendering
+         */
+        setAlphaMode(mode: number, noDepthWriteChange?: boolean): void;
+    }
+}
 
 WebGPUEngine.prototype.setAlphaMode = function (mode: number, noDepthWriteChange: boolean = false): void {
     if (this._alphaMode === mode && ((mode === Constants.ALPHA_DISABLE && !this._alphaState.alphaBlend) || (mode !== Constants.ALPHA_DISABLE && this._alphaState.alphaBlend))) {
@@ -105,8 +119,8 @@ WebGPUEngine.prototype.setAlphaMode = function (mode: number, noDepthWriteChange
             break;
     }
     if (!noDepthWriteChange) {
-        this.setDepthWrite(mode === Engine.ALPHA_DISABLE);
-        this._cacheRenderPipeline.setDepthWriteEnabled(mode === Engine.ALPHA_DISABLE);
+        this.setDepthWrite(mode === Constants.ALPHA_DISABLE);
+        this._cacheRenderPipeline.setDepthWriteEnabled(mode === Constants.ALPHA_DISABLE);
     }
     this._alphaMode = mode;
     this._cacheRenderPipeline.setAlphaBlendEnabled(this._alphaState.alphaBlend);
@@ -114,7 +128,7 @@ WebGPUEngine.prototype.setAlphaMode = function (mode: number, noDepthWriteChange
 };
 
 WebGPUEngine.prototype.setAlphaEquation = function (equation: number): void {
-    Engine.prototype.setAlphaEquation.call(this, equation);
+    AbstractEngine.prototype.setAlphaEquation.call(this, equation);
 
     this._cacheRenderPipeline.setAlphaBlendFactors(this._alphaState._blendFunctionParameters, this._alphaState._blendEquationParameters);
 };

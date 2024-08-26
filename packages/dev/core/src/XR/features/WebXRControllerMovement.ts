@@ -51,6 +51,19 @@ export interface IWebXRControllerMovementOptions {
      * Babylon XR Input class for controller
      */
     xrInput: WebXRInput;
+
+    /**
+     * If movement orientation should follow controller orientation instead of viewer pose.
+     * Make sure to set movementOrientationFollowsViewerPose to false, otherwise it will be ignored.
+     */
+    movementOrientationFollowsController: boolean;
+
+    /**
+     * If orientation follows the controller, this is the preferred handedness to use for forward movement.
+     * If not set (or handedness not found), the handedness will be selected by the controller triggering the movement.
+     * Note that this only works if movementOrientationFollowsController is true.
+     */
+    orientationPreferredHandedness?: XRHandedness;
 }
 
 /**
@@ -59,6 +72,8 @@ export interface IWebXRControllerMovementOptions {
 export type WebXRControllerMovementFeatureContext = {
     movementEnabled: boolean;
     movementOrientationFollowsViewerPose: boolean;
+    movementOrientationFollowsController: boolean;
+    orientationPreferredHandedness?: XRHandedness;
     movementSpeed: number;
     movementThreshold: number;
     rotationEnabled: boolean;
@@ -112,7 +127,7 @@ export type WebXRControllerMovementRegistrationConfiguration = {
           /**
            * Called when the button state changes.
            */
-          buttonChangedhandler: (
+          buttonChangedHandler: (
               pressed: IWebXRMotionControllerComponentChangesValues<boolean>,
               movementState: WebXRControllerMovementState,
               featureContext: WebXRControllerMovementFeatureContext,
@@ -142,10 +157,10 @@ export class WebXRControllerMovement extends WebXRAbstractFeature {
     } = {};
 
     private _currentRegistrationConfigurations: WebXRControllerMovementRegistrationConfiguration[] = [];
-    // Feature configuration is syncronized - this is passed to all handlers (reduce GC pressure).
+    // Feature configuration is synchronized - this is passed to all handlers (reduce GC pressure).
     private _featureContext: WebXRControllerMovementFeatureContext;
     // forward direction for movement, which may differ from viewer pose.
-    private _movementDirection: Nullable<Quaternion> = null;
+    private _movementDirection: Quaternion = new Quaternion();
     private _movementState: WebXRControllerMovementState;
     private _xrInput: WebXRInput;
 
@@ -153,6 +168,7 @@ export class WebXRControllerMovement extends WebXRAbstractFeature {
     private _tmpRotationMatrix: Matrix = Matrix.Identity();
     private _tmpTranslationDirection: Vector3 = new Vector3();
     private _tmpMovementTranslation: Vector3 = new Vector3();
+    private _tempCacheQuaternion: Quaternion = new Quaternion();
 
     /**
      * The module's name
@@ -193,7 +209,7 @@ export class WebXRControllerMovement extends WebXRAbstractFeature {
     /**
      * Current movement direction.  Will be null before XR Frames have been processed.
      */
-    public get movementDirection(): Nullable<Quaternion> {
+    public get movementDirection(): Quaternion {
         return this._movementDirection;
     }
 
@@ -324,6 +340,8 @@ export class WebXRControllerMovement extends WebXRAbstractFeature {
         this._featureContext = {
             movementEnabled: options.movementEnabled || true,
             movementOrientationFollowsViewerPose: options.movementOrientationFollowsViewerPose ?? true,
+            movementOrientationFollowsController: options.movementOrientationFollowsController ?? false,
+            orientationPreferredHandedness: options.orientationPreferredHandedness,
             movementSpeed: options.movementSpeed ?? 1,
             movementThreshold: options.movementThreshold ?? 0.25,
             rotationEnabled: options.rotationEnabled ?? true,
@@ -341,7 +359,7 @@ export class WebXRControllerMovement extends WebXRAbstractFeature {
         this._xrInput = options.xrInput;
     }
 
-    public attach(): boolean {
+    public override attach(): boolean {
         if (!super.attach()) {
             return false;
         }
@@ -356,7 +374,7 @@ export class WebXRControllerMovement extends WebXRAbstractFeature {
         return true;
     }
 
-    public detach(): boolean {
+    public override detach(): boolean {
         if (!super.detach()) {
             return false;
         }
@@ -375,12 +393,8 @@ export class WebXRControllerMovement extends WebXRAbstractFeature {
      * @param _xrFrame
      */
     protected _onXRFrame(_xrFrame: XRFrame) {
-        if (!this.attach) {
+        if (!this.attached) {
             return;
-        }
-
-        if (this._movementDirection === null) {
-            this._movementDirection = this._xrInput.xrCamera.rotationQuaternion.clone();
         }
 
         if (this._movementState.rotateX !== 0 && this._featureContext.rotationEnabled) {
@@ -388,19 +402,38 @@ export class WebXRControllerMovement extends WebXRAbstractFeature {
             const deltaMillis = this._xrSessionManager.scene.getEngine().getDeltaTime();
             const rotationY = deltaMillis * 0.001 * this._featureContext.rotationSpeed * this._movementState.rotateX * (this._xrSessionManager.scene.useRightHandedSystem ? -1 : 1);
 
-            if (this._featureContext.movementOrientationFollowsViewerPose === true) {
+            if (this._featureContext.movementOrientationFollowsViewerPose) {
                 this._xrInput.xrCamera.cameraRotation.y += rotationY;
-                this._movementDirection = this._xrInput.xrCamera.rotationQuaternion.multiply(Quaternion.RotationYawPitchRoll(rotationY, 0, 0));
+                Quaternion.RotationYawPitchRollToRef(rotationY, 0, 0, this._tempCacheQuaternion);
+                this._xrInput.xrCamera.rotationQuaternion.multiplyToRef(this._tempCacheQuaternion, this._movementDirection);
+            } else if (this._featureContext.movementOrientationFollowsController) {
+                this._xrInput.xrCamera.cameraRotation.y += rotationY;
+                // get the correct controller
+                const handedness = this._featureContext.orientationPreferredHandedness || "right";
+                const key =
+                    Object.keys(this._controllers).find((key) => this._controllers[key]?.xrController?.inputSource.handedness === handedness) || Object.keys(this._controllers)[0];
+                const controller = this._controllers[key];
+                Quaternion.RotationYawPitchRollToRef(rotationY, 0, 0, this._tempCacheQuaternion);
+                (controller?.xrController.pointer.rotationQuaternion || Quaternion.Identity()).multiplyToRef(this._tempCacheQuaternion, this._movementDirection);
             } else {
                 // movement orientation direction does not affect camera.  We use rotation speed multiplier
                 // otherwise need to implement inertia and constraints for same feel as TargetCamera.
-                this._movementDirection.multiplyInPlace(Quaternion.RotationYawPitchRoll(rotationY * 3.0, 0, 0));
+
+                Quaternion.RotationYawPitchRollToRef(rotationY * 3.0, 0, 0, this._tempCacheQuaternion);
+                this._movementDirection.multiplyInPlace(this._tempCacheQuaternion);
             }
-        } else if (this._featureContext.movementOrientationFollowsViewerPose === true) {
+        } else if (this._featureContext.movementOrientationFollowsViewerPose) {
             this._movementDirection.copyFrom(this._xrInput.xrCamera.rotationQuaternion);
+        } else if (this._featureContext.movementOrientationFollowsController) {
+            // get the correct controller
+            const handedness = this._featureContext.orientationPreferredHandedness || "right";
+            const key =
+                Object.keys(this._controllers).find((key) => this._controllers[key]?.xrController.inputSource.handedness === handedness) || Object.keys(this._controllers)[0];
+            const controller = this._controllers[key];
+            this._movementDirection.copyFrom(controller?.xrController.pointer.rotationQuaternion || Quaternion.Identity());
         }
 
-        if ((this._movementState.moveX !== 0 || this._movementState.moveY !== 0) && this._featureContext.movementEnabled) {
+        if ((this._movementState.moveX || this._movementState.moveY) && this._featureContext.movementEnabled) {
             Matrix.FromQuaternionToRef(this._movementDirection, this._tmpRotationMatrix);
             this._tmpTranslationDirection.set(this._movementState.moveX, 0, this._movementState.moveY * (this._xrSessionManager.scene.useRightHandedSystem ? 1.0 : -1.0));
             // move according to forward direction based on camera speed
@@ -476,10 +509,10 @@ export class WebXRControllerMovement extends WebXRAbstractFeature {
                             });
                         }
 
-                        if ("buttonChangedhandler" in registration) {
-                            registeredComponent.onButtonChangedObserver = component.onButtonStateChangedObservable.add(() => {
-                                if (component!.changes.pressed) {
-                                    registration.buttonChangedhandler(component!.changes.pressed, this._movementState, this._featureContext, this._xrInput);
+                        if ("buttonChangedHandler" in registration) {
+                            registeredComponent.onButtonChangedObserver = component.onButtonStateChangedObservable.add((component) => {
+                                if (component.changes.pressed) {
+                                    registration.buttonChangedHandler(component.changes.pressed, this._movementState, this._featureContext, this._xrInput);
                                 }
                             });
                         }

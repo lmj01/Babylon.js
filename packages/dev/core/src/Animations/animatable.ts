@@ -106,6 +106,13 @@ export class Animatable {
     }
 
     /**
+     * Gets the elapsed time since the animatable started in milliseconds
+     */
+    public get elapsedTime(): number {
+        return this._localDelayOffset === null ? 0 : this._scene._animationTime - this._localDelayOffset;
+    }
+
+    /**
      * Creates a new Animatable
      * @param scene defines the hosting scene
      * @param target defines the target object
@@ -117,16 +124,17 @@ export class Animatable {
      * @param animations defines a group of animation to add to the new Animatable
      * @param onAnimationLoop defines a callback to call when animation loops
      * @param isAdditive defines whether the animation should be evaluated additively
+     * @param playOrder defines the order in which this animatable should be processed in the list of active animatables (default: 0)
      */
     constructor(
         scene: Scene,
         /** defines the target object */
         public target: any,
-        /** defines the starting frame number (default is 0) */
+        /** [0] defines the starting frame number (default is 0) */
         public fromFrame: number = 0,
-        /** defines the ending frame number (default is 100) */
+        /** [100] defines the ending frame number (default is 100) */
         public toFrame: number = 100,
-        /** defines if the animation must loop (default is false)  */
+        /** [false] defines if the animation must loop (default is false)  */
         public loopAnimation: boolean = false,
         speedRatio: number = 1.0,
         /** defines a callback to call when animation ends if it is not looping */
@@ -134,8 +142,10 @@ export class Animatable {
         animations?: Animation[],
         /** defines a callback to call when animation loops */
         public onAnimationLoop?: Nullable<() => void>,
-        /** defines whether the animation should be evaluated additively */
-        public isAdditive: boolean = false
+        /** [false] defines whether the animation should be evaluated additively */
+        public isAdditive: boolean = false,
+        /** [0] defines the order in which this animatable should be processed in the list of active animatables (default: 0) */
+        public playOrder = 0
     ) {
         this._scene = scene;
         if (animations) {
@@ -286,10 +296,17 @@ export class Animatable {
         }
 
         for (let index = 0; index < runtimeAnimations.length; index++) {
-            runtimeAnimations[index].goToFrame(frame);
+            runtimeAnimations[index].goToFrame(frame, this._weight);
         }
 
         this._goToFrame = frame;
+    }
+
+    /**
+     * Returns true if the animations for this animatable are paused
+     */
+    public get paused() {
+        return this._paused;
     }
 
     /**
@@ -322,8 +339,9 @@ export class Animatable {
      * @param animationName defines a string used to only stop some of the runtime animations instead of all
      * @param targetMask a function that determines if the animation should be stopped based on its target (all animations will be stopped if both this and animationName are empty)
      * @param useGlobalSplice if true, the animatables will be removed by the caller of this function (false by default)
+     * @param skipOnAnimationEnd defines if the system should not raise onAnimationEnd. Default is false
      */
-    public stop(animationName?: string, targetMask?: (target: any) => boolean, useGlobalSplice = false): void {
+    public stop(animationName?: string, targetMask?: (target: any) => boolean, useGlobalSplice = false, skipOnAnimationEnd = false): void {
         if (animationName || targetMask) {
             const idx = this._scene._activeAnimatables.indexOf(this);
 
@@ -347,7 +365,9 @@ export class Animatable {
                     if (!useGlobalSplice) {
                         this._scene._activeAnimatables.splice(idx, 1);
                     }
-                    this._raiseOnAnimationEnd();
+                    if (!skipOnAnimationEnd) {
+                        this._raiseOnAnimationEnd();
+                    }
                 }
             }
         } else {
@@ -365,7 +385,9 @@ export class Animatable {
 
                 this._runtimeAnimations.length = 0;
 
-                this._raiseOnAnimationEnd();
+                if (!skipOnAnimationEnd) {
+                    this._raiseOnAnimationEnd();
+                }
             }
         }
     }
@@ -417,7 +439,7 @@ export class Animatable {
         this._goToFrame = null;
 
         if (this._weight === 0) {
-            // We consider that an animation with a weight === 0 is "actively" paused
+            // We consider that an animatable with a weight === 0 is "actively" paused
             return true;
         }
 
@@ -488,6 +510,11 @@ declare module "../scene" {
 
         /** @internal */
         _processLateAnimationBindings(): void;
+
+        /**
+         * Sort active animatables based on their playOrder property
+         */
+        sortActiveAnimatables(): void;
 
         /**
          * Will start the animation sequence of a given target
@@ -656,7 +683,7 @@ declare module "../scene" {
     }
 }
 
-Scene.prototype._animate = function (): void {
+Scene.prototype._animate = function (customDeltaTime?: number): void {
     if (!this.animationsEnabled) {
         return;
     }
@@ -670,7 +697,7 @@ Scene.prototype._animate = function (): void {
         this._animationTimeLast = now;
     }
 
-    this.deltaTime = this.useConstantAnimationDeltaTime ? 16.0 : (now - this._animationTimeLast) * this.animationTimeScale;
+    this.deltaTime = customDeltaTime !== undefined ? customDeltaTime : this.useConstantAnimationDeltaTime ? 16.0 : (now - this._animationTimeLast) * this.animationTimeScale;
     this._animationTimeLast = now;
 
     const animatables = this._activeAnimatables;
@@ -691,6 +718,12 @@ Scene.prototype._animate = function (): void {
 
     // Late animation bindings
     this._processLateAnimationBindings();
+};
+
+Scene.prototype.sortActiveAnimatables = function (): void {
+    this._activeAnimatables.sort((a, b) => {
+        return a.playOrder - b.playOrder;
+    });
 };
 
 Scene.prototype.beginWeightedAnimation = function (
@@ -1121,9 +1154,14 @@ Scene.prototype._processLateAnimationBindings = function (): void {
                     let startIndex = 0;
                     let normalizer = 1.0;
 
+                    const originalAnimationIsLoopRelativeFromCurrent =
+                        originalAnimation && originalAnimation._animationState.loopMode === Animation.ANIMATIONLOOPMODE_RELATIVE_FROM_CURRENT;
+
                     if (holder.totalWeight < 1.0) {
                         // We need to mix the original value in
-                        if (originalAnimation && originalValue.scale) {
+                        if (originalAnimationIsLoopRelativeFromCurrent) {
+                            finalValue = originalValue.clone ? originalValue.clone() : originalValue;
+                        } else if (originalAnimation && originalValue.scale) {
                             finalValue = originalValue.scale(1.0 - holder.totalWeight);
                         } else if (originalAnimation) {
                             finalValue = originalValue * (1.0 - holder.totalWeight);
@@ -1144,6 +1182,14 @@ Scene.prototype._processLateAnimationBindings = function (): void {
                             }
                         } else {
                             finalValue = originalAnimation.currentValue;
+                        }
+
+                        if (originalAnimationIsLoopRelativeFromCurrent) {
+                            if (finalValue.addToRef) {
+                                finalValue.addToRef(originalValue, finalValue);
+                            } else {
+                                finalValue += originalValue;
+                            }
                         }
 
                         startIndex = 1;

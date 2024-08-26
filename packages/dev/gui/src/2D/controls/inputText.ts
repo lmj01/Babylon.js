@@ -8,7 +8,6 @@ import type { PointerInfo, PointerInfoBase } from "core/Events/pointerEvents";
 import { PointerEventTypes } from "core/Events/pointerEvents";
 
 import { Control } from "./control";
-import type { IFocusableControl } from "./focusableControl";
 import { ValueAndUnit } from "../valueAndUnit";
 import type { VirtualKeyboard } from "./virtualKeyboard";
 import { RegisterClass } from "core/Misc/typeStore";
@@ -20,18 +19,16 @@ import type { ICanvasRenderingContext } from "core/Engines/ICanvas";
 /**
  * Class used to create input text control
  */
-export class InputText extends Control implements IFocusableControl {
+export class InputText extends Control {
     protected _textWrapper: TextWrapper;
     protected _placeholderText = "";
     protected _background = "#222222";
     protected _focusedBackground = "#000000";
-    protected _focusedColor = "white";
     protected _placeholderColor = "gray";
     protected _thickness = 1;
     protected _margin = new ValueAndUnit(10, ValueAndUnit.UNITMODE_PIXEL);
     protected _autoStretchWidth = true;
     protected _maxWidth = new ValueAndUnit(1, ValueAndUnit.UNITMODE_PERCENTAGE, false);
-    protected _isFocused = false;
     /** the type of device that most recently focused the input: "mouse", "touch" or "pen" */
     protected _focusedBy: string;
     protected _blinkTimeout: number;
@@ -50,6 +47,8 @@ export class InputText extends Control implements IFocusableControl {
     private _startHighlightIndex = 0;
     private _endHighlightIndex = 0;
     private _cursorIndex = -1;
+    private _outlineWidth: number = 0;
+    private _outlineColor: string = "white";
     protected _onFocusSelectAll = false;
     protected _isPointerDown = false;
     protected _onClipboardObserver: Nullable<Observer<ClipboardInfo>>;
@@ -65,24 +64,48 @@ export class InputText extends Control implements IFocusableControl {
     @serialize()
     public disableMobilePrompt = false;
 
+    /**
+     * Gets or sets outlineWidth of the text to display
+     */
+    public get outlineWidth(): number {
+        return this._outlineWidth;
+    }
+
+    public set outlineWidth(value: number) {
+        if (this._outlineWidth === value) {
+            return;
+        }
+        this._outlineWidth = value;
+        this._markAsDirty();
+    }
+
+    /**
+     * Gets or sets outlineColor of the text to display
+     */
+    public get outlineColor(): string {
+        return this._outlineColor;
+    }
+
+    public set outlineColor(value: string) {
+        if (this._outlineColor === value) {
+            return;
+        }
+        this._outlineColor = value;
+        this._markAsDirty();
+    }
+
     /** Observable raised when the text changes */
     public onTextChangedObservable = new Observable<InputText>();
     /** Observable raised just before an entered character is to be added */
     public onBeforeKeyAddObservable = new Observable<InputText>();
-    /** Observable raised when the control gets the focus */
-    public onFocusObservable = new Observable<InputText>();
-    /** Observable raised when the control loses the focus */
-    public onBlurObservable = new Observable<InputText>();
-    /**Observable raised when the text is highlighted */
+    /** Observable raised when the text is highlighted */
     public onTextHighlightObservable = new Observable<InputText>();
-    /**Observable raised when copy event is triggered */
+    /** Observable raised when copy event is triggered */
     public onTextCopyObservable = new Observable<InputText>();
     /** Observable raised when cut event is triggered */
     public onTextCutObservable = new Observable<InputText>();
     /** Observable raised when paste event is triggered */
     public onTextPasteObservable = new Observable<InputText>();
-    /** Observable raised when a key event was processed */
-    public onKeyboardEventProcessedObservable = new Observable<IKeyboardEvent>();
 
     /** Gets or sets the maximum width allowed by the control */
     @serialize()
@@ -214,12 +237,7 @@ export class InputText extends Control implements IFocusableControl {
     }
 
     /** Gets or sets the background color when focused */
-    @serialize()
-    public get focusedColor(): string {
-        return this._focusedColor;
-    }
-
-    public set focusedColor(value: string) {
+    public override set focusedColor(value: string) {
         if (this._focusedColor === value) {
             return;
         }
@@ -337,14 +355,22 @@ export class InputText extends Control implements IFocusableControl {
         this.onTextChangedObservable.notifyObservers(this);
     }
 
+    protected override _applyStates(context: ICanvasRenderingContext): void {
+        super._applyStates(context);
+        if (this.outlineWidth) {
+            context.lineWidth = this.outlineWidth;
+            context.strokeStyle = this.outlineColor;
+        }
+    }
+
     /** Gets or sets control width */
     @serialize()
-    public get width(): string | number {
+    public override get width(): string | number {
         return this._width.toString(this._host);
     }
 
-    public set width(value: string | number) {
-        if (this._width.toString(this._host) === value) {
+    public override set width(value: string | number) {
+        if (this._width.toString(this._host) === value && !this._autoStretchWidth) {
             return;
         }
 
@@ -360,15 +386,19 @@ export class InputText extends Control implements IFocusableControl {
      * @param name defines the control name
      * @param text defines the text of the control
      */
-    constructor(public name?: string, text: string = "") {
+    constructor(
+        public override name?: string,
+        text: string = ""
+    ) {
         super(name);
 
         this.text = text;
         this.isPointerBlocker = true;
+        this._focusedColor = "white";
     }
 
     /** @internal */
-    public onBlur(): void {
+    public override onBlur(): void {
         this._isFocused = false;
         this._scrollLeft = null;
         this._cursorOffset = 0;
@@ -388,7 +418,7 @@ export class InputText extends Control implements IFocusableControl {
     }
 
     /** @internal */
-    public onFocus(): void {
+    public override onFocus(): void {
         if (!this._isEnabled) {
             return;
         }
@@ -398,7 +428,7 @@ export class InputText extends Control implements IFocusableControl {
         this._cursorOffset = 0;
         this._markAsDirty();
 
-        this.onFocusObservable.notifyObservers(this);
+        this.onFocusObservable.notifyObservers(this as Control);
 
         if (this._focusedBy === "touch" && !this.disableMobilePrompt) {
             const value = prompt(this.promptMessage);
@@ -450,21 +480,7 @@ export class InputText extends Control implements IFocusableControl {
         }
     }
 
-    /**
-     * Function to focus an inputText programmatically
-     */
-    public focus() {
-        this._host.moveFocusToControl(this);
-    }
-
-    /**
-     * Function to unfocus an inputText programmatically
-     */
-    public blur() {
-        this._host.focusedControl = null;
-    }
-
-    protected _getTypeName(): string {
+    protected override _getTypeName(): string {
         return "InputText";
     }
 
@@ -472,7 +488,7 @@ export class InputText extends Control implements IFocusableControl {
      * Function called to get the list of controls that should not steal the focus from this control
      * @returns an array of controls
      */
-    public keepsFocusWith(): Nullable<Control[]> {
+    public override keepsFocusWith(): Nullable<Control[]> {
         if (!this._connectedVirtualKeyboard) {
             return null;
         }
@@ -800,11 +816,11 @@ export class InputText extends Control implements IFocusableControl {
      * Handles the keyboard event
      * @param evt Defines the KeyboardEvent
      */
-    public processKeyboard(evt: IKeyboardEvent): void {
+    public override processKeyboard(evt: IKeyboardEvent): void {
         // process pressed key
         this.processKey(evt.keyCode, evt.key, evt);
 
-        this.onKeyboardEventProcessedObservable.notifyObservers(evt);
+        super.processKeyboard(evt);
     }
 
     /**
@@ -853,7 +869,7 @@ export class InputText extends Control implements IFocusableControl {
         this._textHasChanged();
     }
 
-    public _draw(context: ICanvasRenderingContext): void {
+    public override _draw(context: ICanvasRenderingContext): void {
         context.save();
 
         this._applyStates(context);
@@ -884,7 +900,7 @@ export class InputText extends Control implements IFocusableControl {
         }
 
         if (!this._fontOffset || this._wasDirty) {
-            this._fontOffset = Control._GetFontOffset(context.font);
+            this._fontOffset = Control._GetFontOffset(context.font, this._host.getScene()?.getEngine());
         }
 
         // Text
@@ -926,6 +942,10 @@ export class InputText extends Control implements IFocusableControl {
             }
         } else {
             this._scrollLeft = clipTextLeft;
+        }
+
+        if (this.outlineWidth) {
+            context.strokeText(text.text, this._scrollLeft, this._currentMeasure.top + rootY);
         }
 
         context.fillText(text.text, this._scrollLeft, this._currentMeasure.top + rootY);
@@ -1032,7 +1052,7 @@ export class InputText extends Control implements IFocusableControl {
         context.restore();
     }
 
-    public _onPointerDown(target: Control, coordinates: Vector2, pointerId: number, buttonIndex: number, pi: PointerInfoBase): boolean {
+    public override _onPointerDown(target: Control, coordinates: Vector2, pointerId: number, buttonIndex: number, pi: PointerInfoBase): boolean {
         if (!super._onPointerDown(target, coordinates, pointerId, buttonIndex, pi)) {
             return false;
         }
@@ -1061,7 +1081,7 @@ export class InputText extends Control implements IFocusableControl {
 
         return true;
     }
-    public _onPointerMove(target: Control, coordinates: Vector2, pointerId: number, pi: PointerInfoBase): void {
+    public override _onPointerMove(target: Control, coordinates: Vector2, pointerId: number, pi: PointerInfoBase): void {
         if (this._host.focusedControl === this && this._isPointerDown && !this.isReadOnly) {
             this._clickedCoordinate = coordinates.x;
             this._markAsDirty();
@@ -1070,7 +1090,7 @@ export class InputText extends Control implements IFocusableControl {
         super._onPointerMove(target, coordinates, pointerId, pi);
     }
 
-    public _onPointerUp(target: Control, coordinates: Vector2, pointerId: number, buttonIndex: number, notifyClick: boolean): void {
+    public override _onPointerUp(target: Control, coordinates: Vector2, pointerId: number, buttonIndex: number, notifyClick: boolean): void {
         this._isPointerDown = false;
         delete this._host._capturingControl[pointerId];
         super._onPointerUp(target, coordinates, pointerId, buttonIndex, notifyClick);
@@ -1081,6 +1101,7 @@ export class InputText extends Control implements IFocusableControl {
     }
 
     /** @internal */
+    // eslint-disable-next-line @typescript-eslint/naming-convention
     private set isTextHighlightOn(value: boolean) {
         if (this._isTextHighlightOn === value) {
             return;
@@ -1092,11 +1113,12 @@ export class InputText extends Control implements IFocusableControl {
     }
 
     /** @internal */
+    // eslint-disable-next-line @typescript-eslint/naming-convention
     private get isTextHighlightOn(): boolean {
         return this._isTextHighlightOn;
     }
 
-    public dispose() {
+    public override dispose() {
         super.dispose();
 
         this.onBlurObservable.clear();

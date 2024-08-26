@@ -4,7 +4,7 @@ import { Gamepad } from "./gamepad";
 /**
  * Defines supported buttons for DualShock compatible gamepads
  */
-export enum DualShockButton {
+export const enum DualShockButton {
     /** Cross */
     Cross = 0,
     /** Circle */
@@ -28,7 +28,7 @@ export enum DualShockButton {
 }
 
 /** Defines values for DualShock DPad  */
-export enum DualShockDpad {
+export const enum DualShockDpad {
     /** Up */
     Up = 12,
     /** Down */
@@ -395,7 +395,7 @@ export class DualShockPad extends Gamepad {
     /**
      * Force the gamepad to synchronize with device values
      */
-    public update() {
+    public override update() {
         super.update();
         this.buttonCross = this.browserGamepad.buttons[0].value;
         this.buttonCircle = this.browserGamepad.buttons[1].value;
@@ -418,7 +418,7 @@ export class DualShockPad extends Gamepad {
     /**
      * Disposes the gamepad
      */
-    public dispose() {
+    public override dispose() {
         super.dispose();
         this.onButtonDownObservable.clear();
         this.onButtonUpObservable.clear();

@@ -30,6 +30,7 @@ import { ReflectionProbe } from "../../Probes/reflectionProbe";
 import { GetClass } from "../../Misc/typeStore";
 import { Tools } from "../../Misc/tools";
 import { PostProcess } from "../../PostProcesses/postProcess";
+import { SpriteManager } from "core/Sprites/spriteManager";
 
 /** @internal */
 // eslint-disable-next-line @typescript-eslint/naming-convention, no-var
@@ -427,6 +428,15 @@ const loadAssetContainer = (scene: Scene, data: string, rootUrl: string, onError
             }
         }
 
+        // Sprites
+        if (parsedData.spriteManagers) {
+            for (let index = 0, cache = parsedData.spriteManagers.length; index < cache; index++) {
+                const parsedSpriteManager = parsedData.spriteManagers[index];
+                const spriteManager = SpriteManager.Parse(parsedSpriteManager, scene, rootUrl);
+                log += "\n\t\tSpriteManager " + spriteManager.name;
+            }
+        }
+
         // Browsing all the graph to connect the dots
         for (index = 0, cache = scene.cameras.length; index < cache; index++) {
             const camera = scene.cameras[index];
@@ -621,7 +631,7 @@ SceneLoader.RegisterPlugin({
                 meshesNames = [meshesNames];
             }
 
-            const hierarchyIds = new Array<number>();
+            const hierarchyIds: number[] = [];
             const parsedIdToNodeMap = new Map<number, Node>();
 
             // Transform nodes (the overall idea is to load all of them as this is super fast and then get rid of the ones we don't need)
@@ -740,7 +750,13 @@ SceneLoader.RegisterPlugin({
                         }
 
                         // Skeleton ?
-                        if (parsedMesh.skeletonId > -1 && parsedData.skeletons !== undefined && parsedData.skeletons !== null) {
+                        if (
+                            parsedMesh.skeletonId !== null &&
+                            parsedMesh.skeletonId !== undefined &&
+                            parsedData.skeletonId !== -1 &&
+                            parsedData.skeletons !== undefined &&
+                            parsedData.skeletons !== null
+                        ) {
                             const skeletonAlreadyLoaded = loadedSkeletonsIds.indexOf(parsedMesh.skeletonId) > -1;
                             if (!skeletonAlreadyLoaded) {
                                 for (let skeletonIndex = 0, skeletonCache = parsedData.skeletons.length; skeletonIndex < skeletonCache; skeletonIndex++) {
@@ -943,25 +959,36 @@ SceneLoader.RegisterPlugin({
             }
 
             // Fog
-            if (parsedData.fogMode && parsedData.fogMode !== 0) {
+            if (parsedData.fogMode !== undefined && parsedData.fogMode !== null) {
                 scene.fogMode = parsedData.fogMode;
+            }
+            if (parsedData.fogColor !== undefined && parsedData.fogColor !== null) {
                 scene.fogColor = Color3.FromArray(parsedData.fogColor);
+            }
+            if (parsedData.fogStart !== undefined && parsedData.fogStart !== null) {
                 scene.fogStart = parsedData.fogStart;
+            }
+            if (parsedData.fogEnd !== undefined && parsedData.fogEnd !== null) {
                 scene.fogEnd = parsedData.fogEnd;
+            }
+            if (parsedData.fogDensity !== undefined && parsedData.fogDensity !== null) {
                 scene.fogDensity = parsedData.fogDensity;
-                log += "\tFog mode for scene:  ";
-                switch (scene.fogMode) {
-                    // getters not compiling, so using hardcoded
-                    case 1:
-                        log += "exp\n";
-                        break;
-                    case 2:
-                        log += "exp2\n";
-                        break;
-                    case 3:
-                        log += "linear\n";
-                        break;
-                }
+            }
+            log += "\tFog mode for scene:  ";
+            switch (scene.fogMode) {
+                case 0:
+                    log += "none\n";
+                    break;
+                // getters not compiling, so using hardcoded
+                case 1:
+                    log += "exp\n";
+                    break;
+                case 2:
+                    log += "exp2\n";
+                    break;
+                case 3:
+                    log += "linear\n";
+                    break;
             }
 
             //Physics
@@ -976,7 +1003,7 @@ SceneLoader.RegisterPlugin({
                 }
                 log = "\tPhysics engine " + (parsedData.physicsEngine ? parsedData.physicsEngine : "oimo") + " enabled\n";
                 //else - default engine, which is currently oimo
-                const physicsGravity = parsedData.physicsGravity ? Vector3.FromArray(parsedData.physicsGravity) : null;
+                const physicsGravity = parsedData.gravity ? Vector3.FromArray(parsedData.gravity) : parsedData.physicsGravity ? Vector3.FromArray(parsedData.physicsGravity) : null;
                 scene.enablePhysics(physicsGravity, physicsPlugin);
             }
 

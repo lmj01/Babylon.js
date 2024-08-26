@@ -71,7 +71,7 @@
         },
         {
             "label": "Run visualization tests (Dev)",
-            "dependsOn": ["CDN Serve (Dev)"],
+            "dependsOn": ["CDN Serve and watch (Dev)"],
             "type": "shell",
             "command": "npm",
             "runOptions": {
@@ -91,7 +91,7 @@
         },
         {
             "label": "Run visualization tests headless (Dev)",
-            "dependsOn": ["CDN Serve (Dev)"],
+            "dependsOn": ["CDN Serve and watch (Dev)"],
             "type": "shell",
             "command": "npm",
             "runOptions": {
@@ -104,6 +104,26 @@
             "presentation": {
                 "group": "test"
             }
+        },
+        {
+            "label": "Launch visualization test runner (Dev)",
+            "dependsOn": ["CDN Serve and watch (Dev)"],
+            "type": "shell",
+            "command": "npm",
+            "runOptions": {
+                "instanceLimit": 1
+            },
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "HEADLESS": "false"
+                }
+            },
+            "args": ["run", "test:visualization:ui"],
+            "presentation": {
+                "group": "test"
+            },
+            "problemMatcher": []
         },
         {
             "label": "Run Dev host (Dev)",
@@ -235,7 +255,7 @@
             "label": "Playground Serve (Dev)",
             "type": "shell",
             "command": "npm",
-            "dependsOn": "CDN Serve (Dev)",
+            "dependsOn": "CDN Serve and watch (Dev)",
             "runOptions": {
                 "instanceLimit": 1
             },
@@ -253,7 +273,7 @@
             "label": "Playground Serve (LTS)",
             "type": "shell",
             "command": "npm",
-            "dependsOn": "CDN Serve (LTS)",
+            "dependsOn": "CDN Serve and watch (LTS)",
             "runOptions": {
                 "instanceLimit": 1
             },
@@ -289,7 +309,7 @@
             "label": "Sandbox Serve (Dev)",
             "type": "shell",
             "command": "npm",
-            "dependsOn": "CDN Serve (Dev)",
+            "dependsOn": "CDN Serve and watch (Dev)",
             "runOptions": {
                 "instanceLimit": 1
             },
@@ -325,7 +345,7 @@
             "label": "GUI Editor Serve (Dev)",
             "type": "shell",
             "command": "npm",
-            "dependsOn": "CDN Serve (Dev)",
+            "dependsOn": "CDN Serve and watch (Dev)",
             "runOptions": {
                 "instanceLimit": 1
             },
@@ -361,7 +381,7 @@
             "label": "Node Editor Serve (Dev)",
             "type": "shell",
             "command": "npm",
-            "dependsOn": "CDN Serve (Dev)",
+            "dependsOn": "CDN Serve and watch (Dev)",
             "runOptions": {
                 "instanceLimit": 1
             },
@@ -369,6 +389,42 @@
                 "cwd": "${workspaceFolder}"
             },
             "args": ["run", "serve", "-w", "@tools/node-editor"],
+            "isBackground": true,
+            "presentation": {
+                "group": "serve"
+            },
+            "problemMatcher": ["$ts-webpack-watch", "$tslint-webpack-watch"]
+        },
+        {
+            "label": "Node Geometry Editor Serve for core (Dev)",
+            "type": "shell",
+            "command": "npm",
+            "dependsOn": "CDN Serve and watch (Dev)",
+            "runOptions": {
+                "instanceLimit": 1
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "args": ["run", "serve", "-w", "@tools/node-geometry-editor"],
+            "isBackground": true,
+            "presentation": {
+                "group": "serve"
+            },
+            "problemMatcher": ["$ts-webpack-watch", "$tslint-webpack-watch"]
+        },
+        {
+            "label": "Node Geometry Editor Serve (Dev)",
+            "type": "shell",
+            "command": "npm",
+            "dependsOn": "CDN Serve and watch (Dev)",
+            "runOptions": {
+                "instanceLimit": 1
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "args": ["run", "serve", "-w", "@tools/node-geometry-editor"],
             "isBackground": true,
             "presentation": {
                 "group": "serve"
@@ -397,7 +453,7 @@
             "label": "VSM Serve (Dev)",
             "type": "shell",
             "command": "npm",
-            "dependsOn": "CDN Serve (Dev)",
+            "dependsOn": "CDN Serve and watch (Dev)",
             "runOptions": {
                 "instanceLimit": 1
             },
@@ -416,6 +472,32 @@
             "command": "echo ${input:terminate}",
             "type": "shell",
             "problemMatcher": []
+        },
+        {
+            "label": "Viewer (Alpha - Web)",
+            "dependsOn": ["Watch all (Dev)"],
+            "type": "shell",
+            "command": "npm",
+            "runOptions": {
+                "instanceLimit": 1
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "args": ["run", "serve", "-w", "@tools/viewer-alpha"],
+            "isBackground": true,
+            "problemMatcher": {
+                "pattern": "$tsc",
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": {
+                        "regexp": ".*Executing task.*"
+                    },
+                    "endsPattern": {
+                        "regexp": ".*VITE.*ready.*"
+                    }
+                }
+            }
         }
     ],
     "inputs": [

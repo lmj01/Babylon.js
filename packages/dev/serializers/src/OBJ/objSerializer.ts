@@ -4,6 +4,7 @@ import { Tools } from "core/Misc/tools";
 import type { StandardMaterial } from "core/Materials/standardMaterial";
 import type { Geometry } from "core/Meshes/geometry";
 import type { Mesh } from "core/Meshes/mesh";
+import { Material } from "core/Materials/material";
 
 /**
  * Class for generating OBJ data from a Babylon scene.
@@ -11,13 +12,13 @@ import type { Mesh } from "core/Meshes/mesh";
 export class OBJExport {
     /**
      * Exports the geometry of a Mesh array in .OBJ file format (text)
-     * @param mesh defines the list of meshes to serialize
+     * @param meshes defines the list of meshes to serialize
      * @param materials defines if materials should be exported
      * @param matlibname defines the name of the associated mtl file
      * @param globalposition defines if the exported positions are globals or local to the exported mesh
      * @returns the OBJ content
      */
-    public static OBJ(mesh: Mesh[], materials?: boolean, matlibname?: string, globalposition?: boolean): string {
+    public static OBJ(meshes: Mesh[], materials?: boolean, matlibname?: string, globalposition?: boolean): string {
         const output: string[] = [];
         let v = 1;
         // keep track of uv index in case mixed meshes are passed in
@@ -29,30 +30,31 @@ export class OBJExport {
             }
             output.push("mtllib " + matlibname + ".mtl");
         }
-        for (let j = 0; j < mesh.length; j++) {
-            output.push("g object" + j);
-            output.push("o object_" + j);
+        for (let j = 0; j < meshes.length; j++) {
+            const mesh = meshes[j];
+            const objectName = mesh.name || `mesh${j}}`;
+            output.push(`o ${objectName}`);
 
             //Uses the position of the item in the scene, to the file (this back to normal in the end)
             let inverseTransform: Nullable<Matrix> = null;
             if (globalposition) {
-                const transform = mesh[j].computeWorldMatrix(true);
+                const transform = mesh.computeWorldMatrix(true);
                 inverseTransform = new Matrix();
                 transform.invertToRef(inverseTransform);
 
-                mesh[j].bakeTransformIntoVertices(transform);
+                mesh.bakeTransformIntoVertices(transform);
             }
 
             //TODO: submeshes (groups)
             //TODO: smoothing groups (s 1, s off);
             if (materials) {
-                const mat = mesh[j].material;
+                const mat = mesh.material;
 
                 if (mat) {
                     output.push("usemtl " + mat.id);
                 }
             }
-            const g: Nullable<Geometry> = mesh[j].geometry;
+            const g: Nullable<Geometry> = mesh.geometry;
 
             if (!g) {
                 Tools.Warn("No geometry is present on the mesh");
@@ -71,20 +73,17 @@ export class OBJExport {
                 continue;
             }
 
+            const useRightHandedSystem = meshes[0].getScene().useRightHandedSystem;
+            const handednessSign = useRightHandedSystem ? 1 : -1;
+
             for (let i = 0; i < trunkVerts.length; i += 3) {
-                // Babylon.js default is left handed, while OBJ default is right handed
-                // Need to invert Z vertices unless Babylon is set to use a right handed system
-                if (mesh[0].getScene().useRightHandedSystem) {
-                    output.push("v " + trunkVerts[i] + " " + trunkVerts[i + 1] + " " + trunkVerts[i + 2]);
-                } else {
-                    output.push("v " + trunkVerts[i] + " " + trunkVerts[i + 1] + " " + -trunkVerts[i + 2]);
-                }
+                output.push("v " + trunkVerts[i] * handednessSign + " " + trunkVerts[i + 1] + " " + trunkVerts[i + 2]);
                 currentV++;
             }
 
             if (trunkNormals != null) {
                 for (let i = 0; i < trunkNormals.length; i += 3) {
-                    output.push("vn " + trunkNormals[i] + " " + trunkNormals[i + 1] + " " + trunkNormals[i + 2]);
+                    output.push("vn " + trunkNormals[i] * handednessSign + " " + trunkNormals[i + 1] + " " + trunkNormals[i + 2]);
                 }
             }
             if (trunkUV != null) {
@@ -94,10 +93,15 @@ export class OBJExport {
                 }
             }
 
+            const blanks: string[] = ["", "", ""];
+            const material = mesh.material || mesh.getScene().defaultMaterial;
+
+            const sideOrientation = material._getEffectiveOrientation(mesh);
+            const [offset1, offset2] = sideOrientation === Material.ClockWiseSideOrientation ? [2, 1] : [1, 2];
+
             for (let i = 0; i < trunkFaces.length; i += 3) {
-                const indices = [String(trunkFaces[i + 2] + v), String(trunkFaces[i + 1] + v), String(trunkFaces[i] + v)];
-                const textureIndices = [String(trunkFaces[i + 2] + textureV), String(trunkFaces[i + 1] + textureV), String(trunkFaces[i] + textureV)];
-                const blanks: string[] = ["", "", ""];
+                const indices = [String(trunkFaces[i] + v), String(trunkFaces[i + offset1] + v), String(trunkFaces[i + offset2] + v)];
+                const textureIndices = [String(trunkFaces[i] + textureV), String(trunkFaces[i + offset1] + textureV), String(trunkFaces[i + offset2] + textureV)];
 
                 const facePositions = indices;
                 const faceUVs = trunkUV != null ? textureIndices : blanks;
@@ -126,7 +130,7 @@ export class OBJExport {
             }
             //back de previous matrix, to not change the original mesh in the scene
             if (globalposition && inverseTransform) {
-                mesh[j].bakeTransformIntoVertices(inverseTransform);
+                mesh.bakeTransformIntoVertices(inverseTransform);
             }
             v += currentV;
             textureV += currentTextureV;

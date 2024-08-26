@@ -18,6 +18,7 @@ export class DeviceEventFactory {
      * @param currentState Current value for given input
      * @param deviceInputSystem Reference to DeviceInputSystem
      * @param elementToAttachTo HTMLElement to reference as target for inputs
+     * @param pointerId PointerId to use for pointer events
      * @returns IUIEvent object
      */
     public static CreateDeviceEvent(
@@ -40,6 +41,7 @@ export class DeviceEventFactory {
             case DeviceType.Touch:
                 return this._CreatePointerEvent(deviceType, deviceSlot, inputIndex, currentState, deviceInputSystem, elementToAttachTo, pointerId);
             default:
+                // eslint-disable-next-line no-throw-literal
                 throw `Unable to generate event for device ${DeviceType[deviceType]}`;
         }
     }
@@ -53,6 +55,7 @@ export class DeviceEventFactory {
      * @param currentState Current value for given input
      * @param deviceInputSystem Reference to DeviceInputSystem
      * @param elementToAttachTo HTMLElement to reference as target for inputs
+     * @param pointerId PointerId to use for pointer events
      * @returns IUIEvent object (Pointer)
      */
     private static _CreatePointerEvent(
@@ -75,6 +78,15 @@ export class DeviceEventFactory {
             evt.pointerId = pointerId ?? deviceSlot;
             evt.pointerType = "touch";
         }
+
+        let buttons = 0;
+
+        // Populate buttons property with current state of all mouse buttons
+        // Uses values found on: https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/buttons
+        buttons += deviceInputSystem.pollInput(deviceType, deviceSlot, PointerInput.LeftClick);
+        buttons += deviceInputSystem.pollInput(deviceType, deviceSlot, PointerInput.RightClick) * 2;
+        buttons += deviceInputSystem.pollInput(deviceType, deviceSlot, PointerInput.MiddleClick) * 4;
+        evt.buttons = buttons;
 
         if (inputIndex === PointerInput.Move) {
             evt.type = "pointermove";

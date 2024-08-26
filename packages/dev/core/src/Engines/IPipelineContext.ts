@@ -1,6 +1,7 @@
-import type { Nullable } from "../types";
+import type { FloatArray, Nullable } from "../types";
 import type { Effect } from "../Materials/effect";
 import type { IMatrixLike, IVector2Like, IVector3Like, IVector4Like, IColor3Like, IColor4Like, IQuaternionLike } from "../Maths/math.like";
+import type { AbstractEngine } from "./abstractEngine";
 
 /**
  * Class used to store and describe the pipeline context associated with an effect
@@ -9,11 +10,17 @@ export interface IPipelineContext {
     /**
      * Gets a boolean indicating that this pipeline context is supporting asynchronous creating
      */
-    isAsync: boolean;
+    readonly isAsync: boolean;
     /**
      * Gets a boolean indicating that the context is ready to be used (like shaders / pipelines are compiled and ready for instance)
      */
-    isReady: boolean;
+    readonly isReady: boolean;
+
+    /**
+     * Property used to handle vertex buffers with int values when the shader code expect float values.
+     * @internal
+     */
+    vertexBufferKindToType?: { [kind: string]: number };
 
     /** @internal */
     _name?: string;
@@ -25,7 +32,7 @@ export interface IPipelineContext {
     _getFragmentShaderCode(): string | null;
 
     /** @internal */
-    _handlesSpectorRebuildCallback(onCompiled: (compiledObject: any) => void): void;
+    _handlesSpectorRebuildCallback?(onCompiled: (compiledObject: any) => void): void;
 
     /** @internal */
     _fillEffectInformation(
@@ -41,6 +48,9 @@ export interface IPipelineContext {
 
     /** Releases the resources associated with the pipeline. */
     dispose(): void;
+
+    /** set the engine, in case it is not a part of the constructor */
+    setEngine<T extends AbstractEngine>(engine: T): void;
 
     /**
      * Sets an integer value on a uniform variable.
@@ -171,28 +181,28 @@ export interface IPipelineContext {
      * @param uniformName Name of the variable.
      * @param array array to be set.
      */
-    setArray(uniformName: string, array: number[] | Float32Array): void;
+    setArray(uniformName: string, array: FloatArray): void;
 
     /**
      * Sets an array 2 on a uniform variable. (Array is specified as single array eg. [1,2,3,4] will result in [[1,2],[3,4]] in the shader)
      * @param uniformName Name of the variable.
      * @param array array to be set.
      */
-    setArray2(uniformName: string, array: number[] | Float32Array): void;
+    setArray2(uniformName: string, array: FloatArray): void;
 
     /**
      * Sets an array 3 on a uniform variable. (Array is specified as single array eg. [1,2,3,4,5,6] will result in [[1,2,3],[4,5,6]] in the shader)
      * @param uniformName Name of the variable.
      * @param array array to be set.
      */
-    setArray3(uniformName: string, array: number[] | Float32Array): void;
+    setArray3(uniformName: string, array: FloatArray): void;
 
     /**
      * Sets an array 4 on a uniform variable. (Array is specified as single array eg. [1,2,3,4,5,6,7,8] will result in [[1,2,3,4],[5,6,7,8]] in the shader)
      * @param uniformName Name of the variable.
      * @param array array to be set.
      */
-    setArray4(uniformName: string, array: number[] | Float32Array): void;
+    setArray4(uniformName: string, array: FloatArray): void;
 
     /**
      * Sets matrices on a uniform variable.

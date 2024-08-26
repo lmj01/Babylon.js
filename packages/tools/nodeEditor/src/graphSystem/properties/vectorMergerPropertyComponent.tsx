@@ -3,14 +3,14 @@ import { LineContainerComponent } from "../../sharedComponents/lineContainerComp
 import { GeneralPropertyTabComponent } from "./genericNodePropertyComponent";
 import type { VectorMergerBlock } from "core/Materials/Node/Blocks/vectorMergerBlock";
 import type { IPropertyComponentProps } from "shared-ui-components/nodeGraphSystem/interfaces/propertyComponentProps";
-import { OptionsLineComponent } from "shared-ui-components/lines/optionsLineComponent";
+import { OptionsLine } from "shared-ui-components/lines/optionsLineComponent";
 
 export class VectorMergerPropertyTabComponent extends React.Component<IPropertyComponentProps> {
     constructor(props: IPropertyComponentProps) {
         super(props);
     }
 
-    render() {
+    override render() {
         const vectorMergerBlock = this.props.nodeData.data as VectorMergerBlock;
 
         const targetOptions: { label: string; value: string }[] = [
@@ -24,7 +24,7 @@ export class VectorMergerPropertyTabComponent extends React.Component<IPropertyC
             <div>
                 <GeneralPropertyTabComponent stateManager={this.props.stateManager} nodeData={this.props.nodeData} />
                 <LineContainerComponent title="SWIZZLES">
-                    <OptionsLineComponent
+                    <OptionsLine
                         label="X"
                         options={targetOptions}
                         target={vectorMergerBlock}
@@ -32,11 +32,11 @@ export class VectorMergerPropertyTabComponent extends React.Component<IPropertyC
                         valuesAreStrings={true}
                         onSelect={() => {
                             this.props.stateManager.onUpdateRequiredObservable.notifyObservers(vectorMergerBlock);
-                            this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+                            this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
                             this.forceUpdate();
                         }}
                     />
-                    <OptionsLineComponent
+                    <OptionsLine
                         label="Y"
                         options={targetOptions}
                         target={vectorMergerBlock}
@@ -44,11 +44,11 @@ export class VectorMergerPropertyTabComponent extends React.Component<IPropertyC
                         valuesAreStrings={true}
                         onSelect={() => {
                             this.props.stateManager.onUpdateRequiredObservable.notifyObservers(vectorMergerBlock);
-                            this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+                            this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
                             this.forceUpdate();
                         }}
                     />
-                    <OptionsLineComponent
+                    <OptionsLine
                         label="Z"
                         options={targetOptions}
                         target={vectorMergerBlock}
@@ -56,11 +56,11 @@ export class VectorMergerPropertyTabComponent extends React.Component<IPropertyC
                         valuesAreStrings={true}
                         onSelect={() => {
                             this.props.stateManager.onUpdateRequiredObservable.notifyObservers(vectorMergerBlock);
-                            this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+                            this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
                             this.forceUpdate();
                         }}
                     />
-                    <OptionsLineComponent
+                    <OptionsLine
                         label="W"
                         options={targetOptions}
                         target={vectorMergerBlock}
@@ -68,7 +68,7 @@ export class VectorMergerPropertyTabComponent extends React.Component<IPropertyC
                         valuesAreStrings={true}
                         onSelect={() => {
                             this.props.stateManager.onUpdateRequiredObservable.notifyObservers(vectorMergerBlock);
-                            this.props.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+                            this.props.stateManager.onRebuildRequiredObservable.notifyObservers();
                             this.forceUpdate();
                         }}
                     />

@@ -48,16 +48,23 @@ if (vClipSpacePosition.x / vClipSpacePosition.w >= vDebugMode.x) {
 // Maps
     #elif DEBUGMODE == 20 && defined(ALBEDO)
         gl_FragColor.rgb = albedoTexture.rgb;
+        #ifndef GAMMAALBEDO
+            #define DEBUGMODE_GAMMA
+        #endif
     #elif DEBUGMODE == 21 && defined(AMBIENT)
         gl_FragColor.rgb = aoOut.ambientOcclusionColorMap.rgb;
     #elif DEBUGMODE == 22 && defined(OPACITY)
         gl_FragColor.rgb = opacityMap.rgb;
     #elif DEBUGMODE == 23 && defined(EMISSIVE)
         gl_FragColor.rgb = emissiveColorTex.rgb;
-        #define DEBUGMODE_GAMMA
+        #ifndef GAMMAEMISSIVE
+            #define DEBUGMODE_GAMMA
+        #endif
     #elif DEBUGMODE == 24 && defined(LIGHTMAP)
         gl_FragColor.rgb = lightmapColor.rgb;
-        #define DEBUGMODE_GAMMA
+        #ifndef GAMMALIGHTMAP
+            #define DEBUGMODE_GAMMA
+        #endif
     #elif DEBUGMODE == 25 && defined(REFLECTIVITY) && defined(METALLICWORKFLOW)
         gl_FragColor.rgb = reflectivityOut.surfaceMetallicColorMap.rgb;
     #elif DEBUGMODE == 26 && defined(REFLECTIVITY) && !defined(METALLICWORKFLOW)
@@ -73,6 +80,8 @@ if (vClipSpacePosition.x / vClipSpacePosition.w >= vDebugMode.x) {
         gl_FragColor.rgb = anisotropicOut.anisotropyMapData.rgb;
     #elif DEBUGMODE == 31 && defined(SUBSURFACE) && defined(SS_THICKNESSANDMASK_TEXTURE)
         gl_FragColor.rgb = subSurfaceOut.thicknessMap.rgb;
+    #elif DEBUGMODE == 32 && defined(BUMP)
+        gl_FragColor.rgb = texture2D(bumpSampler, vBumpUV).rgb;
 // Env
     #elif DEBUGMODE == 40 && defined(SS_REFRACTION)
         // Base color.
@@ -80,7 +89,9 @@ if (vClipSpacePosition.x / vClipSpacePosition.w >= vDebugMode.x) {
         #define DEBUGMODE_GAMMA
     #elif DEBUGMODE == 41 && defined(REFLECTION)
         gl_FragColor.rgb = reflectionOut.environmentRadiance.rgb;
-        #define DEBUGMODE_GAMMA
+        #ifndef GAMMAREFLECTION
+            #define DEBUGMODE_GAMMA
+        #endif
     #elif DEBUGMODE == 42 && defined(CLEARCOAT) && defined(REFLECTION)
         gl_FragColor.rgb = clearcoatOut.environmentClearCoatRadiance.rgb;
         #define DEBUGMODE_GAMMA
@@ -99,7 +110,9 @@ if (vClipSpacePosition.x / vClipSpacePosition.w >= vDebugMode.x) {
         #define DEBUGMODE_GAMMA
     #elif DEBUGMODE == 54 && defined(REFLECTION)
         gl_FragColor.rgb = reflectionOut.environmentIrradiance.rgb;
-        #define DEBUGMODE_GAMMA
+        #ifndef GAMMAREFLECTION
+            #define DEBUGMODE_GAMMA
+        #endif
 // Lighting Params
     #elif DEBUGMODE == 60
         gl_FragColor.rgb = surfaceAlbedo.rgb;
@@ -142,7 +155,7 @@ if (vClipSpacePosition.x / vClipSpacePosition.w >= vDebugMode.x) {
 // Misc
     #elif DEBUGMODE == 80 && defined(RADIANCEOCCLUSION)
         gl_FragColor.rgb = vec3(seo);
-    #elif DEBUGMODE == 81 && defined(HORIZONOCCLUSION)
+    #elif DEBUGMODE == 81 && defined(HORIZONOCCLUSION) && defined(BUMP) && defined(REFLECTIONMAP_3D)
         gl_FragColor.rgb = vec3(eho);
     #elif DEBUGMODE == 82 && defined(MS_BRDF_ENERGY_CONSERVATION)
         gl_FragColor.rgb = vec3(energyConservationFactor);
@@ -159,6 +172,18 @@ if (vClipSpacePosition.x / vClipSpacePosition.w >= vDebugMode.x) {
         gl_FragColor.rgb = vec3(luminanceOverAlpha);
     #elif DEBUGMODE == 87
         gl_FragColor.rgb = vec3(alpha);
+    #elif DEBUGMODE == 88 && defined(ALBEDO)
+        gl_FragColor.rgb = vec3(albedoTexture.a);
+    #elif DEBUGMODE == 89
+        gl_FragColor.rgb = aoOut.ambientOcclusionColor.rgb;
+    // Does Not Exist
+    #else
+        float stripeWidth = 30.;
+        float stripePos = floor(gl_FragCoord.x / stripeWidth);
+        float whichColor = mod(stripePos, 2.);
+        vec3 color1 = vec3(.6,.2,.2);
+        vec3 color2 = vec3(.3,.1,.1);
+        gl_FragColor.rgb = mix(color1, color2, whichColor);
     #endif
 
     gl_FragColor.rgb *= vDebugMode.y;
@@ -174,6 +199,8 @@ if (vClipSpacePosition.x / vClipSpacePosition.w >= vDebugMode.x) {
         gl_FragData[0] = toLinearSpace(gl_FragColor); // linear to cancel gamma transform in prepass
         gl_FragData[1] = vec4(0., 0., 0., 0.); // tag as no SSS
     #endif
+#ifdef DEBUGMODE_FORCERETURN
     return;
+#endif
 }
 #endif

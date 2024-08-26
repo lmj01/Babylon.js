@@ -4,6 +4,7 @@ import type { NodeMaterialBuildState } from "../../nodeMaterialBuildState";
 import type { NodeMaterialConnectionPoint } from "../../nodeMaterialBlockConnectionPoint";
 import { NodeMaterialBlockTargets } from "../../Enums/nodeMaterialBlockTargets";
 import { RegisterClass } from "../../../../Misc/typeStore";
+import { ShaderLanguage } from "core/Materials/shaderLanguage";
 
 /**
  * Block used to make gl_FragCoord available
@@ -29,7 +30,7 @@ export class FragCoordBlock extends NodeMaterialBlock {
      * Gets the current class name
      * @returns the class name
      */
-    public getClassName() {
+    public override getClassName() {
         return "FragCoordBlock";
     }
 
@@ -86,19 +87,22 @@ export class FragCoordBlock extends NodeMaterialBlock {
     protected writeOutputs(state: NodeMaterialBuildState): string {
         let code = "";
 
+        const coord = state.shaderLanguage === ShaderLanguage.WGSL ? "fragmentInputs.position" : "gl_FragCoord";
+
         for (const output of this._outputs) {
             if (output.hasEndpoints) {
-                code += `${this._declareOutput(output, state)} = gl_FragCoord.${output.name};\r\n`;
+                code += `${state._declareOutput(output)} = ${coord}.${output.name};\n`;
             }
         }
 
         return code;
     }
 
-    protected _buildBlock(state: NodeMaterialBuildState) {
+    protected override _buildBlock(state: NodeMaterialBuildState) {
         super._buildBlock(state);
 
         if (state.target === NodeMaterialBlockTargets.Vertex) {
+            // eslint-disable-next-line no-throw-literal
             throw "FragCoordBlock must only be used in a fragment shader";
         }
 

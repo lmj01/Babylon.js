@@ -14,11 +14,10 @@ import { Camera } from "../Cameras/camera";
 import { Constants } from "../Engines/constants";
 import type { Node } from "../node";
 
-import "../Shaders/line.fragment";
-import "../Shaders/line.vertex";
 import type { DataBuffer } from "../Buffers/dataBuffer";
 import { SmartArray } from "../Misc/smartArray";
 import { DrawWrapper } from "../Materials/drawWrapper";
+import { ShaderLanguage } from "core/Materials/shaderLanguage";
 
 declare module "../scene" {
     export interface Scene {
@@ -100,7 +99,7 @@ InstancedLinesMesh.prototype.enableEdgesRendering = function (epsilon = 0.95, ch
  * FaceAdjacencies Helper class to generate edges
  */
 class FaceAdjacencies {
-    public edges = new Array<number>();
+    public edges: number[] = [];
     public p0: Vector3;
     public p1: Vector3;
     public p2: Vector3;
@@ -245,7 +244,7 @@ export class EdgesRenderer implements IEdgesRenderer {
      */
     public customInstances = new SmartArray<Matrix>(32);
 
-    private static _GetShader(scene: Scene): ShaderMaterial {
+    private static _GetShader(scene: Scene, shaderLanguage: ShaderLanguage): ShaderMaterial {
         if (!scene._edgeRenderLineShader) {
             const shader = new ShaderMaterial(
                 "lineShader",
@@ -254,6 +253,15 @@ export class EdgesRenderer implements IEdgesRenderer {
                 {
                     attributes: ["position", "normal"],
                     uniforms: ["world", "viewProjection", "color", "width", "aspectRatio"],
+                    uniformBuffers: ["Scene", "Mesh"],
+                    shaderLanguage: shaderLanguage,
+                    extraInitializationsAsync: async () => {
+                        if (shaderLanguage === ShaderLanguage.WGSL) {
+                            await Promise.all([import("../ShadersWGSL/line.vertex"), import("../ShadersWGSL/line.fragment")]);
+                        } else {
+                            await Promise.all([import("../Shaders/line.vertex"), import("../Shaders/line.fragment")]);
+                        }
+                    },
                 },
                 false
             );
@@ -266,6 +274,16 @@ export class EdgesRenderer implements IEdgesRenderer {
         }
 
         return scene._edgeRenderLineShader;
+    }
+
+    /** Shader language used*/
+    protected _shaderLanguage = ShaderLanguage.GLSL;
+
+    /**
+     * Gets the shader language used.
+     */
+    public get shaderLanguage(): ShaderLanguage {
+        return this._shaderLanguage;
     }
 
     /**
@@ -283,8 +301,10 @@ export class EdgesRenderer implements IEdgesRenderer {
         this._options = options ?? null;
 
         this._epsilon = epsilon;
-        if (this._source.getScene().getEngine().isWebGPU) {
-            this._drawWrapper = new DrawWrapper(source.getEngine());
+        const engine = this._source.getScene().getEngine();
+        if (engine.isWebGPU) {
+            this._drawWrapper = new DrawWrapper(engine);
+            this._shaderLanguage = ShaderLanguage.WGSL;
         }
 
         this._prepareRessources();
@@ -310,7 +330,7 @@ export class EdgesRenderer implements IEdgesRenderer {
             return;
         }
 
-        this._lineShader = EdgesRenderer._GetShader(this._source.getScene());
+        this._lineShader = EdgesRenderer._GetShader(this._source.getScene(), this._shaderLanguage);
     }
 
     /** @internal */
@@ -546,7 +566,7 @@ export class EdgesRenderer implements IEdgesRenderer {
          * Find all vertices that are at the same location (with an epsilon) and remapp them on the same vertex
          */
         const useFastVertexMerger = this._options?.useFastVertexMerger ?? true;
-        const epsVertexMerge = useFastVertexMerger ? Math.round(-Math.log(this._options?.epsilonVertexMerge ?? 1e-6) / Math.log(10)) : this._options?.epsilonVertexMerge ?? 1e-6;
+        const epsVertexMerge = useFastVertexMerger ? Math.round(-Math.log(this._options?.epsilonVertexMerge ?? 1e-6) / Math.log(10)) : (this._options?.epsilonVertexMerge ?? 1e-6);
         const remapVertexIndices: Array<number> = [];
         const uniquePositions: Array<number> = []; // list of unique index of vertices - needed for tessellation
 
@@ -776,8 +796,8 @@ export class EdgesRenderer implements IEdgesRenderer {
         }
 
         // First let's find adjacencies
-        const adjacencies = new Array<FaceAdjacencies>();
-        const faceNormals = new Array<Vector3>();
+        const adjacencies: FaceAdjacencies[] = [];
+        const faceNormals: Vector3[] = [];
         let index: number;
         let faceAdjacencies: FaceAdjacencies;
 
@@ -994,7 +1014,7 @@ export class EdgesRenderer implements IEdgesRenderer {
         }
 
         this._lineShader.setFloat("aspectRatio", engine.getAspectRatio(scene.activeCamera));
-        this._lineShader.bind(this._source.getWorldMatrix());
+        this._lineShader.bind(this._source.getWorldMatrix(), this._source);
 
         // Draw order
         engine.drawElementsType(Material.TriangleFillMode, 0, this._indicesCount, instanceCount);
@@ -1030,7 +1050,7 @@ export class LineEdgesRenderer extends EdgesRenderer {
     /**
      * Generate edges for each line in LinesMesh. Every Line should be rendered as edge.
      */
-    _generateEdgesLines(): void {
+    override _generateEdgesLines(): void {
         const positions = this._source.getVerticesData(VertexBuffer.PositionKind);
         const indices = this._source.getIndices();
 

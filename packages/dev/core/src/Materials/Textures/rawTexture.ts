@@ -2,9 +2,9 @@ import { Texture } from "./texture";
 import { Constants } from "../../Engines/constants";
 import "../../Engines/Extensions/engine.rawTexture";
 import type { Nullable } from "../../types";
-import type { ThinEngine } from "../../Engines/thinEngine";
+import type { AbstractEngine } from "../../Engines/abstractEngine";
 
-declare type Scene = import("../../scene").Scene;
+import type { Scene } from "../../scene";
 
 /**
  * Raw texture can help creating a texture directly from an array of data.
@@ -37,7 +37,7 @@ export class RawTexture extends Texture {
          * Define the format of the data (RGB, RGBA... Engine.TEXTUREFORMAT_xxx)
          */
         public format: number,
-        sceneOrEngine: Nullable<Scene | ThinEngine>,
+        sceneOrEngine: Nullable<Scene | AbstractEngine>,
         generateMipMaps: boolean = true,
         invertY: boolean = false,
         samplingMode: number = Constants.TEXTURE_TRILINEAR_SAMPLINGMODE,
@@ -73,6 +73,35 @@ export class RawTexture extends Texture {
     }
 
     /**
+     * Clones the texture.
+     * @returns the cloned texture
+     */
+    public override clone(): Texture {
+        if (!this._texture) {
+            return super.clone();
+        }
+
+        const rawTexture = new RawTexture(
+            null,
+            this.getSize().width,
+            this.getSize().height,
+            this.format,
+            this.getScene(),
+            this._texture.generateMipMaps,
+            this._invertY,
+            this.samplingMode,
+            this._texture.type,
+            this._texture._creationFlags,
+            this._useSRGBBuffer
+        );
+
+        rawTexture._texture = this._texture;
+        this._texture.incrementReferences();
+
+        return rawTexture;
+    }
+
+    /**
      * Creates a luminance texture from some data.
      * @param data Define the texture data
      * @param width Define the width of the texture
@@ -87,7 +116,7 @@ export class RawTexture extends Texture {
         data: Nullable<ArrayBufferView>,
         width: number,
         height: number,
-        sceneOrEngine: Nullable<Scene | ThinEngine>,
+        sceneOrEngine: Nullable<Scene | AbstractEngine>,
         generateMipMaps: boolean = true,
         invertY: boolean = false,
         samplingMode: number = Constants.TEXTURE_TRILINEAR_SAMPLINGMODE
@@ -110,7 +139,7 @@ export class RawTexture extends Texture {
         data: Nullable<ArrayBufferView>,
         width: number,
         height: number,
-        sceneOrEngine: Nullable<Scene | ThinEngine>,
+        sceneOrEngine: Nullable<Scene | AbstractEngine>,
         generateMipMaps: boolean = true,
         invertY: boolean = false,
         samplingMode: number = Constants.TEXTURE_TRILINEAR_SAMPLINGMODE
@@ -133,7 +162,7 @@ export class RawTexture extends Texture {
         data: Nullable<ArrayBufferView>,
         width: number,
         height: number,
-        sceneOrEngine: Nullable<Scene | ThinEngine>,
+        sceneOrEngine: Nullable<Scene | AbstractEngine>,
         generateMipMaps: boolean = true,
         invertY: boolean = false,
         samplingMode: number = Constants.TEXTURE_TRILINEAR_SAMPLINGMODE
@@ -159,7 +188,7 @@ export class RawTexture extends Texture {
         data: Nullable<ArrayBufferView>,
         width: number,
         height: number,
-        sceneOrEngine: Nullable<Scene | ThinEngine>,
+        sceneOrEngine: Nullable<Scene | AbstractEngine>,
         generateMipMaps: boolean = true,
         invertY: boolean = false,
         samplingMode: number = Constants.TEXTURE_TRILINEAR_SAMPLINGMODE,
@@ -188,7 +217,7 @@ export class RawTexture extends Texture {
         data: Nullable<ArrayBufferView>,
         width: number,
         height: number,
-        sceneOrEngine: Nullable<Scene | ThinEngine>,
+        sceneOrEngine: Nullable<Scene | AbstractEngine>,
         generateMipMaps: boolean = true,
         invertY: boolean = false,
         samplingMode: number = Constants.TEXTURE_TRILINEAR_SAMPLINGMODE,
@@ -216,7 +245,7 @@ export class RawTexture extends Texture {
         data: Nullable<ArrayBufferView>,
         width: number,
         height: number,
-        sceneOrEngine: Nullable<Scene | ThinEngine>,
+        sceneOrEngine: Nullable<Scene | AbstractEngine>,
         generateMipMaps: boolean = true,
         invertY: boolean = false,
         samplingMode: number = Constants.TEXTURE_TRILINEAR_SAMPLINGMODE,
@@ -254,7 +283,7 @@ export class RawTexture extends Texture {
         data: Nullable<ArrayBufferView>,
         width: number,
         height: number,
-        sceneOrEngine: Nullable<Scene | ThinEngine>,
+        sceneOrEngine: Nullable<Scene | AbstractEngine>,
         generateMipMaps: boolean = true,
         invertY: boolean = false,
         samplingMode: number = Texture.TRILINEAR_SAMPLINGMODE,
@@ -279,7 +308,7 @@ export class RawTexture extends Texture {
         data: Nullable<ArrayBufferView>,
         width: number,
         height: number,
-        sceneOrEngine: Nullable<Scene | ThinEngine>,
+        sceneOrEngine: Nullable<Scene | AbstractEngine>,
         generateMipMaps: boolean = true,
         invertY: boolean = false,
         samplingMode: number = Texture.TRILINEAR_SAMPLINGMODE,

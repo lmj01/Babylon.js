@@ -62,7 +62,7 @@ export class ToggleButton extends Rectangle {
     /**
      * Gets or sets a boolean indicating that the toggle button will let internal controls handle picking instead of doing it directly using its bounding info
      */
-    public delegatePickingToChildren = false;
+    public override delegatePickingToChildren = false;
 
     private _group: string;
     /** Gets or sets group name this toggle button belongs to */
@@ -127,7 +127,10 @@ export class ToggleButton extends Rectangle {
      * @param name defines the control name
      * @param group defines the toggle group this toggle belongs to
      */
-    constructor(public name?: string, group?: string) {
+    constructor(
+        public override name?: string,
+        group?: string
+    ) {
         super(name);
         this.group = group ?? "";
 
@@ -186,7 +189,7 @@ export class ToggleButton extends Rectangle {
         };
     }
 
-    protected _getTypeName(): string {
+    protected override _getTypeName(): string {
         return "ToggleButton";
     }
 
@@ -194,7 +197,7 @@ export class ToggleButton extends Rectangle {
     /**
      * @internal
      */
-    public _processPicking(x: number, y: number, pi: PointerInfoBase, type: number, pointerId: number, buttonIndex: number, deltaX?: number, deltaY?: number): boolean {
+    public override _processPicking(x: number, y: number, pi: PointerInfoBase, type: number, pointerId: number, buttonIndex: number, deltaX?: number, deltaY?: number): boolean {
         if (!this._isEnabled || !this.isHitTestVisible || !this.isVisible || this.notRenderable) {
             return false;
         }
@@ -226,7 +229,7 @@ export class ToggleButton extends Rectangle {
     /**
      * @internal
      */
-    public _onPointerEnter(target: Control, pi: PointerInfoBase): boolean {
+    public override _onPointerEnter(target: Control, pi: PointerInfoBase): boolean {
         if (!super._onPointerEnter(target, pi)) {
             return false;
         }
@@ -251,7 +254,7 @@ export class ToggleButton extends Rectangle {
     /**
      * @internal
      */
-    public _onPointerOut(target: Control, pi: PointerInfoBase, force = false): void {
+    public override _onPointerOut(target: Control, pi: PointerInfoBase, force = false): void {
         if (!this.isReadOnly) {
             if (this._isActive) {
                 if (this.pointerOutActiveAnimation) {
@@ -270,7 +273,7 @@ export class ToggleButton extends Rectangle {
     /**
      * @internal
      */
-    public _onPointerDown(target: Control, coordinates: Vector2, pointerId: number, buttonIndex: number, pi: PointerInfoBase): boolean {
+    public override _onPointerDown(target: Control, coordinates: Vector2, pointerId: number, buttonIndex: number, pi: PointerInfoBase): boolean {
         if (!super._onPointerDown(target, coordinates, pointerId, buttonIndex, pi)) {
             return false;
         }
@@ -295,7 +298,7 @@ export class ToggleButton extends Rectangle {
     /**
      * @internal
      */
-    public _onPointerUp(target: Control, coordinates: Vector2, pointerId: number, buttonIndex: number, notifyClick: boolean, pi: PointerInfoBase): void {
+    public override _onPointerUp(target: Control, coordinates: Vector2, pointerId: number, buttonIndex: number, notifyClick: boolean, pi: PointerInfoBase): void {
         if (!this.isReadOnly) {
             if (this._isActive) {
                 if (this.pointerUpActiveAnimation) {

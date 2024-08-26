@@ -15,12 +15,12 @@ import { RadioButtonLineComponent } from "shared-ui-components/lines/radioLineCo
 import { Color3LineComponent } from "shared-ui-components/lines/color3LineComponent";
 import { CheckBoxLineComponent } from "shared-ui-components/lines/checkBoxLineComponent";
 import { FogPropertyGridComponent } from "./fogPropertyGridComponent";
-import { FileButtonLineComponent } from "shared-ui-components/lines/fileButtonLineComponent";
+import { FileButtonLine } from "shared-ui-components/lines/fileButtonLineComponent";
 import { TextureLinkLineComponent } from "../../lines/textureLinkLineComponent";
 import { Vector3LineComponent } from "shared-ui-components/lines/vector3LineComponent";
 import { FloatLineComponent } from "shared-ui-components/lines/floatLineComponent";
 import { SliderLineComponent } from "shared-ui-components/lines/sliderLineComponent";
-import { OptionsLineComponent } from "shared-ui-components/lines/optionsLineComponent";
+import { OptionsLine } from "shared-ui-components/lines/optionsLineComponent";
 import type { LockObject } from "shared-ui-components/tabs/propertyGrids/lockObject";
 import type { GlobalState } from "../../../globalState";
 import { ButtonLineComponent } from "shared-ui-components/lines/buttonLineComponent";
@@ -29,6 +29,7 @@ import { AnimationGridComponent } from "./animations/animationPropertyGridCompon
 import "core/Physics/physicsEngineComponent";
 import "core/Physics/v1/physicsEngineComponent";
 import "core/Physics/v1/physicsEngineComponent";
+import { Logger } from "core/Misc/logger";
 
 interface IScenePropertyGridComponentProps {
     globalState: GlobalState;
@@ -68,7 +69,7 @@ export class ScenePropertyGridComponent extends React.Component<IScenePropertyGr
         const isFileDDS = file.name.toLowerCase().indexOf(".dds") > 0;
         const isFileEnv = file.name.toLowerCase().indexOf(".env") > 0;
         if (!isFileDDS && !isFileEnv) {
-            console.error("Unable to update environment texture. Please select a dds or env file.");
+            Logger.Error("Unable to update environment texture. Please select a dds or env file.");
             return;
         }
 
@@ -90,7 +91,7 @@ export class ScenePropertyGridComponent extends React.Component<IScenePropertyGr
                         () => {},
                         (message) => {
                             if (message) {
-                                console.error(message);
+                                Logger.Error(message);
                             }
                         },
                         undefined,
@@ -127,7 +128,7 @@ export class ScenePropertyGridComponent extends React.Component<IScenePropertyGr
         });
     }
 
-    render() {
+    override render() {
         const scene = this.props.scene;
 
         const physicsEngine = scene.getPhysicsEngine();
@@ -145,6 +146,7 @@ export class ScenePropertyGridComponent extends React.Component<IScenePropertyGr
         const toneMappingOptions = [
             { label: "Standard", value: ImageProcessingConfiguration.TONEMAPPING_STANDARD },
             { label: "ACES", value: ImageProcessingConfiguration.TONEMAPPING_ACES },
+            { label: "Khronos PBR Neutral", value: ImageProcessingConfiguration.TONEMAPPING_KHR_PBR_NEUTRAL },
         ];
 
         const vignetteModeOptions = [
@@ -199,7 +201,7 @@ export class ScenePropertyGridComponent extends React.Component<IScenePropertyGr
                     {scene.environmentTexture && (
                         <TextureLinkLineComponent label="Env. texture" texture={scene.environmentTexture} onSelectionChangedObservable={this.props.onSelectionChangedObservable} />
                     )}
-                    <FileButtonLineComponent label="Update environment texture" onClick={(file) => this.updateEnvironmentTexture(file)} accept=".dds, .env" />
+                    <FileButtonLine label="Update environment texture" onClick={(file) => this.updateEnvironmentTexture(file)} accept=".dds, .env" />
                     <SliderLineComponent
                         lockObject={this.props.lockObject}
                         minimum={0}
@@ -245,7 +247,7 @@ export class ScenePropertyGridComponent extends React.Component<IScenePropertyGr
                         propertyName="toneMappingEnabled"
                         onPropertyChangedObservable={this.props.onPropertyChangedObservable}
                     />
-                    <OptionsLineComponent
+                    <OptionsLine
                         label="Tone mapping type"
                         options={toneMappingOptions}
                         target={imageProcessing}
@@ -316,7 +318,7 @@ export class ScenePropertyGridComponent extends React.Component<IScenePropertyGr
                         propertyName="vignetteColor"
                         onPropertyChangedObservable={this.props.onPropertyChangedObservable}
                     />
-                    <OptionsLineComponent
+                    <OptionsLine
                         label="Vignette blend mode"
                         options={vignetteModeOptions}
                         target={imageProcessing}

@@ -1,20 +1,23 @@
-import { SerializationHelper, serialize } from "../Misc/decorators";
+import { serialize } from "../Misc/decorators";
 import type { Nullable } from "../types";
 import { MaterialPluginManager } from "./materialPluginManager";
 import type { SmartArray } from "../Misc/smartArray";
 import { Constants } from "../Engines/constants";
 
-declare type Engine = import("../Engines/engine").Engine;
-declare type Scene = import("../scene").Scene;
-declare type AbstractMesh = import("../Meshes/abstractMesh").AbstractMesh;
-declare type SubMesh = import("../Meshes/subMesh").SubMesh;
-declare type IAnimatable = import("../Animations/animatable.interface").IAnimatable;
-declare type UniformBuffer = import("./uniformBuffer").UniformBuffer;
-declare type EffectFallbacks = import("./effectFallbacks").EffectFallbacks;
-declare type MaterialDefines = import("./materialDefines").MaterialDefines;
-declare type Material = import("./material").Material;
-declare type BaseTexture = import("./Textures/baseTexture").BaseTexture;
-declare type RenderTargetTexture = import("./Textures/renderTargetTexture").RenderTargetTexture;
+import type { AbstractEngine } from "../Engines/abstractEngine";
+import type { Scene } from "../scene";
+import type { AbstractMesh } from "../Meshes/abstractMesh";
+import type { SubMesh } from "../Meshes/subMesh";
+import type { IAnimatable } from "../Animations/animatable.interface";
+import type { UniformBuffer } from "./uniformBuffer";
+import type { EffectFallbacks } from "./effectFallbacks";
+import type { MaterialDefines } from "./materialDefines";
+import type { Material } from "./material";
+import type { BaseTexture } from "./Textures/baseTexture";
+import type { RenderTargetTexture } from "./Textures/renderTargetTexture";
+import { SerializationHelper } from "../Misc/decorators.serialization";
+import { RegisterClass } from "../Misc/typeStore";
+import { ShaderLanguage } from "./shaderLanguage";
 
 /**
  * Base class for material plugins.
@@ -34,6 +37,12 @@ export class MaterialPluginBase {
     public priority: number = 500;
 
     /**
+     * Indicates that any #include directive in the plugin code must be replaced by the corresponding code.
+     */
+    @serialize()
+    public resolveIncludes: boolean = false;
+
+    /**
      * Indicates that this plugin should be notified for the extra events (HasRenderTargetTextures / FillRenderTargetTextures / HardBindForSubMesh)
      */
     @serialize()
@@ -42,6 +51,20 @@ export class MaterialPluginBase {
     protected _material: Material;
     protected _pluginManager: MaterialPluginManager;
     protected _pluginDefineNames?: { [name: string]: any };
+
+    /**
+     * Gets a boolean indicating that the plugin is compatible with a given shader language.
+     * @param shaderLanguage The shader language to use.
+     * @returns true if the plugin is compatible with the shader language
+     */
+    public isCompatible(shaderLanguage: ShaderLanguage): boolean {
+        switch (shaderLanguage) {
+            case ShaderLanguage.GLSL:
+                return true;
+            default:
+                return false;
+        }
+    }
 
     protected _enable(enable: boolean) {
         if (enable) {
@@ -62,11 +85,13 @@ export class MaterialPluginBase {
      * @param defines list of defines used by the plugin. The value of the property is the default value for this property
      * @param addToPluginList true to add the plugin to the list of plugins managed by the material plugin manager of the material (default: true)
      * @param enable true to enable the plugin (it is handy if the plugin does not handle properties to switch its current activation)
+     * @param resolveIncludes Indicates that any #include directive in the plugin code must be replaced by the corresponding code (default: false)
      */
-    constructor(material: Material, name: string, priority: number, defines?: { [key: string]: any }, addToPluginList = true, enable = false) {
+    constructor(material: Material, name: string, priority: number, defines?: { [key: string]: any }, addToPluginList = true, enable = false, resolveIncludes = false) {
         this._material = material;
         this.name = name;
         this.priority = priority;
+        this.resolveIncludes = resolveIncludes;
 
         if (!material.pluginManager) {
             material.pluginManager = new MaterialPluginManager(material);
@@ -106,7 +131,7 @@ export class MaterialPluginBase {
      * @returns - boolean indicating that the submesh is ready or not.
      */
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    public isReadyForSubMesh(defines: MaterialDefines, scene: Scene, engine: Engine, subMesh: SubMesh): boolean {
+    public isReadyForSubMesh(defines: MaterialDefines, scene: Scene, engine: AbstractEngine, subMesh: SubMesh): boolean {
         return true;
     }
 
@@ -118,7 +143,7 @@ export class MaterialPluginBase {
      * @param subMesh the submesh to bind data for
      */
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    public hardBindForSubMesh(uniformBuffer: UniformBuffer, scene: Scene, engine: Engine, subMesh: SubMesh): void {}
+    public hardBindForSubMesh(uniformBuffer: UniformBuffer, scene: Scene, engine: AbstractEngine, subMesh: SubMesh): void {}
 
     /**
      * Binds the material data.
@@ -128,7 +153,7 @@ export class MaterialPluginBase {
      * @param subMesh the submesh to bind data for
      */
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    public bindForSubMesh(uniformBuffer: UniformBuffer, scene: Scene, engine: Engine, subMesh: SubMesh): void {}
+    public bindForSubMesh(uniformBuffer: UniformBuffer, scene: Scene, engine: AbstractEngine, subMesh: SubMesh): void {}
 
     /**
      * Disposes the resources of the material.
@@ -140,13 +165,14 @@ export class MaterialPluginBase {
     /**
      * Returns a list of custom shader code fragments to customize the shader.
      * @param shaderType "vertex" or "fragment"
-     * @returns null if no code to be added, or a list of pointName => code.
+     * @param shaderLanguage The shader language to use.
+     * @returns null if no code to be added, or a list of pointName =\> code.
      * Note that `pointName` can also be a regular expression if it starts with a `!`.
      * In that case, the string found by the regular expression (if any) will be
      * replaced by the code provided.
      */
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    public getCustomCode(shaderType: string): Nullable<{ [pointName: string]: string }> {
+    public getCustomCode(shaderType: string, shaderLanguage = ShaderLanguage.GLSL): Nullable<{ [pointName: string]: string }> {
         return null;
     }
 
@@ -172,7 +198,7 @@ export class MaterialPluginBase {
     }
 
     /**
-     * Sets the defines for the next rendering. Called before MaterialHelper.PrepareDefinesForAttributes is called.
+     * Sets the defines for the next rendering. Called before PrepareDefinesForAttributes is called.
      * @param defines the list of "defines" to update.
      * @param scene defines the scene to the material belongs to.
      * @param mesh the mesh being rendered
@@ -264,9 +290,14 @@ export class MaterialPluginBase {
 
     /**
      * Gets the description of the uniforms to add to the ubo (if engine supports ubos) or to inject directly in the vertex/fragment shaders (if engine does not support ubos)
+     * @param shaderLanguage The shader language to use.
      * @returns the description of the uniforms
      */
-    public getUniforms(): { ubo?: Array<{ name: string; size?: number; type?: string; arraySize?: number }>; vertex?: string; fragment?: string } {
+    public getUniforms(shaderLanguage = ShaderLanguage.GLSL): {
+        ubo?: Array<{ name: string; size?: number; type?: string; arraySize?: number }>;
+        vertex?: string;
+        fragment?: string;
+    } {
         return {};
     }
 
@@ -279,7 +310,7 @@ export class MaterialPluginBase {
     }
 
     /**
-     * Serializes this clear coat configuration.
+     * Serializes this plugin configuration.
      * @returns - An object with the serialized config.
      */
     public serialize(): any {
@@ -287,7 +318,7 @@ export class MaterialPluginBase {
     }
 
     /**
-     * Parses a anisotropy Configuration from a serialized object.
+     * Parses a plugin configuration from a serialized object.
      * @param source - Serialized object.
      * @param scene Defines the scene we are parsing for
      * @param rootUrl Defines the rootUrl to load from
@@ -296,3 +327,6 @@ export class MaterialPluginBase {
         SerializationHelper.Parse(() => this, source, scene, rootUrl);
     }
 }
+
+// Register Class Name
+RegisterClass("BABYLON.MaterialPluginBase", MaterialPluginBase);

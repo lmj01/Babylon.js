@@ -3,7 +3,7 @@ import { Gamepad } from "../Gamepads/gamepad";
 /**
  * Defines supported buttons for XBox360 compatible gamepads
  */
-export enum Xbox360Button {
+export const enum Xbox360Button {
     /** A */
     A = 0,
     /** B */
@@ -27,7 +27,7 @@ export enum Xbox360Button {
 }
 
 /** Defines values for XBox360 DPad  */
-export enum Xbox360Dpad {
+export const enum Xbox360Dpad {
     /** Up */
     Up = 12,
     /** Down */
@@ -398,7 +398,7 @@ export class Xbox360Pad extends Gamepad {
     /**
      * Force the gamepad to synchronize with device values
      */
-    public update() {
+    public override update() {
         super.update();
         if (this._isXboxOnePad) {
             this.buttonA = this.browserGamepad.buttons[0].value;
@@ -440,7 +440,7 @@ export class Xbox360Pad extends Gamepad {
     /**
      * Disposes the gamepad
      */
-    public dispose() {
+    public override dispose() {
         super.dispose();
         this.onButtonDownObservable.clear();
         this.onButtonUpObservable.clear();

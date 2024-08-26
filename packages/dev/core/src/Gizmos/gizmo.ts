@@ -1,6 +1,5 @@
 import type { Observer } from "../Misc/observable";
 import type { Nullable } from "../types";
-import type { WebVRFreeCamera } from "../Cameras/VR/webVRCamera";
 import type { Scene, IDisposable } from "../scene";
 import { Quaternion, Vector3, Matrix, TmpVectors } from "../Maths/math.vector";
 import type { AbstractMesh } from "../Meshes/abstractMesh";
@@ -42,11 +41,19 @@ export interface GizmoAxisCache {
 /**
  * Anchor options where the Gizmo can be positioned in relation to its anchored node
  */
-export enum GizmoAnchorPoint {
+export const enum GizmoAnchorPoint {
     /** The origin of the attached node */
     Origin,
     /** The pivot point of the attached node*/
     Pivot,
+}
+
+/**
+ * Coordinates mode: Local or World. Defines how axis is aligned: either on world axis or transform local axis
+ */
+export const enum GizmoCoordinatesMode {
+    World,
+    Local,
 }
 
 /**
@@ -84,6 +91,12 @@ export interface IGizmo extends IDisposable {
      * (Default: GizmoAnchorPoint.Origin)
      */
     anchorPoint: GizmoAnchorPoint;
+
+    /**
+     * Set the coordinate mode to use. By default it's local.
+     */
+    coordinatesMode: GizmoCoordinatesMode;
+
     /**
      * When set, the gizmo will always appear the same size no matter where the camera is (default: true)
      */
@@ -93,8 +106,18 @@ export interface IGizmo extends IDisposable {
      * When set null, default value will be used (Quaternion(0, 0, 0, 1))
      */
     customRotationQuaternion: Nullable<Quaternion>;
-    /** Disposes and replaces the current meshes in the gizmo with the specified mesh */
+    /**
+     * Disposes and replaces the current meshes in the gizmo with the specified mesh
+     * @param mesh The mesh to replace the default mesh of the gizmo
+     */
     setCustomMesh(mesh: Mesh): void;
+
+    /**
+     * Additional transform applied to the gizmo.
+     * It's useful when the gizmo is attached to a bone: if the bone is part of a skeleton attached to a mesh, you should define the mesh as additionalTransformNode if you want the gizmo to be displayed at the bone's correct location.
+     * Otherwise, as the gizmo is relative to the skeleton root, the mesh transformation will not be taken into account.
+     */
+    additionalTransformNode?: TransformNode | undefined;
 }
 /**
  * Renders gizmos on top of an existing scene which provide controls for position, rotation, etc.
@@ -107,6 +130,7 @@ export class Gizmo implements IGizmo {
     protected _attachedMesh: Nullable<AbstractMesh> = null;
     protected _attachedNode: Nullable<Node> = null;
     protected _customRotationQuaternion: Nullable<Quaternion> = null;
+    protected _additionalTransformNode?: TransformNode;
     /**
      * Ratio for the scale of the gizmo (Default: 1)
      */
@@ -122,6 +146,13 @@ export class Gizmo implements IGizmo {
      * Only valid for TransformNode derived classes (Mesh, AbstractMesh, ...)
      */
     public static PreserveScaling = false;
+
+    /**
+     * There are 2 ways to preserve scaling: using mesh scaling or absolute scaling. Depending of hierarchy, non uniform scaling and LH or RH coordinates. One is preferable than the other.
+     * If the scaling to be preserved is the local scaling, then set this value to false.
+     * Default is true which means scaling to be preserved is absolute one (with hierarchy applied)
+     */
+    public static UseAbsoluteScaling = true;
 
     /**
      * Ratio for the scale of the gizmo (Default: 1)
@@ -180,6 +211,7 @@ export class Gizmo implements IGizmo {
      */
     public setCustomMesh(mesh: Mesh) {
         if (mesh.getScene() != this.gizmoLayer.utilityLayerScene) {
+            // eslint-disable-next-line no-throw-literal
             throw "When setting a custom mesh on a gizmo, the custom meshes scene must be the same as the gizmos (eg. gizmo.gizmoLayer.utilityLayerScene)";
         }
         this._rootMesh.getChildMeshes().forEach((c) => {
@@ -189,10 +221,24 @@ export class Gizmo implements IGizmo {
         this._customMeshSet = true;
     }
 
+    /**
+     * Additional transform applied to the gizmo.
+     * It's useful when the gizmo is attached to a bone: if the bone is part of a skeleton attached to a mesh, you should define the mesh as additionalTransformNode if you want the gizmo to be displayed at the bone's correct location.
+     * Otherwise, as the gizmo is relative to the skeleton root, the mesh transformation will not be taken into account.
+     */
+    public get additionalTransformNode() {
+        return this._additionalTransformNode;
+    }
+
+    public set additionalTransformNode(value: TransformNode | undefined) {
+        this._additionalTransformNode = value;
+    }
+
     protected _updateGizmoRotationToMatchAttachedMesh = true;
     protected _updateGizmoPositionToMatchAttachedMesh = true;
     protected _anchorPoint = GizmoAnchorPoint.Origin;
     protected _updateScale = true;
+    protected _coordinatesMode = GizmoCoordinatesMode.Local;
 
     /**
      * If set the gizmo's rotation will be updated to match the attached mesh each frame (Default: true)
@@ -224,6 +270,23 @@ export class Gizmo implements IGizmo {
     public get anchorPoint() {
         return this._anchorPoint;
     }
+
+    /**
+     * Set the coordinate system to use. By default it's local.
+     * But it's possible for a user to tweak so its local for translation and world for rotation.
+     * In that case, setting the coordinate system will change `updateGizmoRotationToMatchAttachedMesh` and `updateGizmoPositionToMatchAttachedMesh`
+     */
+    public set coordinatesMode(coordinatesMode: GizmoCoordinatesMode) {
+        this._coordinatesMode = coordinatesMode;
+        const local = coordinatesMode == GizmoCoordinatesMode.Local;
+        this.updateGizmoRotationToMatchAttachedMesh = local;
+        this.updateGizmoPositionToMatchAttachedMesh = true;
+    }
+
+    public get coordinatesMode() {
+        return this._coordinatesMode;
+    }
+
     /**
      * When set, the gizmo will always appear the same size no matter where the camera is (default: true)
      */
@@ -246,7 +309,7 @@ export class Gizmo implements IGizmo {
      * @param gizmoLayer The utility layer the gizmo will be added to
      */
     constructor(
-        /** The utility layer the gizmo will be added to */
+        /** [Object] The utility layer the gizmo will be added to */
         public gizmoLayer: UtilityLayerRenderer = UtilityLayerRenderer.DefaultUtilityLayer
     ) {
         this._rootMesh = new Mesh("gizmoRootNode", gizmoLayer.utilityLayerScene);
@@ -300,6 +363,7 @@ export class Gizmo implements IGizmo {
                     effectiveNode.getClassName() === "InstancedMesh";
                 const transformNode = supportedNode ? (effectiveNode as TransformNode) : undefined;
                 effectiveNode.getWorldMatrix().decompose(undefined, this._rootMesh.rotationQuaternion!, undefined, Gizmo.PreserveScaling ? transformNode : undefined);
+                this._rootMesh.rotationQuaternion!.normalize();
             } else {
                 if (this._customRotationQuaternion) {
                     this._rootMesh.rotationQuaternion!.copyFrom(this._customRotationQuaternion);
@@ -311,10 +375,7 @@ export class Gizmo implements IGizmo {
             // Scale
             if (this.updateScale) {
                 const activeCamera = this.gizmoLayer.utilityLayerScene.activeCamera!;
-                let cameraPosition = activeCamera.globalPosition;
-                if ((<WebVRFreeCamera>activeCamera).devicePosition) {
-                    cameraPosition = (<WebVRFreeCamera>activeCamera).devicePosition;
-                }
+                const cameraPosition = activeCamera.globalPosition;
                 this._rootMesh.position.subtractToRef(cameraPosition, TmpVectors.Vector3[0]);
                 let scale = this.scaleRatio;
                 if (activeCamera.mode == Camera.ORTHOGRAPHIC_CAMERA) {
@@ -337,22 +398,29 @@ export class Gizmo implements IGizmo {
                 this._rootMesh.scaling.setAll(this.scaleRatio);
             }
         }
+
+        if (this.additionalTransformNode) {
+            this._rootMesh.computeWorldMatrix(true);
+            this._rootMesh.getWorldMatrix().multiplyToRef(this.additionalTransformNode.getWorldMatrix(), TmpVectors.Matrix[0]);
+            TmpVectors.Matrix[0].decompose(this._rootMesh.scaling, this._rootMesh.rotationQuaternion!, this._rootMesh.position);
+        }
     }
 
     /**
-     * Handle position/translation when using an attached node using pivot
+     * if transform has a pivot and is not using PostMultiplyPivotMatrix, then the worldMatrix contains the pivot matrix (it's not cancelled at the end)
+     * so, when extracting the world matrix component, the translation (and other components) is containing the pivot translation.
+     * And the pivot is applied each frame. Removing it anyway here makes it applied only in computeWorldMatrix.
+     * @param transform local transform that needs to be transform by the pivot inverse matrix
+     * @param localMatrix local matrix that needs to be transform by the pivot inverse matrix
+     * @param result resulting matrix transformed by pivot inverse if the transform node is using pivot without using post Multiply Pivot Matrix
      */
-    protected _handlePivot() {
-        const attachedNodeTransform = this._attachedNode as any;
-        // check there is an active pivot for the TransformNode attached
-        if (attachedNodeTransform.isUsingPivotMatrix && attachedNodeTransform.isUsingPivotMatrix() && attachedNodeTransform.position) {
-            // When a TransformNode has an active pivot, even without parenting,
-            // translation from the world matrix is different from TransformNode.position.
-            // Pivot works like a virtual parent that's using the node orientation.
-            // As the world matrix is transformed by the gizmo and then decomposed to TRS
-            // its translation part must be set to the Node's position.
-            attachedNodeTransform.getWorldMatrix().setTranslation(attachedNodeTransform.position);
+    protected _handlePivotMatrixInverse(transform: TransformNode, localMatrix: Matrix, result: Matrix): void {
+        if (transform.isUsingPivotMatrix() && !transform.isUsingPostMultiplyPivotMatrix()) {
+            transform.getPivotMatrix().invertToRef(TmpVectors.Matrix[5]);
+            TmpVectors.Matrix[5].multiplyToRef(localMatrix, result);
+            return;
         }
+        result.copyFrom(localMatrix);
     }
     /**
      * computes the rotation/scaling/position of the transform once the Node world matrix has changed.
@@ -416,9 +484,50 @@ export class Gizmo implements IGizmo {
                 const localMat = TmpVectors.Matrix[1];
                 transform.parent.getWorldMatrix().invertToRef(parentInv);
                 this._attachedNode.getWorldMatrix().multiplyToRef(parentInv, localMat);
-                localMat.decompose(TmpVectors.Vector3[0], TmpVectors.Quaternion[0], transform.position, Gizmo.PreserveScaling ? transform : undefined);
+                const matrixToDecompose = TmpVectors.Matrix[4];
+                this._handlePivotMatrixInverse(transform, localMat, matrixToDecompose);
+                matrixToDecompose.decompose(
+                    TmpVectors.Vector3[0],
+                    TmpVectors.Quaternion[0],
+                    transform.position,
+                    Gizmo.PreserveScaling ? transform : undefined,
+                    Gizmo.UseAbsoluteScaling
+                );
+                TmpVectors.Quaternion[0].normalize();
+                if (transform.isUsingPivotMatrix()) {
+                    // Calculate the local matrix without the translation.
+                    // Copied from TranslateNode.computeWorldMatrix
+                    const r = TmpVectors.Quaternion[1];
+                    Quaternion.RotationYawPitchRollToRef(transform.rotation.y, transform.rotation.x, transform.rotation.z, r);
+
+                    const scaleMatrix = TmpVectors.Matrix[2];
+                    Matrix.ScalingToRef(transform.scaling.x, transform.scaling.y, transform.scaling.z, scaleMatrix);
+
+                    const rotationMatrix = TmpVectors.Matrix[2];
+                    r.toRotationMatrix(rotationMatrix);
+
+                    const pivotMatrix = transform.getPivotMatrix();
+                    const invPivotMatrix = TmpVectors.Matrix[3];
+                    pivotMatrix.invertToRef(invPivotMatrix);
+
+                    pivotMatrix.multiplyToRef(scaleMatrix, TmpVectors.Matrix[4]);
+                    TmpVectors.Matrix[4].multiplyToRef(rotationMatrix, TmpVectors.Matrix[5]);
+                    TmpVectors.Matrix[5].multiplyToRef(invPivotMatrix, TmpVectors.Matrix[6]);
+
+                    TmpVectors.Matrix[6].getTranslationToRef(TmpVectors.Vector3[1]);
+
+                    transform.position.subtractInPlace(TmpVectors.Vector3[1]);
+                }
             } else {
-                this._attachedNode._worldMatrix.decompose(TmpVectors.Vector3[0], TmpVectors.Quaternion[0], transform.position, Gizmo.PreserveScaling ? transform : undefined);
+                const matrixToDecompose = TmpVectors.Matrix[4];
+                this._handlePivotMatrixInverse(transform, this._attachedNode._worldMatrix, matrixToDecompose);
+                matrixToDecompose.decompose(
+                    TmpVectors.Vector3[0],
+                    TmpVectors.Quaternion[0],
+                    transform.position,
+                    Gizmo.PreserveScaling ? transform : undefined,
+                    Gizmo.UseAbsoluteScaling
+                );
             }
             TmpVectors.Vector3[0].scaleInPlace(1.0 / transform.scalingDeterminant);
             transform.scaling.copyFrom(TmpVectors.Vector3[0]);
@@ -437,13 +546,13 @@ export class Gizmo implements IGizmo {
             if (parent) {
                 const invParent = TmpVectors.Matrix[0];
                 const boneLocalMatrix = TmpVectors.Matrix[1];
-                parent.getWorldMatrix().invertToRef(invParent);
-                bone.getWorldMatrix().multiplyToRef(invParent, boneLocalMatrix);
+                parent.getFinalMatrix().invertToRef(invParent);
+                bone.getFinalMatrix().multiplyToRef(invParent, boneLocalMatrix);
                 const lmat = bone.getLocalMatrix();
                 lmat.copyFrom(boneLocalMatrix);
             } else {
                 const lmat = bone.getLocalMatrix();
-                lmat.copyFrom(bone.getWorldMatrix());
+                lmat.copyFrom(bone.getFinalMatrix());
             }
             bone.markAsDirty();
         } else {

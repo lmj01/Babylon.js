@@ -16,15 +16,15 @@ export interface IMultiRenderTargetOptions {
      */
     generateMipMaps?: boolean;
     /**
-     * Define the types of all the draw buffers we want to create
+     * Define the types of all the draw buffers (render textures) we want to create
      */
     types?: number[];
     /**
-     * Define the sampling modes of all the draw buffers we want to create
+     * Define the sampling modes of all the draw buffers (render textures) we want to create
      */
     samplingModes?: number[];
     /**
-     * Define if sRGB format should be used for each of the draw buffers we want to create
+     * Define if sRGB format should be used for each of the draw buffers (render textures) we want to create
      */
     useSRGBBuffers?: boolean[];
     /**
@@ -40,7 +40,7 @@ export interface IMultiRenderTargetOptions {
      */
     generateDepthTexture?: boolean;
     /**
-     * Define the internal format of the buffer in the RTT (RED, RG, RGB, RGBA (default), ALPHA...) of all the draw buffers we want to create
+     * Define the internal format of the buffer in the RTT (RED, RG, RGB, RGBA (default), ALPHA...) of all the draw buffers (render textures) we want to create
      */
     formats?: number[];
     /**
@@ -48,7 +48,7 @@ export interface IMultiRenderTargetOptions {
      */
     depthTextureFormat?: number;
     /**
-     * Define the number of desired draw buffers
+     * Define the number of desired draw buffers (render textures)
      */
     textureCount?: number;
     /**
@@ -84,11 +84,19 @@ export interface IMultiRenderTargetOptions {
      * Define the number of layer of each texture in the textures array (if applicable, given the corresponding targetType) (for Constants.TEXTURE_3D, .TEXTURE_2D_ARRAY, and .TEXTURE_CUBE_MAP_ARRAY)
      */
     layerCounts?: number[];
+    /**
+     * Define the names of the textures (used for debugging purpose)
+     */
+    labels?: string[];
+    /**
+     * Label of the RenderTargetWrapper (used for debugging only)
+     */
+    label?: string;
 }
 
 /**
  * A multi render target, like a render target provides the ability to render to a texture.
- * Unlike the render target, it can render to several draw buffers in one draw.
+ * Unlike the render target, it can render to several draw buffers (render textures) in one draw.
  * This is specially interesting in deferred rendering or for any effects requiring more than
  * just one color from a single pass.
  */
@@ -100,7 +108,7 @@ export class MultiRenderTarget extends RenderTargetTexture {
     private _textureNames?: string[];
 
     /**
-     * Get if draw buffers are currently supported by the used hardware and browser.
+     * Get if draw buffers (render textures) are currently supported by the used hardware and browser.
      */
     public get isSupported(): boolean {
         return this._engine?.getCaps().drawBuffersExtension ?? false;
@@ -131,7 +139,7 @@ export class MultiRenderTarget extends RenderTargetTexture {
      * Set the wrapping mode on U of all the textures we are rendering to.
      * Can be any of the Texture. (CLAMP_ADDRESSMODE, MIRROR_ADDRESSMODE or WRAP_ADDRESSMODE)
      */
-    public set wrapU(wrap: number) {
+    public override set wrapU(wrap: number) {
         if (this._textures) {
             for (let i = 0; i < this._textures.length; i++) {
                 this._textures[i].wrapU = wrap;
@@ -143,7 +151,7 @@ export class MultiRenderTarget extends RenderTargetTexture {
      * Set the wrapping mode on V of all the textures we are rendering to.
      * Can be any of the Texture. (CLAMP_ADDRESSMODE, MIRROR_ADDRESSMODE or WRAP_ADDRESSMODE)
      */
-    public set wrapV(wrap: number) {
+    public override set wrapV(wrap: number) {
         if (this._textures) {
             for (let i = 0; i < this._textures.length; i++) {
                 this._textures[i].wrapV = wrap;
@@ -154,7 +162,7 @@ export class MultiRenderTarget extends RenderTargetTexture {
     /**
      * Instantiate a new multi render target texture.
      * A multi render target, like a render target provides the ability to render to a texture.
-     * Unlike the render target, it can render to several draw buffers in one draw.
+     * Unlike the render target, it can render to several draw buffers (render textures) in one draw.
      * This is specially interesting in deferred rendering or for any effects requiring more than
      * just one color from a single pass.
      * @param name Define the name of the texture
@@ -162,7 +170,7 @@ export class MultiRenderTarget extends RenderTargetTexture {
      * @param count Define the number of target we are rendering into
      * @param scene Define the scene the texture belongs to
      * @param options Define the options used to create the multi render target
-     * @param textureNames Define the names to set to the textures (if count > 0 - optional)
+     * @param textureNames Define the names to set to the textures (if count \> 0 - optional)
      */
     constructor(name: string, size: any, count: number, scene?: Scene, options?: IMultiRenderTargetOptions, textureNames?: string[]) {
         const generateMipMaps = options && options.generateMipMaps ? options.generateMipMaps : false;
@@ -207,6 +215,8 @@ export class MultiRenderTarget extends RenderTargetTexture {
             faceIndex: faceIndex,
             layerIndex: layerIndex,
             layerCounts: layerCounts,
+            labels: textureNames,
+            label: name,
         };
 
         this._count = count;
@@ -309,8 +319,8 @@ export class MultiRenderTarget extends RenderTargetTexture {
     /**
      * @internal
      */
-    public _rebuild(forceFullRebuild: boolean = false, textureNames?: string[]): void {
-        if (this._count < 1) {
+    public override _rebuild(fromContextLost = false, forceFullRebuild: boolean = false, textureNames?: string[]): void {
+        if (this._count < 1 || fromContextLost) {
             return;
         }
 
@@ -466,11 +476,11 @@ export class MultiRenderTarget extends RenderTargetTexture {
     /**
      * Define the number of samples used if MSAA is enabled.
      */
-    public get samples(): number {
+    public override get samples(): number {
         return this._samples;
     }
 
-    public set samples(value: number) {
+    public override set samples(value: number) {
         if (this._renderTarget) {
             this._samples = this._renderTarget.setSamples(value);
         } else {
@@ -484,9 +494,9 @@ export class MultiRenderTarget extends RenderTargetTexture {
      * Be careful as it will recreate all the data in the new texture.
      * @param size Define the new size
      */
-    public resize(size: any) {
+    public override resize(size: any) {
         this._processSizeParameter(size, false);
-        this._rebuild(undefined, this._textureNames);
+        this._rebuild(false, undefined, this._textureNames);
     }
 
     /**
@@ -520,11 +530,12 @@ export class MultiRenderTarget extends RenderTargetTexture {
         this._multiRenderTargetOptions.faceIndex = faceIndex;
         this._multiRenderTargetOptions.layerIndex = layerIndex;
         this._multiRenderTargetOptions.layerCounts = layerCounts;
+        this._multiRenderTargetOptions.labels = textureNames;
 
-        this._rebuild(true, textureNames);
+        this._rebuild(false, true, textureNames);
     }
 
-    protected _unbindFrameBuffer(engine: Engine, faceIndex: number): void {
+    protected override _unbindFrameBuffer(engine: Engine, faceIndex: number): void {
         if (this._renderTarget) {
             engine.unBindMultiColorAttachmentFramebuffer(this._renderTarget, this.isCube, () => {
                 this.onAfterRenderObservable.notifyObservers(faceIndex);
@@ -534,9 +545,9 @@ export class MultiRenderTarget extends RenderTargetTexture {
 
     /**
      * Dispose the render targets and their associated resources
-     * @param doNotDisposeInternalTextures
+     * @param doNotDisposeInternalTextures if set to true, internal textures won't be disposed (default: false).
      */
-    public dispose(doNotDisposeInternalTextures = false): void {
+    public override dispose(doNotDisposeInternalTextures = false): void {
         this._releaseTextures();
         if (!doNotDisposeInternalTextures) {
             this.releaseInternalTextures();
@@ -548,7 +559,7 @@ export class MultiRenderTarget extends RenderTargetTexture {
     }
 
     /**
-     * Release all the underlying texture used as draw buffers.
+     * Release all the underlying texture used as draw buffers (render textures).
      */
     public releaseInternalTextures(): void {
         const internalTextures = this._renderTarget?.textures;

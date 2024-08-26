@@ -18,7 +18,7 @@ import type { ISize } from "../Maths/math.size";
 import { EngineStore } from "../Engines/engineStore";
 import { Constants } from "../Engines/constants";
 
-declare type Ray = import("../Culling/ray").Ray;
+import type { Ray } from "../Culling/ray";
 
 // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Reflect
 declare const Reflect: any;
@@ -100,6 +100,11 @@ export interface ISpriteManager extends IDisposable {
      * Rebuilds the manager (after a context lost, for eg)
      */
     rebuild(): void;
+
+    /**
+     * Serializes the sprite manager to a JSON object
+     */
+    serialize(serializeTexture?: boolean): any;
 }
 
 /**
@@ -114,7 +119,7 @@ export class SpriteManager implements ISpriteManager {
     public snippetId: string;
 
     /** Gets the list of sprites */
-    public sprites = new Array<Sprite>();
+    public sprites: Sprite[] = [];
     /** Gets or sets the rendering group id (0 by default) */
     public renderingGroupId = 0;
     /** Gets or sets camera layer mask */
@@ -206,6 +211,14 @@ export class SpriteManager implements ISpriteManager {
     }
     public set fogEnabled(value: boolean) {
         this._spriteRenderer.fogEnabled = value;
+    }
+
+    /** Gets or sets a boolean indicating if the manager must use logarithmic depth when rendering */
+    public get useLogarithmicDepth(): boolean {
+        return this._spriteRenderer.useLogarithmicDepth;
+    }
+    public set useLogarithmicDepth(value: boolean) {
+        this._spriteRenderer.useLogarithmicDepth = value;
     }
 
     /**
@@ -667,6 +680,7 @@ export class SpriteManager implements ISpriteManager {
         serializationObject.blendMode = this.blendMode;
         serializationObject.disableDepthWrite = this.disableDepthWrite;
         serializationObject.pixelPerfect = this.pixelPerfect;
+        serializationObject.useLogarithmicDepth = this.useLogarithmicDepth;
 
         if (this.texture) {
             if (serializeTexture) {
@@ -718,6 +732,9 @@ export class SpriteManager implements ISpriteManager {
         }
         if (parsedManager.pixelPerfect !== undefined) {
             manager.pixelPerfect = parsedManager.pixelPerfect;
+        }
+        if (parsedManager.useLogarithmicDepth !== undefined) {
+            manager.useLogarithmicDepth = parsedManager.useLogarithmicDepth;
         }
 
         if (parsedManager.metadata !== undefined) {

@@ -1,5 +1,5 @@
 import type { Nullable } from "../types";
-import { ArrayTools } from "../Misc/arrayTools";
+import { BuildArray } from "../Misc/arrayTools";
 import { Vector3, Quaternion, Matrix } from "../Maths/math.vector";
 import type { TransformNode } from "../Meshes/transformNode";
 import type { Bone } from "./bone";
@@ -10,9 +10,9 @@ import { Space, Axis } from "../Maths/math.axis";
  * @see https://doc.babylonjs.com/features/featuresDeepDive/mesh/bonesSkeletons#bonelookcontroller
  */
 export class BoneLookController {
-    private static _TmpVecs: Vector3[] = ArrayTools.BuildArray(10, Vector3.Zero);
+    private static _TmpVecs: Vector3[] = BuildArray(10, Vector3.Zero);
     private static _TmpQuat = Quaternion.Identity();
-    private static _TmpMats: Matrix[] = ArrayTools.BuildArray(5, Matrix.Identity);
+    private static _TmpMats: Matrix[] = BuildArray(5, Matrix.Identity);
 
     /**
      * The target Vector3 that the bone will look at
@@ -476,6 +476,7 @@ export class BoneLookController {
         const xaxis = BoneLookController._TmpVecs[6];
         const yaxis = BoneLookController._TmpVecs[7];
         const tmpQuat = BoneLookController._TmpQuat;
+        const boneScaling = BoneLookController._TmpVecs[9];
 
         target.subtractToRef(bonePos, zaxis);
         zaxis.normalize();
@@ -502,6 +503,8 @@ export class BoneLookController {
             _tmpMat2.multiplyToRef(_tmpMat1, _tmpMat1);
         }
 
+        boneScaling.copyFrom(this.bone.getScale());
+
         if (this.slerpAmount < 1) {
             if (!this._slerping) {
                 this.bone.getRotationQuaternionToRef(Space.WORLD, this.mesh, this._boneQuat);
@@ -521,6 +524,8 @@ export class BoneLookController {
             this.bone.setRotationMatrix(_tmpMat1, Space.WORLD, this.mesh);
             this._slerping = false;
         }
+
+        this.bone.setScale(boneScaling);
 
         this._updateLinkedTransformRotation();
     }

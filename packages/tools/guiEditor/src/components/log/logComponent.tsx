@@ -9,7 +9,10 @@ interface ILogComponentProps {
 }
 
 export class LogEntry {
-    constructor(public message: string, public isError: boolean) {}
+    constructor(
+        public message: string,
+        public isError: boolean
+    ) {}
 }
 
 export class LogComponent extends React.Component<ILogComponentProps, { logs: LogEntry[] }> {
@@ -19,7 +22,7 @@ export class LogComponent extends React.Component<ILogComponentProps, { logs: Lo
         this.state = { logs: [] };
     }
 
-    componentDidMount() {
+    override componentDidMount() {
         this.props.globalState.onLogRequiredObservable.add((log) => {
             const newLogArray = this.state.logs.map((number) => number);
             newLogArray.push(log);
@@ -27,7 +30,7 @@ export class LogComponent extends React.Component<ILogComponentProps, { logs: Lo
         });
     }
 
-    componentDidUpdate() {
+    override componentDidUpdate() {
         const logConsole = ReactDOM.findDOMNode(this.refs["log-console"]) as HTMLElement;
         if (!logConsole) {
             return;
@@ -36,7 +39,7 @@ export class LogComponent extends React.Component<ILogComponentProps, { logs: Lo
         logConsole.scrollTop = logConsole.scrollHeight;
     }
 
-    render() {
+    override render() {
         const today = new Date();
         const h = today.getHours();
         const m = today.getMinutes();

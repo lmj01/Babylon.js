@@ -17,8 +17,9 @@ import type { Effect } from "../../../effect";
 import type { PBRMetallicRoughnessBlock } from "./pbrMetallicRoughnessBlock";
 import type { PerturbNormalBlock } from "../Fragment/perturbNormalBlock";
 import { PBRClearCoatConfiguration } from "../../../PBR/pbrClearCoatConfiguration";
-import { editableInPropertyPage, PropertyTypeForEdition } from "../../nodeMaterialDecorator";
+import { editableInPropertyPage, PropertyTypeForEdition } from "../../../../Decorators/nodeDecorator";
 import { TBNBlock } from "../Fragment/TBNBlock";
+import { ShaderLanguage } from "core/Materials/shaderLanguage";
 
 /**
  * Block used to implement the clear coat module of the PBR material
@@ -75,7 +76,7 @@ export class ClearCoatBlock extends NodeMaterialBlock {
      * Initialize the block and prepare the context for build
      * @param state defines the state that will be used for the build
      */
-    public initialize(state: NodeMaterialBuildState) {
+    public override initialize(state: NodeMaterialBuildState) {
         state._excludeVariableName("clearcoatOut");
         state._excludeVariableName("vClearCoatParams");
         state._excludeVariableName("vClearCoatTintParams");
@@ -88,7 +89,7 @@ export class ClearCoatBlock extends NodeMaterialBlock {
      * Gets the current class name
      * @returns the class name
      */
-    public getClassName() {
+    public override getClassName() {
         return "ClearCoatBlock";
     }
 
@@ -177,7 +178,7 @@ export class ClearCoatBlock extends NodeMaterialBlock {
         return this._outputs[0];
     }
 
-    public autoConfigure() {
+    public override autoConfigure() {
         if (!this.intensity.isConnected) {
             const intensityInput = new InputBlock("ClearCoat intensity", NodeMaterialBlockTargets.Fragment, NodeMaterialBlockConnectionPointTypes.Float);
             intensityInput.value = 1;
@@ -185,7 +186,7 @@ export class ClearCoatBlock extends NodeMaterialBlock {
         }
     }
 
-    public prepareDefines(mesh: AbstractMesh, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines) {
+    public override prepareDefines(mesh: AbstractMesh, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines) {
         super.prepareDefines(mesh, nodeMaterial, defines);
 
         defines.setValue("CLEARCOAT", true);
@@ -201,7 +202,7 @@ export class ClearCoatBlock extends NodeMaterialBlock {
         defines.setValue("CLEARCOAT_REMAP_F0", this.remapF0OnInterfaceChange, true);
     }
 
-    public bind(effect: Effect, nodeMaterial: NodeMaterial, mesh?: Mesh) {
+    public override bind(effect: Effect, nodeMaterial: NodeMaterial, mesh?: Mesh) {
         super.bind(effect, nodeMaterial, mesh);
 
         // Clear Coat Refraction params
@@ -234,8 +235,11 @@ export class ClearCoatBlock extends NodeMaterialBlock {
 
         const comments = `//${this.name}`;
         const worldTangent = this.worldTangent;
+        const isWebGPU = state.shaderLanguage === ShaderLanguage.WGSL;
 
-        state._emitExtension("derivatives", "#extension GL_OES_standard_derivatives : enable");
+        if (!isWebGPU) {
+            state._emitExtension("derivatives", "#extension GL_OES_standard_derivatives : enable");
+        }
 
         const tangentReplaceString = { search: /defined\(TANGENT\)/g, replace: worldTangent.isConnected ? "defined(TANGENT)" : "defined(IGNORE)" };
 
@@ -243,14 +247,14 @@ export class ClearCoatBlock extends NodeMaterialBlock {
         if (TBN.isConnected) {
             state.compilationString += `
             #ifdef TBNBLOCK
-            mat3 vTBN = ${TBN.associatedVariableName};
+                ${isWebGPU ? "var TBN" : "mat3 TBN"} = ${TBN.associatedVariableName};
             #endif
             `;
         } else if (worldTangent.isConnected) {
-            code += `vec3 tbnNormal = normalize(${worldNormalVarName}.xyz);\r\n`;
-            code += `vec3 tbnTangent = normalize(${worldTangent.associatedVariableName}.xyz);\r\n`;
-            code += `vec3 tbnBitangent = cross(tbnNormal, tbnTangent) * ${this._tangentCorrectionFactorName};\r\n`;
-            code += `mat3 vTBN = mat3(tbnTangent, tbnBitangent, tbnNormal);\r\n`;
+            code += `${state._declareLocalVar("tbnNormal", NodeMaterialBlockConnectionPointTypes.Vector3)} = normalize(${worldNormalVarName}.xyz);\n`;
+            code += `${state._declareLocalVar("tbnTangent", NodeMaterialBlockConnectionPointTypes.Vector3)} = normalize(${worldTangent.associatedVariableName}.xyz);\n`;
+            code += `${state._declareLocalVar("tbnBitangent", NodeMaterialBlockConnectionPointTypes.Vector3)} = cross(tbnNormal, tbnTangent) * ${this._tangentCorrectionFactorName};\n`;
+            code += `${isWebGPU ? "var vTBN" : "mat3 vTBN"} = ${isWebGPU ? "mat3x3f" : "mat3"}(tbnTangent, tbnBitangent, tbnNormal);\n`;
         }
 
         state._emitFunctionFromInclude("bumpFragmentMainFunctions", comments, {
@@ -284,22 +288,22 @@ export class ClearCoatBlock extends NodeMaterialBlock {
 
         const intensity = ccBlock?.intensity.isConnected ? ccBlock.intensity.associatedVariableName : "1.";
         const roughness = ccBlock?.roughness.isConnected ? ccBlock.roughness.associatedVariableName : "0.";
-        const normalMapColor = ccBlock?.normalMapColor.isConnected ? ccBlock.normalMapColor.associatedVariableName : "vec3(0.)";
-        const uv = ccBlock?.uv.isConnected ? ccBlock.uv.associatedVariableName : "vec2(0.)";
+        const normalMapColor = ccBlock?.normalMapColor.isConnected ? ccBlock.normalMapColor.associatedVariableName : `vec3${state.fSuffix}(0.)`;
+        const uv = ccBlock?.uv.isConnected ? ccBlock.uv.associatedVariableName : `vec2${state.fSuffix}(0.)`;
 
-        const tintColor = ccBlock?.tintColor.isConnected ? ccBlock.tintColor.associatedVariableName : "vec3(1.)";
+        const tintColor = ccBlock?.tintColor.isConnected ? ccBlock.tintColor.associatedVariableName : `vec3${state.fSuffix}(1.)`;
         const tintThickness = ccBlock?.tintThickness.isConnected ? ccBlock.tintThickness.associatedVariableName : "1.";
         const tintAtDistance = ccBlock?.tintAtDistance.isConnected ? ccBlock.tintAtDistance.associatedVariableName : "1.";
-        const tintTexture = "vec4(0.)";
+        const tintTexture = `vec4${state.fSuffix}(0.)`;
 
         if (ccBlock) {
-            state._emitUniformFromString("vClearCoatRefractionParams", "vec4");
-            state._emitUniformFromString("vClearCoatTangentSpaceParams", "vec2");
+            state._emitUniformFromString("vClearCoatRefractionParams", NodeMaterialBlockConnectionPointTypes.Vector4);
+            state._emitUniformFromString("vClearCoatTangentSpaceParams", NodeMaterialBlockConnectionPointTypes.Vector2);
 
             const normalShading = ccBlock.worldNormal;
-            code += `vec3 vGeometricNormaClearCoatW = ${normalShading.isConnected ? "normalize(" + normalShading.associatedVariableName + ".xyz)" : "geometricNormalW"};\r\n`;
+            code += `${state._declareLocalVar("vGeometricNormaClearCoatW", NodeMaterialBlockConnectionPointTypes.Vector3)} = ${normalShading.isConnected ? "normalize(" + normalShading.associatedVariableName + ".xyz)" : "geometricNormalW"};\n`;
         } else {
-            code += `vec3 vGeometricNormaClearCoatW = geometricNormalW;\r\n`;
+            code += `${state._declareLocalVar("vGeometricNormaClearCoatW", NodeMaterialBlockConnectionPointTypes.Vector3)} = geometricNormalW;\n`;
         }
 
         if (generateTBNSpace && ccBlock) {
@@ -307,83 +311,89 @@ export class ClearCoatBlock extends NodeMaterialBlock {
             vTBNAvailable = ccBlock.worldTangent.isConnected;
         }
 
-        code += `clearcoatOutParams clearcoatOut;
+        const isWebGPU = state.shaderLanguage === ShaderLanguage.WGSL;
+        code += `${isWebGPU ? "var clearcoatOut: clearcoatOutParams" : "clearcoatOutParams clearcoatOut"};
 
         #ifdef CLEARCOAT
-            vec2 vClearCoatParams = vec2(${intensity}, ${roughness});
-            vec4 vClearCoatTintParams = vec4(${tintColor}, ${tintThickness});
+            ${state._declareLocalVar("vClearCoatParams", NodeMaterialBlockConnectionPointTypes.Vector2)} = vec2${state.fSuffix}(${intensity}, ${roughness});
+            ${state._declareLocalVar("vClearCoatTintParams", NodeMaterialBlockConnectionPointTypes.Vector4)} = vec4${state.fSuffix}(${tintColor}, ${tintThickness});
 
-            clearcoatBlock(
-                ${worldPosVarName}.xyz,
-                vGeometricNormaClearCoatW,
-                viewDirectionW,
-                vClearCoatParams,
-                specularEnvironmentR0,
+            clearcoatOut = clearcoatBlock(
+                ${worldPosVarName}.xyz
+                , vGeometricNormaClearCoatW
+                , viewDirectionW
+                , vClearCoatParams
+                , specularEnvironmentR0
             #ifdef CLEARCOAT_TEXTURE
-                vec2(0.),
+                , vec2${state.fSuffix}(0.)
             #endif
             #ifdef CLEARCOAT_TINT
-                vClearCoatTintParams,
-                ${tintAtDistance},
-                vClearCoatRefractionParams,
+                , vClearCoatTintParams
+                , ${tintAtDistance}
+                , ${isWebGPU ? "uniforms." : ""}vClearCoatRefractionParams
                 #ifdef CLEARCOAT_TINT_TEXTURE
-                    ${tintTexture},
+                    , ${tintTexture}
                 #endif
             #endif
             #ifdef CLEARCOAT_BUMP
-                vec2(0., 1.),
-                vec4(${normalMapColor}, 0.),
-                ${uv},
+                , vec2${state.fSuffix}(0., 1.)
+                , vec4${state.fSuffix}(${normalMapColor}, 0.)
+                , ${uv}
                 #if defined(${vTBNAvailable ? "TANGENT" : "IGNORE"}) && defined(NORMAL)
-                    vTBN,
+                    , vTBN
                 #else
-                    vClearCoatTangentSpaceParams,
+                    , ${isWebGPU ? "uniforms." : ""}vClearCoatTangentSpaceParams
                 #endif
                 #ifdef OBJECTSPACE_NORMALMAP
-                    normalMatrix,
+                    , normalMatrix
                 #endif
             #endif
             #if defined(FORCENORMALFORWARD) && defined(NORMAL)
-                faceNormal,
+                , faceNormal
             #endif
             #ifdef REFLECTION
-                ${reflectionBlock?._vReflectionMicrosurfaceInfosName},
-                ${reflectionBlock?._vReflectionInfosName},
-                ${reflectionBlock?.reflectionColor},
-                vLightingIntensity,
+                , ${isWebGPU ? "uniforms." : ""}${reflectionBlock?._vReflectionMicrosurfaceInfosName}
+                , ${reflectionBlock?._vReflectionInfosName}
+                , ${reflectionBlock?.reflectionColor}
+                , ${isWebGPU ? "uniforms." : ""}vLightingIntensity
                 #ifdef ${reflectionBlock?._define3DName}
-                    ${reflectionBlock?._cubeSamplerName},
+                    , ${reflectionBlock?._cubeSamplerName}       
+                    ${isWebGPU ? `, ${reflectionBlock?._cubeSamplerName}Sampler` : ""}
                 #else
-                    ${reflectionBlock?._2DSamplerName},
+                    , ${reflectionBlock?._2DSamplerName}       
+                    ${isWebGPU ? `, ${reflectionBlock?._2DSamplerName}Sampler` : ""}
                 #endif
                 #ifndef LODBASEDMICROSFURACE
                     #ifdef ${reflectionBlock?._define3DName}
-                        ${reflectionBlock?._cubeSamplerName},
-                        ${reflectionBlock?._cubeSamplerName},
+                        , ${reflectionBlock?._cubeSamplerName}       
+                        ${isWebGPU ? `, ${reflectionBlock?._cubeSamplerName}Sampler` : ""}
+                        , ${reflectionBlock?._cubeSamplerName}
+                        ${isWebGPU ? `, ${reflectionBlock?._cubeSamplerName}Sampler` : ""}
                     #else
-                        ${reflectionBlock?._2DSamplerName},
-                        ${reflectionBlock?._2DSamplerName},
+                        , ${reflectionBlock?._2DSamplerName}
+                        ${isWebGPU ? `, ${reflectionBlock?._2DSamplerName}Sampler` : ""}
+                        , ${reflectionBlock?._2DSamplerName}
+                        ${isWebGPU ? `, ${reflectionBlock?._2DSamplerName}Sampler` : ""}                        
                     #endif
                 #endif
             #endif
             #if defined(ENVIRONMENTBRDF) && !defined(${reflectionBlock?._defineSkyboxName})
                 #ifdef RADIANCEOCCLUSION
-                    ambientMonochrome,
+                    , ambientMonochrome
                 #endif
             #endif
             #if defined(CLEARCOAT_BUMP) || defined(TWOSIDEDLIGHTING)
-                (gl_FrontFacing ? 1. : -1.),
+                , (${state._generateTernary("1.", "-1.", isWebGPU ? "fragmentInputs.frontFacing" : "gl_FrontFacing")})
             #endif
-                clearcoatOut
             );
         #else
             clearcoatOut.specularEnvironmentR0 = specularEnvironmentR0;
-        #endif\r\n`;
+        #endif\n`;
 
         return code;
     }
 
-    protected _buildBlock(state: NodeMaterialBuildState) {
+    protected override _buildBlock(state: NodeMaterialBuildState) {
         this._scene = state.sharedData.scene;
 
         if (state.target === NodeMaterialBlockTargets.Fragment) {
@@ -391,21 +401,21 @@ export class ClearCoatBlock extends NodeMaterialBlock {
             state.sharedData.blocksWithDefines.push(this);
 
             this._tangentCorrectionFactorName = state._getFreeDefineName("tangentCorrectionFactor");
-            state._emitUniformFromString(this._tangentCorrectionFactorName, "float");
+            state._emitUniformFromString(this._tangentCorrectionFactorName, NodeMaterialBlockConnectionPointTypes.Float);
         }
 
         return this;
     }
 
-    protected _dumpPropertiesCode() {
+    protected override _dumpPropertiesCode() {
         let codeString = super._dumpPropertiesCode();
 
-        codeString += `${this._codeVariableName}.remapF0OnInterfaceChange = ${this.remapF0OnInterfaceChange};\r\n`;
+        codeString += `${this._codeVariableName}.remapF0OnInterfaceChange = ${this.remapF0OnInterfaceChange};\n`;
 
         return codeString;
     }
 
-    public serialize(): any {
+    public override serialize(): any {
         const serializationObject = super.serialize();
 
         serializationObject.remapF0OnInterfaceChange = this.remapF0OnInterfaceChange;
@@ -413,7 +423,7 @@ export class ClearCoatBlock extends NodeMaterialBlock {
         return serializationObject;
     }
 
-    public _deserialize(serializationObject: any, scene: Scene, rootUrl: string) {
+    public override _deserialize(serializationObject: any, scene: Scene, rootUrl: string) {
         super._deserialize(serializationObject, scene, rootUrl);
 
         this.remapF0OnInterfaceChange = serializationObject.remapF0OnInterfaceChange ?? true;

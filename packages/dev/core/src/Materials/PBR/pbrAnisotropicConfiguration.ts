@@ -4,7 +4,6 @@ import type { UniformBuffer } from "../../Materials/uniformBuffer";
 import { VertexBuffer } from "../../Buffers/buffer";
 import { Vector2 } from "../../Maths/math.vector";
 import { MaterialFlags } from "../../Materials/materialFlags";
-import { MaterialHelper } from "../../Materials/materialHelper";
 import type { BaseTexture } from "../../Materials/Textures/baseTexture";
 import type { Nullable } from "../../types";
 import type { IAnimatable } from "../../Animations/animatable.interface";
@@ -13,9 +12,10 @@ import { MaterialPluginBase } from "../materialPluginBase";
 import { Constants } from "../../Engines/constants";
 import { MaterialDefines } from "../materialDefines";
 
-declare type Scene = import("../../scene").Scene;
-declare type AbstractMesh = import("../../Meshes/abstractMesh").AbstractMesh;
-declare type PBRBaseMaterial = import("./pbrBaseMaterial").PBRBaseMaterial;
+import type { Scene } from "../../scene";
+import type { AbstractMesh } from "../../Meshes/abstractMesh";
+import type { PBRBaseMaterial } from "./pbrBaseMaterial";
+import { BindTextureMatrix, PrepareDefinesForMergedUV } from "../materialHelper.functions";
 
 /**
  * @internal
@@ -105,6 +105,14 @@ export class PBRAnisotropicConfiguration extends MaterialPluginBase {
         this._internalMarkAllSubMeshesAsMiscDirty();
     }
 
+    /**
+     * Gets a boolean indicating that the plugin is compatible with a given shader language.
+     * @returns true if the plugin is compatible with the shader language
+     */
+    public override isCompatible(): boolean {
+        return true;
+    }
+
     constructor(material: PBRBaseMaterial, addToPluginList = true) {
         super(material, "PBRAnisotropic", 110, new MaterialAnisotropicDefines(), addToPluginList);
 
@@ -112,7 +120,7 @@ export class PBRAnisotropicConfiguration extends MaterialPluginBase {
         this._internalMarkAllSubMeshesAsMiscDirty = material._dirtyCallbacks[Constants.MATERIAL_MiscDirtyFlag];
     }
 
-    public isReadyForSubMesh(defines: MaterialAnisotropicDefines, scene: Scene): boolean {
+    public override isReadyForSubMesh(defines: MaterialAnisotropicDefines, scene: Scene): boolean {
         if (!this._isEnabled) {
             return true;
         }
@@ -130,7 +138,7 @@ export class PBRAnisotropicConfiguration extends MaterialPluginBase {
         return true;
     }
 
-    public prepareDefinesBeforeAttributes(defines: MaterialAnisotropicDefines, scene: Scene, mesh: AbstractMesh): void {
+    public override prepareDefinesBeforeAttributes(defines: MaterialAnisotropicDefines, scene: Scene, mesh: AbstractMesh): void {
         if (this._isEnabled) {
             defines.ANISOTROPIC = this._isEnabled;
             if (this._isEnabled && !mesh.isVerticesDataPresent(VertexBuffer.TangentKind)) {
@@ -141,7 +149,7 @@ export class PBRAnisotropicConfiguration extends MaterialPluginBase {
             if (defines._areTexturesDirty) {
                 if (scene.texturesEnabled) {
                     if (this._texture && MaterialFlags.AnisotropicTextureEnabled) {
-                        MaterialHelper.PrepareDefinesForMergedUV(this._texture, defines, "ANISOTROPIC_TEXTURE");
+                        PrepareDefinesForMergedUV(this._texture, defines, "ANISOTROPIC_TEXTURE");
                     } else {
                         defines.ANISOTROPIC_TEXTURE = false;
                     }
@@ -159,7 +167,7 @@ export class PBRAnisotropicConfiguration extends MaterialPluginBase {
         }
     }
 
-    public bindForSubMesh(uniformBuffer: UniformBuffer, scene: Scene): void {
+    public override bindForSubMesh(uniformBuffer: UniformBuffer, scene: Scene): void {
         if (!this._isEnabled) {
             return;
         }
@@ -169,7 +177,7 @@ export class PBRAnisotropicConfiguration extends MaterialPluginBase {
         if (!uniformBuffer.useUbo || !isFrozen || !uniformBuffer.isSync) {
             if (this._texture && MaterialFlags.AnisotropicTextureEnabled) {
                 uniformBuffer.updateFloat2("vAnisotropyInfos", this._texture.coordinatesIndex, this._texture.level);
-                MaterialHelper.BindTextureMatrix(this._texture, uniformBuffer, "anisotropy");
+                BindTextureMatrix(this._texture, uniformBuffer, "anisotropy");
             }
 
             // Anisotropy
@@ -184,7 +192,7 @@ export class PBRAnisotropicConfiguration extends MaterialPluginBase {
         }
     }
 
-    public hasTexture(texture: BaseTexture): boolean {
+    public override hasTexture(texture: BaseTexture): boolean {
         if (this._texture === texture) {
             return true;
         }
@@ -192,19 +200,19 @@ export class PBRAnisotropicConfiguration extends MaterialPluginBase {
         return false;
     }
 
-    public getActiveTextures(activeTextures: BaseTexture[]): void {
+    public override getActiveTextures(activeTextures: BaseTexture[]): void {
         if (this._texture) {
             activeTextures.push(this._texture);
         }
     }
 
-    public getAnimatables(animatables: IAnimatable[]): void {
+    public override getAnimatables(animatables: IAnimatable[]): void {
         if (this._texture && this._texture.animations && this._texture.animations.length > 0) {
             animatables.push(this._texture);
         }
     }
 
-    public dispose(forceDisposeTextures?: boolean): void {
+    public override dispose(forceDisposeTextures?: boolean): void {
         if (forceDisposeTextures) {
             if (this._texture) {
                 this._texture.dispose();
@@ -212,22 +220,22 @@ export class PBRAnisotropicConfiguration extends MaterialPluginBase {
         }
     }
 
-    public getClassName(): string {
+    public override getClassName(): string {
         return "PBRAnisotropicConfiguration";
     }
 
-    public addFallbacks(defines: MaterialAnisotropicDefines, fallbacks: EffectFallbacks, currentRank: number): number {
+    public override addFallbacks(defines: MaterialAnisotropicDefines, fallbacks: EffectFallbacks, currentRank: number): number {
         if (defines.ANISOTROPIC) {
             fallbacks.addFallback(currentRank++, "ANISOTROPIC");
         }
         return currentRank;
     }
 
-    public getSamplers(samplers: string[]): void {
+    public override getSamplers(samplers: string[]): void {
         samplers.push("anisotropySampler");
     }
 
-    public getUniforms(): { ubo?: Array<{ name: string; size: number; type: string }>; vertex?: string; fragment?: string } {
+    public override getUniforms(): { ubo?: Array<{ name: string; size: number; type: string }>; vertex?: string; fragment?: string } {
         return {
             ubo: [
                 { name: "vAnisotropy", size: 3, type: "vec3" },
@@ -243,7 +251,7 @@ export class PBRAnisotropicConfiguration extends MaterialPluginBase {
      * @param scene Defines the scene we are parsing for
      * @param rootUrl Defines the rootUrl to load from
      */
-    public parse(source: any, scene: Scene, rootUrl: string): void {
+    public override parse(source: any, scene: Scene, rootUrl: string): void {
         super.parse(source, scene, rootUrl);
 
         // Backward compatibility

@@ -30,7 +30,7 @@ export class InputsPropertyTabComponent extends React.Component<IInputsPropertyT
         this.props.globalState.stateManager.onUpdateRequiredObservable.notifyObservers(ib);
 
         if (ib.isConstant) {
-            this.props.globalState.stateManager.onRebuildRequiredObservable.notifyObservers(true);
+            this.props.globalState.stateManager.onRebuildRequiredObservable.notifyObservers();
         }
     }
 
@@ -136,7 +136,7 @@ export class InputsPropertyTabComponent extends React.Component<IInputsPropertyT
         return null;
     }
 
-    render() {
+    override render() {
         return (
             <LineContainerComponent title="INPUTS">
                 {this.props.inputs.map((ib) => {

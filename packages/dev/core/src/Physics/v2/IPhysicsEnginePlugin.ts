@@ -1,5 +1,5 @@
 import type { Vector3, Quaternion } from "../../Maths/math.vector";
-import type { PhysicsRaycastResult } from "../physicsRaycastResult";
+import type { IRaycastQuery, PhysicsRaycastResult } from "../physicsRaycastResult";
 import type { PhysicsBody } from "./physicsBody";
 import type { PhysicsShape } from "./physicsShape";
 import type { PhysicsConstraint } from "./physicsConstraint";
@@ -7,11 +7,12 @@ import type { BoundingBox } from "../../Culling/boundingBox";
 import type { TransformNode } from "../../Meshes/transformNode";
 import type { PhysicsMaterial } from "./physicsMaterial";
 import type { Mesh } from "../../Meshes/mesh";
-import type { Nullable } from "core/types";
-import type { Observable } from "core/Misc/observable";
+import type { Nullable } from "../../types";
+import type { Observable } from "../../Misc/observable";
+import type { GroundMesh } from "../../Meshes/groundMesh";
 
 /** How a specific axis can be constrained */
-export enum PhysicsConstraintAxisLimitMode {
+export const enum PhysicsConstraintAxisLimitMode {
     /*
      * The axis is not restricted at all
      */
@@ -27,7 +28,7 @@ export enum PhysicsConstraintAxisLimitMode {
 }
 
 /** The constraint specific axis to use when setting Friction, `ConstraintAxisLimitMode`, max force, ... */
-export enum PhysicsConstraintAxis {
+export const enum PhysicsConstraintAxis {
     /*
      * Translation along the primary axis of the constraint (i.e. the
      * direction specified by PhysicsConstraintParameters.axisA/axisB)
@@ -67,7 +68,7 @@ export enum PhysicsConstraintAxis {
 }
 
 /** Type of Constraint */
-export enum PhysicsConstraintType {
+export const enum PhysicsConstraintType {
     /**
      * A ball and socket constraint will attempt to line up the pivot
      * positions in each body, and have no restrictions on rotation
@@ -108,7 +109,7 @@ export enum PhysicsConstraintType {
 }
 
 /** Type of Shape */
-export enum PhysicsShapeType {
+export const enum PhysicsShapeType {
     SPHERE,
     CAPSULE,
     CYLINDER,
@@ -120,16 +121,24 @@ export enum PhysicsShapeType {
 }
 
 /** Optional motor which attempts to move a body at a specific velocity, or at a specific position */
-export enum PhysicsConstraintMotorType {
+export const enum PhysicsConstraintMotorType {
     NONE,
     VELOCITY,
     POSITION,
 }
 
+export const enum PhysicsEventType {
+    COLLISION_STARTED = "COLLISION_STARTED",
+    COLLISION_CONTINUED = "COLLISION_CONTINUED",
+    COLLISION_FINISHED = "COLLISION_FINISHED",
+    TRIGGER_ENTERED = "TRIGGER_ENTERED",
+    TRIGGER_EXITED = "TRIGGER_EXITED",
+}
+
 /**
- * Collision object that is the parameter when notification for collision fires.
+ * Base collision object
  */
-export interface IPhysicsCollisionEvent {
+export interface IBasePhysicsCollisionEvent {
     /**
      * 1st physics body that collided
      */
@@ -146,6 +155,16 @@ export interface IPhysicsCollisionEvent {
      * index in instances array for the collidedAgainst
      */
     collidedAgainstIndex: number;
+    /**
+     * Event type
+     */
+    type: PhysicsEventType;
+}
+
+/**
+ * Collision object that is the parameter when notification for collision fires.
+ */
+export interface IPhysicsCollisionEvent extends IBasePhysicsCollisionEvent {
     /**
      * World position where the collision occured
      */
@@ -200,6 +219,30 @@ export interface PhysicsShapeParameters {
      * Use children hierarchy
      */
     includeChildMeshes?: boolean;
+    /**
+     * The size of the heightfield in the X axis
+     */
+    heightFieldSizeX?: number;
+    /**
+     * The size of the heightfield in the Z axis
+     */
+    heightFieldSizeZ?: number;
+    /**
+     * The number of samples along the X axis
+     */
+    numHeightFieldSamplesX?: number;
+    /**
+     * The number of samples along the Z axis
+     */
+    numHeightFieldSamplesZ?: number;
+    /**
+     * The data for the heightfield
+     */
+    heightFieldData?: Float32Array;
+    /**
+     * Ground mesh used for display
+     */
+    groundMesh?: GroundMesh;
 }
 
 /**
@@ -302,11 +345,34 @@ export interface PhysicsMassProperties {
 /**
  * Indicates how the body will behave.
  */
-export enum PhysicsMotionType {
+export const enum PhysicsMotionType {
     STATIC,
     ANIMATED,
     DYNAMIC,
 }
+
+/**
+ * Indicates how to handle position/rotation change of transform node attached to a physics body
+ */
+export enum PhysicsPrestepType {
+    DISABLED,
+    TELEPORT,
+    ACTION,
+}
+
+/**
+ * Controls the body sleep mode.
+ */
+export const enum PhysicsActivationControl {
+    SIMULATION_CONTROLLED,
+    ALWAYS_ACTIVE,
+    ALWAYS_INACTIVE,
+}
+
+/**
+ * Represents a pair of bodies connected by a constraint.
+ */
+export type ConstrainedBodyPair = { parentBody: PhysicsBody; parentBodyIndex: number; childBody: PhysicsBody; childBodyIndex: number };
 
 /** @internal */
 export interface IPhysicsEnginePluginV2 {
@@ -323,12 +389,23 @@ export interface IPhysicsEnginePluginV2 {
      * Collision observable
      */
     onCollisionObservable: Observable<IPhysicsCollisionEvent>;
+    /**
+     * Collision ended observable
+     */
+    onCollisionEndedObservable: Observable<IBasePhysicsCollisionEvent>;
+    /**
+     * Trigger observable
+     */
+    onTriggerCollisionObservable: Observable<IBasePhysicsCollisionEvent>;
 
     setGravity(gravity: Vector3): void;
     setTimeStep(timeStep: number): void;
     getTimeStep(): number;
     executeStep(delta: number, bodies: Array<PhysicsBody>): void; //not forgetting pre and post events
     getPluginVersion(): number;
+    setVelocityLimits(maxLinearVelocity: number, maxAngularVelocity: number): void;
+    getMaxLinearVelocity(): number;
+    getMaxAngularVelocity(): number;
 
     // body
     initBody(body: PhysicsBody, motionType: PhysicsMotionType, position: Vector3, orientation: Quaternion): void;
@@ -354,16 +431,20 @@ export interface IPhysicsEnginePluginV2 {
     setLinearVelocity(body: PhysicsBody, linVel: Vector3, instanceIndex?: number): void;
     getLinearVelocityToRef(body: PhysicsBody, linVel: Vector3, instanceIndex?: number): void;
     applyImpulse(body: PhysicsBody, impulse: Vector3, location: Vector3, instanceIndex?: number): void;
+    applyAngularImpulse(body: PhysicsBody, angularImpulse: Vector3, instanceIndex?: number): void;
     applyForce(body: PhysicsBody, force: Vector3, location: Vector3, instanceIndex?: number): void;
     setAngularVelocity(body: PhysicsBody, angVel: Vector3, instanceIndex?: number): void;
     getAngularVelocityToRef(body: PhysicsBody, angVel: Vector3, instanceIndex?: number): void;
     getBodyGeometry(body: PhysicsBody): {};
     disposeBody(body: PhysicsBody): void;
     setCollisionCallbackEnabled(body: PhysicsBody, enabled: boolean, instanceIndex?: number): void;
+    setCollisionEndedCallbackEnabled(body: PhysicsBody, enabled: boolean, instanceIndex?: number): void;
     addConstraint(body: PhysicsBody, childBody: PhysicsBody, constraint: PhysicsConstraint, instanceIndex?: number, childInstanceIndex?: number): void;
     getCollisionObservable(body: PhysicsBody, instanceIndex?: number): Observable<IPhysicsCollisionEvent>;
+    getCollisionEndedObservable(body: PhysicsBody, instanceIndex?: number): Observable<IBasePhysicsCollisionEvent>;
     setGravityFactor(body: PhysicsBody, factor: number, instanceIndex?: number): void;
     getGravityFactor(body: PhysicsBody, instanceIndex?: number): number;
+    setTargetTransform(body: PhysicsBody, position: Vector3, rotation: Quaternion, instanceIndex?: number): void;
 
     // shape
     initShape(shape: PhysicsShape, type: PhysicsShapeType, options: PhysicsShapeParameters): void;
@@ -372,13 +453,16 @@ export interface IPhysicsEnginePluginV2 {
     setShapeFilterCollideMask(shape: PhysicsShape, collideMask: number): void;
     getShapeFilterCollideMask(shape: PhysicsShape): number;
     setMaterial(shape: PhysicsShape, material: PhysicsMaterial): void;
+    getMaterial(shape: PhysicsShape): PhysicsMaterial;
     setDensity(shape: PhysicsShape, density: number): void;
     getDensity(shape: PhysicsShape): number;
     addChild(shape: PhysicsShape, newChild: PhysicsShape, translation?: Vector3, rotation?: Quaternion, scale?: Vector3): void;
     removeChild(shape: PhysicsShape, childIndex: number): void;
     getNumChildren(shape: PhysicsShape): number;
     getBoundingBox(shape: PhysicsShape): BoundingBox;
+    getBodyBoundingBox(body: PhysicsBody): BoundingBox;
     disposeShape(shape: PhysicsShape): void;
+    setTrigger(shape: PhysicsShape, isTrigger: boolean): void;
 
     // constraint
     initConstraint(constraint: PhysicsConstraint, body: PhysicsBody, childBody: PhysicsBody): void;
@@ -387,23 +471,24 @@ export interface IPhysicsEnginePluginV2 {
     setCollisionsEnabled(constraint: PhysicsConstraint, isEnabled: boolean): void;
     getCollisionsEnabled(constraint: PhysicsConstraint): boolean;
     setAxisFriction(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, friction: number): void;
-    getAxisFriction(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): number;
+    getAxisFriction(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): Nullable<number>;
     setAxisMode(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, limitMode: PhysicsConstraintAxisLimitMode): void;
-    getAxisMode(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): PhysicsConstraintAxisLimitMode;
+    getAxisMode(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): Nullable<PhysicsConstraintAxisLimitMode>;
     setAxisMinLimit(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, minLimit: number): void;
-    getAxisMinLimit(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): number;
+    getAxisMinLimit(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): Nullable<number>;
     setAxisMaxLimit(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, limit: number): void;
-    getAxisMaxLimit(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): number;
+    getAxisMaxLimit(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): Nullable<number>;
     setAxisMotorType(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, motorType: PhysicsConstraintMotorType): void;
-    getAxisMotorType(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): PhysicsConstraintMotorType;
+    getAxisMotorType(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): Nullable<PhysicsConstraintMotorType>;
     setAxisMotorTarget(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, target: number): void;
-    getAxisMotorTarget(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): number;
+    getAxisMotorTarget(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): Nullable<number>;
     setAxisMotorMaxForce(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, maxForce: number): void;
-    getAxisMotorMaxForce(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): number;
+    getAxisMotorMaxForce(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): Nullable<number>;
     disposeConstraint(constraint: PhysicsConstraint): void;
+    getBodiesUsingConstraint(constraint: PhysicsConstraint): ConstrainedBodyPair[];
 
     // raycast
-    raycast(from: Vector3, to: Vector3, result: PhysicsRaycastResult): void;
+    raycast(from: Vector3, to: Vector3, result: PhysicsRaycastResult, query?: IRaycastQuery): void;
 
     dispose(): void;
 }

@@ -64,6 +64,12 @@ uniform vec2 diffuse8Infos;
 #include<shadowsFragmentFunctions>
 #include<clipPlaneFragmentDeclaration>
 
+#ifdef LOGARITHMICDEPTH
+#extension GL_EXT_frag_depth : enable
+#endif
+
+#include<logDepthDeclaration>
+
 // Fog
 #include<fogFragmentDeclaration>
 
@@ -146,6 +152,8 @@ void main(void) {
 	vec3 diffuseBase = vec3(0., 0., 0.);
     lightingInfo info;
 	float shadow = 1.;
+	float aggShadow = 0.;
+	float numLights = 0.;
 	
 #ifdef SPECULARTERM
 	vec3 specularBase = vec3(0., 0., 0.);
@@ -167,6 +175,7 @@ void main(void) {
 	// Composition
 	vec4 color = vec4(finalDiffuse + finalSpecular, alpha);
 
+#include<logDepthFragment>
 #include<fogFragment>
 
 	gl_FragColor = color;

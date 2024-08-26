@@ -2,11 +2,10 @@
 import type { NodeMaterialBlock } from "./nodeMaterialBlock";
 import { PushMaterial } from "../pushMaterial";
 import type { Scene } from "../../scene";
-import { AbstractMesh } from "../../Meshes/abstractMesh";
+import type { AbstractMesh } from "../../Meshes/abstractMesh";
 import { Matrix, Vector2 } from "../../Maths/math.vector";
 import { Color3, Color4 } from "../../Maths/math.color";
-import type { Mesh } from "../../Meshes/mesh";
-import { Engine } from "../../Engines/engine";
+import { Mesh } from "../../Meshes/mesh";
 import { NodeMaterialBuildState } from "./nodeMaterialBuildState";
 import type { IEffectCreationOptions } from "../effect";
 import { Effect } from "../effect";
@@ -18,7 +17,7 @@ import { NodeMaterialBuildStateSharedData } from "./nodeMaterialBuildStateShared
 import type { SubMesh } from "../../Meshes/subMesh";
 import { MaterialDefines } from "../../Materials/materialDefines";
 import type { NodeMaterialOptimizer } from "./Optimizers/nodeMaterialOptimizer";
-import type { ImageProcessingConfiguration, IImageProcessingConfigurationDefines } from "../imageProcessingConfiguration";
+import type { ImageProcessingConfiguration } from "../imageProcessingConfiguration";
 import type { Nullable } from "../../types";
 import { VertexBuffer } from "../../Buffers/buffer";
 import { Tools } from "../../Misc/tools";
@@ -27,7 +26,8 @@ import { VertexOutputBlock } from "./Blocks/Vertex/vertexOutputBlock";
 import { FragmentOutputBlock } from "./Blocks/Fragment/fragmentOutputBlock";
 import { InputBlock } from "./Blocks/Input/inputBlock";
 import { GetClass, RegisterClass } from "../../Misc/typeStore";
-import { serialize, SerializationHelper } from "../../Misc/decorators";
+import { serialize } from "../../Misc/decorators";
+import { SerializationHelper } from "../../Misc/decorators.serialization";
 import type { TextureBlock } from "./Blocks/Dual/textureBlock";
 import type { ReflectionTextureBaseBlock } from "./Blocks/Dual/reflectionTextureBaseBlock";
 import type { RefractionBlock } from "./Blocks/PBR/refractionBlock";
@@ -37,7 +37,6 @@ import { ParticleRampGradientBlock } from "./Blocks/Particle/particleRampGradien
 import { ParticleBlendMultiplyBlock } from "./Blocks/Particle/particleBlendMultiplyBlock";
 import { EffectFallbacks } from "../effectFallbacks";
 import { WebRequest } from "../../Misc/webRequest";
-
 import type { PostProcessOptions } from "../../PostProcesses/postProcess";
 import { PostProcess } from "../../PostProcesses/postProcess";
 import { Constants } from "../../Engines/constants";
@@ -58,9 +57,18 @@ import { NodeMaterialSystemValues } from "./Enums/nodeMaterialSystemValues";
 import type { ImageSourceBlock } from "./Blocks/Dual/imageSourceBlock";
 import { EngineStore } from "../../Engines/engineStore";
 import type { Material } from "../material";
-import { MaterialHelper } from "../materialHelper";
 import type { TriPlanarBlock } from "./Blocks/triPlanarBlock";
 import type { BiPlanarBlock } from "./Blocks/biPlanarBlock";
+import type { PrePassRenderer } from "../../Rendering/prePassRenderer";
+import type { PrePassTextureBlock } from "./Blocks/Input/prePassTextureBlock";
+import type { PrePassOutputBlock } from "./Blocks/Fragment/prePassOutputBlock";
+import type { NodeMaterialTeleportOutBlock } from "./Blocks/Teleport/teleportOutBlock";
+import type { NodeMaterialTeleportInBlock } from "./Blocks/Teleport/teleportInBlock";
+import { Logger } from "core/Misc/logger";
+import { PrepareDefinesForCamera, PrepareDefinesForPrePass } from "../materialHelper.functions";
+import type { IImageProcessingConfigurationDefines } from "../imageProcessingConfiguration.defines";
+import { ShaderLanguage } from "../shaderLanguage";
+import { AbstractEngine } from "../../Engines/abstractEngine";
 
 const onCreatedEffectParameters = { effect: null as unknown as Effect, subMesh: null as unknown as Nullable<SubMesh> };
 
@@ -72,63 +80,124 @@ declare let BABYLON: any;
  * Interface used to configure the node material editor
  */
 export interface INodeMaterialEditorOptions {
-    /** Define the URl to load node editor script */
+    /** Define the URL to load node editor script from */
     editorURL?: string;
+    /** Additional configuration for the NME */
+    nodeEditorConfig?: {
+        backgroundColor?: Color4;
+    };
 }
 
 /** @internal */
 export class NodeMaterialDefines extends MaterialDefines implements IImageProcessingConfigurationDefines {
+    /** Normal */
     public NORMAL = false;
+    /** Tangent */
     public TANGENT = false;
+    /** Vertex color */
     public VERTEXCOLOR_NME = false;
+    /**  Uv1 **/
     public UV1 = false;
+    /** Uv2 **/
     public UV2 = false;
+    /** Uv3 **/
     public UV3 = false;
+    /** Uv4 **/
     public UV4 = false;
+    /** Uv5 **/
     public UV5 = false;
+    /** Uv6 **/
     public UV6 = false;
+
+    /** Prepass **/
+    public PREPASS = false;
+    /** Prepass normal */
+    public PREPASS_NORMAL = false;
+    /** Prepass normal index */
+    public PREPASS_NORMAL_INDEX = -1;
+    /** Prepass position */
+    public PREPASS_POSITION = false;
+    /** Prepass position index */
+    public PREPASS_POSITION_INDEX = -1;
+    /** Prepass depth */
+    public PREPASS_DEPTH = false;
+    /** Prepass depth index */
+    public PREPASS_DEPTH_INDEX = -1;
+    /** Scene MRT count */
+    public SCENE_MRT_COUNT = 0;
 
     /** BONES */
     public NUM_BONE_INFLUENCERS = 0;
+    /** Bones per mesh */
     public BonesPerMesh = 0;
+    /** Using texture for bone storage */
     public BONETEXTURE = false;
 
     /** MORPH TARGETS */
     public MORPHTARGETS = false;
+    /** Morph target normal */
     public MORPHTARGETS_NORMAL = false;
+    /** Morph target tangent */
     public MORPHTARGETS_TANGENT = false;
+    /** Morph target uv */
     public MORPHTARGETS_UV = false;
+    /** Number of morph influencers */
     public NUM_MORPH_INFLUENCERS = 0;
+    /** Using a texture to store morph target data */
     public MORPHTARGETS_TEXTURE = false;
 
     /** IMAGE PROCESSING */
     public IMAGEPROCESSING = false;
+    /** Vignette */
     public VIGNETTE = false;
+    /** Multiply blend mode for vignette */
     public VIGNETTEBLENDMODEMULTIPLY = false;
+    /** Opaque blend mode for vignette */
     public VIGNETTEBLENDMODEOPAQUE = false;
-    public TONEMAPPING = false;
-    public TONEMAPPING_ACES = false;
+    /** Tone mapping */
+    public TONEMAPPING = 0;
+    /** Contrast */
     public CONTRAST = false;
+    /** Exposure */
     public EXPOSURE = false;
+    /** Color curves */
     public COLORCURVES = false;
+    /** Color grading */
     public COLORGRADING = false;
+    /** 3D color grading */
     public COLORGRADING3D = false;
+    /** Sampler green depth */
     public SAMPLER3DGREENDEPTH = false;
+    /** Sampler for BGR map */
     public SAMPLER3DBGRMAP = false;
+    /** Dithering */
     public DITHER = false;
+    /** Using post process for image processing */
     public IMAGEPROCESSINGPOSTPROCESS = false;
+    /** Skip color clamp */
     public SKIPFINALCOLORCLAMP = false;
 
     /** MISC. */
     public BUMPDIRECTUV = 0;
+    /** Camera is orthographic */
     public CAMERA_ORTHOGRAPHIC = false;
+    /** Camera is perspective */
     public CAMERA_PERSPECTIVE = false;
 
+    /**
+     * Creates a new NodeMaterialDefines
+     */
     constructor() {
         super();
         this.rebuild();
     }
 
+    /**
+     * Set the value of a specific key
+     * @param name defines the name of the key to set
+     * @param value defines the value to set
+     * @param markAsUnprocessedIfDirty Flag to indicate to the cache that this value needs processing
+     */
     public setValue(name: string, value: any, markAsUnprocessedIfDirty = false) {
         if (this[name] === undefined) {
             this._keys.push(name);
@@ -150,6 +219,8 @@ export interface INodeMaterialOptions {
      * Defines if blocks should emit comments
      */
     emitComments: boolean;
+    /** Defines shader language to use (default to GLSL) */
+    shaderLanguage: ShaderLanguage;
 }
 
 /**
@@ -163,7 +234,8 @@ export type NodeMaterialTextureBlocks =
     | ParticleTextureBlock
     | ImageSourceBlock
     | TriPlanarBlock
-    | BiPlanarBlock;
+    | BiPlanarBlock
+    | PrePassTextureBlock;
 
 /**
  * Class used to create a node based material built by assembling shader blocks
@@ -180,15 +252,19 @@ export class NodeMaterial extends PushMaterial {
     private _cachedWorldViewProjectionMatrix = new Matrix();
     private _optimizers = new Array<NodeMaterialOptimizer>();
     private _animationFrame = -1;
+    private _buildIsInProgress = false;
 
     /** Define the Url to load node editor script */
-    public static EditorURL = `https://unpkg.com/babylonjs-node-editor@${Engine.Version}/babylon.nodeEditor.js`;
+    public static EditorURL = `${Tools._DefaultCdnUrl}/v${AbstractEngine.Version}/nodeEditor/babylon.nodeEditor.js`;
 
     /** Define the Url to load snippets */
     public static SnippetUrl = Constants.SnippetUrl;
 
     /** Gets or sets a boolean indicating that node materials should not deserialize textures from json / snippet content */
     public static IgnoreTexturesAtLoadTime = false;
+
+    /** Defines default shader language when no option is defined */
+    public static DefaultShaderLanguage = ShaderLanguage.GLSL;
 
     /**
      * Checks if a block is a texture block
@@ -199,18 +275,23 @@ export class NodeMaterial extends PushMaterial {
         return (
             block.getClassName() === "TextureBlock" ||
             block.getClassName() === "ReflectionTextureBaseBlock" ||
+            block.getClassName() === "ReflectionTextureBlock" ||
+            block.getClassName() === "ReflectionBlock" ||
             block.getClassName() === "RefractionBlock" ||
             block.getClassName() === "CurrentScreenBlock" ||
             block.getClassName() === "ParticleTextureBlock" ||
             block.getClassName() === "ImageSourceBlock" ||
             block.getClassName() === "TriPlanarBlock" ||
-            block.getClassName() === "BiPlanarBlock"
+            block.getClassName() === "BiPlanarBlock" ||
+            block.getClassName() === "PrePassTextureBlock"
         );
     }
 
     private BJSNODEMATERIALEDITOR = this._getGlobalNodeMaterialEditor();
 
-    /** Get the inspector from bundle or global */
+    /** Get the inspector from bundle or global
+     * @returns the global NME
+     */
     private _getGlobalNodeMaterialEditor(): any {
         // UMD Global name detection from Webpack Bundle UMD Name.
         if (typeof NODEEDITOR !== "undefined") {
@@ -223,6 +304,15 @@ export class NodeMaterial extends PushMaterial {
         }
 
         return undefined;
+    }
+
+    /** Gets or sets the active shader language */
+    public override get shaderLanguage(): ShaderLanguage {
+        return this._options.shaderLanguage;
+    }
+
+    public override set shaderLanguage(value: ShaderLanguage) {
+        this._options.shaderLanguage = value;
     }
 
     /**
@@ -299,7 +389,7 @@ export class NodeMaterial extends PushMaterial {
     /**
      * Gets an array of blocks that needs to be serialized even if they are not yet connected
      */
-    public attachedBlocks = new Array<NodeMaterialBlock>();
+    public attachedBlocks: NodeMaterialBlock[] = [];
 
     /**
      * Specifies the mode of the node material
@@ -343,8 +433,13 @@ export class NodeMaterial extends PushMaterial {
     constructor(name: string, scene?: Scene, options: Partial<INodeMaterialOptions> = {}) {
         super(name, scene || EngineStore.LastCreatedScene!);
 
+        if (options && options.shaderLanguage === ShaderLanguage.WGSL && !this.getScene().getEngine().isWebGPU) {
+            throw new Error("WebGPU shader language is only supported with WebGPU engine");
+        }
+
         this._options = {
             emitComments: false,
+            shaderLanguage: NodeMaterial.DefaultShaderLanguage,
             ...options,
         };
 
@@ -356,7 +451,7 @@ export class NodeMaterial extends PushMaterial {
      * Gets the current class name of the material e.g. "NodeMaterial"
      * @returns the class name
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "NodeMaterial";
     }
 
@@ -416,7 +511,7 @@ export class NodeMaterial extends PushMaterial {
     }
 
     /**
-     * Get a block by its name
+     * Get a block using a predicate
      * @param predicate defines the predicate used to find the good candidate
      * @returns the required block or null if not found
      */
@@ -431,7 +526,7 @@ export class NodeMaterial extends PushMaterial {
     }
 
     /**
-     * Get an input block by its name
+     * Get an input block using a predicate
      * @param predicate defines the predicate used to find the good candidate
      * @returns the required input block or null if not found
      */
@@ -501,6 +596,7 @@ export class NodeMaterial extends PushMaterial {
      */
     public addOutputNode(node: NodeMaterialBlock) {
         if (node.target === null) {
+            // eslint-disable-next-line no-throw-literal
             throw "This node is not meant to be an output node. You may want to explicitly set its target value.";
         }
 
@@ -590,7 +686,7 @@ export class NodeMaterial extends PushMaterial {
      * Specifies if the material will require alpha blending
      * @returns a boolean specifying if alpha blending is needed
      */
-    public needAlphaBlending(): boolean {
+    public override needAlphaBlending(): boolean {
         if (this.ignoreAlpha) {
             return false;
         }
@@ -601,8 +697,17 @@ export class NodeMaterial extends PushMaterial {
      * Specifies if this material should be rendered in alpha test mode
      * @returns a boolean specifying if an alpha test is needed.
      */
-    public needAlphaTesting(): boolean {
+    public override needAlphaTesting(): boolean {
         return this._sharedData && this._sharedData.hints.needAlphaTesting;
+    }
+
+    private _processInitializeOnLink(block: NodeMaterialBlock, state: NodeMaterialBuildState, nodesToProcessForOtherBuildState: NodeMaterialBlock[], autoConfigure = true) {
+        if (block.target === NodeMaterialBlockTargets.VertexAndFragment) {
+            nodesToProcessForOtherBuildState.push(block);
+        } else if (state.target === NodeMaterialBlockTargets.Fragment && block.target === NodeMaterialBlockTargets.Vertex && block._preparationId !== this._buildId) {
+            nodesToProcessForOtherBuildState.push(block);
+        }
+        this._initializeBlock(block, state, nodesToProcessForOtherBuildState, autoConfigure);
     }
 
     private _initializeBlock(node: NodeMaterialBlock, state: NodeMaterialBuildState, nodesToProcessForOtherBuildState: NodeMaterialBlock[], autoConfigure = true) {
@@ -618,6 +723,7 @@ export class NodeMaterial extends PushMaterial {
 
                 for (const other of this.attachedBlocks) {
                     if (other.getClassName() === className) {
+                        // eslint-disable-next-line no-throw-literal
                         throw `Cannot have multiple blocks of type ${className} in the same NodeMaterial`;
                     }
                 }
@@ -632,13 +738,16 @@ export class NodeMaterial extends PushMaterial {
             if (connectedPoint) {
                 const block = connectedPoint.ownerBlock;
                 if (block !== node) {
-                    if (block.target === NodeMaterialBlockTargets.VertexAndFragment) {
-                        nodesToProcessForOtherBuildState.push(block);
-                    } else if (state.target === NodeMaterialBlockTargets.Fragment && block.target === NodeMaterialBlockTargets.Vertex && block._preparationId !== this._buildId) {
-                        nodesToProcessForOtherBuildState.push(block);
-                    }
-                    this._initializeBlock(block, state, nodesToProcessForOtherBuildState, autoConfigure);
+                    this._processInitializeOnLink(block, state, nodesToProcessForOtherBuildState, autoConfigure);
                 }
+            }
+        }
+
+        // Teleportation
+        if (node.isTeleportOut) {
+            const teleport = node as NodeMaterialTeleportOutBlock;
+            if (teleport.entryPoint) {
+                this._processInitializeOnLink(teleport.entryPoint, state, nodesToProcessForOtherBuildState, autoConfigure);
             }
         }
 
@@ -659,6 +768,14 @@ export class NodeMaterial extends PushMaterial {
                 if (block !== node) {
                     this._resetDualBlocks(block, id);
                 }
+            }
+        }
+
+        // If this is a teleport out, we need to reset the connected block
+        if (node.isTeleportOut) {
+            const teleportOut = node as NodeMaterialTeleportOutBlock;
+            if (teleportOut.entryPoint) {
+                this._resetDualBlocks(teleportOut.entryPoint, id);
             }
         }
     }
@@ -682,19 +799,31 @@ export class NodeMaterial extends PushMaterial {
      * Build the material and generates the inner effect
      * @param verbose defines if the build should log activity
      * @param updateBuildId defines if the internal build Id should be updated (default is true)
-     * @param autoConfigure defines if the autoConfigure method should be called when initializing blocks (default is true)
+     * @param autoConfigure defines if the autoConfigure method should be called when initializing blocks (default is false)
      */
-    public build(verbose: boolean = false, updateBuildId = true, autoConfigure = true) {
+    public build(verbose: boolean = false, updateBuildId = true, autoConfigure = false) {
+        if (this._buildIsInProgress) {
+            Logger.Warn("Build is already in progress, You can use NodeMaterial.onBuildObservable to determine when the build is completed.");
+            return;
+        }
+        this._buildIsInProgress = true;
+        // First time?
+        if (!this._vertexCompilationState && !autoConfigure) {
+            autoConfigure = true;
+        }
+
         this._buildWasSuccessful = false;
         const engine = this.getScene().getEngine();
 
         const allowEmptyVertexProgram = this._mode === NodeMaterialModes.Particle;
 
         if (this._vertexOutputNodes.length === 0 && !allowEmptyVertexProgram) {
+            // eslint-disable-next-line no-throw-literal
             throw "You must define at least one vertexOutputNode";
         }
 
         if (this._fragmentOutputNodes.length === 0) {
+            // eslint-disable-next-line no-throw-literal
             throw "You must define at least one fragmentOutputNode";
         }
 
@@ -708,6 +837,7 @@ export class NodeMaterial extends PushMaterial {
 
         // Shared data
         this._sharedData = new NodeMaterialBuildStateSharedData();
+        this._sharedData.nodeMaterial = this;
         this._sharedData.fragmentOutputNodes = this._fragmentOutputNodes;
         this._vertexCompilationState.sharedData = this._sharedData;
         this._fragmentCompilationState.sharedData = this._sharedData;
@@ -731,6 +861,28 @@ export class NodeMaterial extends PushMaterial {
             this._initializeBlock(fragmentOutputNode, this._fragmentCompilationState, vertexNodes, autoConfigure);
         }
 
+        // Are blocks code ready?
+        let waitingNodeCount = 0;
+        for (const node of this.attachedBlocks) {
+            if (!node.codeIsReady) {
+                waitingNodeCount++;
+                node.onCodeIsReadyObservable.addOnce(() => {
+                    waitingNodeCount--;
+                    if (waitingNodeCount === 0) {
+                        this._finishBuildProcess(verbose, updateBuildId, vertexNodes, fragmentNodes);
+                    }
+                });
+            }
+        }
+
+        if (waitingNodeCount !== 0) {
+            return;
+        }
+
+        this._finishBuildProcess(verbose, updateBuildId, vertexNodes, fragmentNodes);
+    }
+
+    private _finishBuildProcess(verbose: boolean = false, updateBuildId = true, vertexNodes: NodeMaterialBlock[], fragmentNodes: NodeMaterialBlock[]) {
         // Optimize
         this.optimize();
 
@@ -765,12 +917,13 @@ export class NodeMaterial extends PushMaterial {
         this._sharedData.emitErrors();
 
         if (verbose) {
-            console.log("Vertex shader:");
-            console.log(this._vertexCompilationState.compilationString);
-            console.log("Fragment shader:");
-            console.log(this._fragmentCompilationState.compilationString);
+            Logger.Log("Vertex shader:");
+            Logger.Log(this._vertexCompilationState.compilationString);
+            Logger.Log("Fragment shader:");
+            Logger.Log(this._fragmentCompilationState.compilationString);
         }
 
+        this._buildIsInProgress = false;
         this._buildWasSuccessful = true;
         this.onBuildObservable.notifyObservers(this);
 
@@ -793,6 +946,14 @@ export class NodeMaterial extends PushMaterial {
                 defines.markAllAsDirty();
                 defines.reset();
             }
+        }
+
+        if (this.prePassTextureInputs.length) {
+            this.getScene().enablePrePassRenderer();
+        }
+        const prePassRenderer = this.getScene().prePassRenderer;
+        if (prePassRenderer) {
+            prePassRenderer.markAsDirty();
         }
     }
 
@@ -823,9 +984,102 @@ export class NodeMaterial extends PushMaterial {
             uvChanged = uvChanged || defines["UV" + i] !== oldUV;
         }
 
+        // PrePass
+        const oit = this.needAlphaBlendingForMesh(mesh) && this.getScene().useOrderIndependentTransparency;
+        PrepareDefinesForPrePass(this.getScene(), defines, !oit);
+
         if (oldNormal !== defines["NORMAL"] || oldTangent !== defines["TANGENT"] || oldColor !== defines["VERTEXCOLOR_NME"] || uvChanged) {
             defines.markAsAttributesDirty();
         }
+    }
+
+    /**
+     * Can this material render to prepass
+     */
+    public override get isPrePassCapable(): boolean {
+        return true;
+    }
+
+    /**
+     * Outputs written to the prepass
+     */
+    public get prePassTextureOutputs(): number[] {
+        const prePassOutputBlock = this.getBlockByPredicate((block) => block.getClassName() === "PrePassOutputBlock") as PrePassOutputBlock;
+        const result = [Constants.PREPASS_COLOR_TEXTURE_TYPE];
+        if (!prePassOutputBlock) {
+            return result;
+        }
+        // Cannot write to prepass if we alread read from prepass
+        if (this.prePassTextureInputs.length) {
+            return result;
+        }
+
+        if (prePassOutputBlock.viewDepth.isConnected) {
+            result.push(Constants.PREPASS_DEPTH_TEXTURE_TYPE);
+        }
+
+        if (prePassOutputBlock.viewNormal.isConnected) {
+            result.push(Constants.PREPASS_NORMAL_TEXTURE_TYPE);
+        }
+
+        if (prePassOutputBlock.worldPosition.isConnected) {
+            result.push(Constants.PREPASS_POSITION_TEXTURE_TYPE);
+        }
+
+        return result;
+    }
+
+    /**
+     * Gets the list of prepass texture required
+     */
+    public get prePassTextureInputs(): number[] {
+        const prePassTextureBlocks = this.getAllTextureBlocks().filter((block) => block.getClassName() === "PrePassTextureBlock") as PrePassTextureBlock[];
+        const result = [] as number[];
+
+        for (const block of prePassTextureBlocks) {
+            if (block.position.isConnected && !result.includes(Constants.PREPASS_POSITION_TEXTURE_TYPE)) {
+                result.push(Constants.PREPASS_POSITION_TEXTURE_TYPE);
+            }
+            if (block.depth.isConnected && !result.includes(Constants.PREPASS_DEPTH_TEXTURE_TYPE)) {
+                result.push(Constants.PREPASS_DEPTH_TEXTURE_TYPE);
+            }
+            if (block.normal.isConnected && !result.includes(Constants.PREPASS_NORMAL_TEXTURE_TYPE)) {
+                result.push(Constants.PREPASS_NORMAL_TEXTURE_TYPE);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Sets the required values to the prepass renderer.
+     * @param prePassRenderer defines the prepass renderer to set
+     * @returns true if the pre pass is needed
+     */
+    public override setPrePassRenderer(prePassRenderer: PrePassRenderer): boolean {
+        const prePassTexturesRequired = this.prePassTextureInputs.concat(this.prePassTextureOutputs);
+
+        if (prePassRenderer && prePassTexturesRequired.length > 1) {
+            let cfg = prePassRenderer.getEffectConfiguration("nodeMaterial");
+            if (!cfg) {
+                cfg = prePassRenderer.addEffectConfiguration({
+                    enabled: true,
+                    needsImageProcessing: false,
+                    name: "nodeMaterial",
+                    texturesRequired: [],
+                });
+            }
+            for (const prePassTexture of prePassTexturesRequired) {
+                if (!cfg.texturesRequired.includes(prePassTexture)) {
+                    cfg.texturesRequired.push(prePassTexture);
+                }
+            }
+            cfg.enabled = true;
+        }
+
+        // COLOR_TEXTURE is always required for prepass, length > 1 means
+        // we actually need to write to special prepass textures
+        return prePassTexturesRequired.length > 1;
     }
 
     /**
@@ -843,13 +1097,13 @@ export class NodeMaterial extends PushMaterial {
         camera: Nullable<Camera>,
         options: number | PostProcessOptions = 1,
         samplingMode: number = Constants.TEXTURE_NEAREST_SAMPLINGMODE,
-        engine?: Engine,
+        engine?: AbstractEngine,
         reusable?: boolean,
         textureType: number = Constants.TEXTURETYPE_UNSIGNED_INT,
         textureFormat = Constants.TEXTUREFORMAT_RGBA
     ): Nullable<PostProcess> {
         if (this.mode !== NodeMaterialModes.PostProcess) {
-            console.log("Incompatible material mode");
+            Logger.Log("Incompatible material mode");
             return null;
         }
         return this._createEffectForPostProcess(null, camera, options, samplingMode, engine, reusable, textureType, textureFormat);
@@ -868,7 +1122,7 @@ export class NodeMaterial extends PushMaterial {
         camera?: Nullable<Camera>,
         options: number | PostProcessOptions = 1,
         samplingMode: number = Constants.TEXTURE_NEAREST_SAMPLINGMODE,
-        engine?: Engine,
+        engine?: AbstractEngine,
         reusable?: boolean,
         textureType: number = Constants.TEXTURETYPE_UNSIGNED_INT,
         textureFormat = Constants.TEXTUREFORMAT_RGBA
@@ -877,13 +1131,13 @@ export class NodeMaterial extends PushMaterial {
 
         const defines = new NodeMaterialDefines();
 
-        const dummyMesh = new AbstractMesh(tempName + "PostProcess", this.getScene());
+        const dummyMesh = new Mesh(tempName + "PostProcess", this.getScene());
 
         let buildId = this._buildId;
 
         this._processDefines(dummyMesh, defines);
 
-        Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString, this._vertexCompilationState._builtCompilationString);
+        Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString, this._vertexCompilationState._builtCompilationString, this.shaderLanguage);
 
         if (!postProcess) {
             postProcess = new PostProcess(
@@ -901,7 +1155,8 @@ export class NodeMaterial extends PushMaterial {
                 tempName,
                 { maxSimultaneousLights: this.maxSimultaneousLights },
                 false,
-                textureFormat
+                textureFormat,
+                this.shaderLanguage
             );
         } else {
             postProcess.updateEffect(
@@ -963,7 +1218,7 @@ export class NodeMaterial extends PushMaterial {
      */
     public createProceduralTexture(size: number | { width: number; height: number; layers?: number }, scene: Scene): Nullable<ProceduralTexture> {
         if (this.mode !== NodeMaterialModes.ProceduralTexture) {
-            console.log("Incompatible material mode");
+            Logger.Log("Incompatible material mode");
             return null;
         }
 
@@ -971,14 +1226,14 @@ export class NodeMaterial extends PushMaterial {
 
         const proceduralTexture = new ProceduralTexture(tempName, size, null, scene);
 
-        const dummyMesh = new AbstractMesh(tempName + "Procedural", this.getScene());
+        const dummyMesh = new Mesh(tempName + "Procedural", this.getScene());
         dummyMesh.reservedDataStore = {
             hidden: true,
         };
 
         const defines = new NodeMaterialDefines();
         const result = this._processDefines(dummyMesh, defines);
-        Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString, this._vertexCompilationState._builtCompilationString);
+        Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString, this._vertexCompilationState._builtCompilationString, this.shaderLanguage);
 
         let effect = this.getScene().getEngine().createEffect(
             {
@@ -990,14 +1245,17 @@ export class NodeMaterial extends PushMaterial {
             this._fragmentCompilationState.samplers,
             defines.toString(),
             result?.fallbacks,
-            undefined
+            undefined,
+            undefined,
+            undefined,
+            this.shaderLanguage
         );
 
         proceduralTexture.nodeMaterialSource = this;
         proceduralTexture._setEffect(effect);
 
         let buildId = this._buildId;
-        proceduralTexture.onBeforeGenerationObservable.add(() => {
+        const refreshEffect = () => {
             if (buildId !== this._buildId) {
                 delete Effect.ShadersStore[tempName + "VertexShader"];
                 delete Effect.ShadersStore[tempName + "PixelShader"];
@@ -1012,7 +1270,7 @@ export class NodeMaterial extends PushMaterial {
             const result = this._processDefines(dummyMesh, defines);
 
             if (result) {
-                Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString, this._vertexCompilationState._builtCompilationString);
+                Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString, this._vertexCompilationState._builtCompilationString, this.shaderLanguage);
 
                 TimingTools.SetImmediate(() => {
                     effect = this.getScene().getEngine().createEffect(
@@ -1033,6 +1291,15 @@ export class NodeMaterial extends PushMaterial {
             }
 
             this._checkInternals(effect);
+        };
+
+        proceduralTexture.onBeforeGenerationObservable.add(() => {
+            refreshEffect();
+        });
+
+        // This is needed if the procedural texture is not set to refresh automatically
+        this.onBuildObservable.add(() => {
+            refreshEffect();
         });
 
         return proceduralTexture;
@@ -1057,7 +1324,7 @@ export class NodeMaterial extends PushMaterial {
         if (!dummyMesh) {
             dummyMesh = this.getScene().getMeshByName(this.name + "Particle");
             if (!dummyMesh) {
-                dummyMesh = new AbstractMesh(this.name + "Particle", this.getScene());
+                dummyMesh = new Mesh(this.name + "Particle", this.getScene());
                 dummyMesh.reservedDataStore = {
                     hidden: true,
                 };
@@ -1072,9 +1339,9 @@ export class NodeMaterial extends PushMaterial {
         if (!effect) {
             const result = this._processDefines(dummyMesh, defines);
 
-            Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString);
+            Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString, undefined, this.shaderLanguage);
 
-            particleSystem.fillDefines(particleSystemDefines, blendMode);
+            particleSystem.fillDefines(particleSystemDefines, blendMode, false);
 
             join = particleSystemDefines.join("\n");
 
@@ -1088,7 +1355,8 @@ export class NodeMaterial extends PushMaterial {
                     result?.fallbacks,
                     onCompiled,
                     onError,
-                    particleSystem
+                    particleSystem,
+                    this.shaderLanguage
                 );
 
             particleSystem.setCustomEffect(effect, blendMode);
@@ -1107,7 +1375,7 @@ export class NodeMaterial extends PushMaterial {
 
             particleSystemDefines.length = 0;
 
-            particleSystem.fillDefines(particleSystemDefines, blendMode);
+            particleSystem.fillDefines(particleSystemDefines, blendMode, false);
 
             const particleSystemDefinesJoinedCurrent = particleSystemDefines.join("\n");
 
@@ -1119,7 +1387,7 @@ export class NodeMaterial extends PushMaterial {
             const result = this._processDefines(dummyMesh!, defines!);
 
             if (result) {
-                Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString);
+                Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString, undefined, this.shaderLanguage);
 
                 effect = this.getScene()
                     .getEngine()
@@ -1177,7 +1445,7 @@ export class NodeMaterial extends PushMaterial {
      */
     public createEffectForParticles(particleSystem: IParticleSystem, onCompiled?: (effect: Effect) => void, onError?: (effect: Effect, errors: string) => void) {
         if (this.mode !== NodeMaterialModes.Particle) {
-            console.log("Incompatible material mode");
+            Logger.Log("Incompatible material mode");
             return;
         }
 
@@ -1191,7 +1459,7 @@ export class NodeMaterial extends PushMaterial {
      */
     public createAsShadowDepthWrapper(targetMaterial: Material) {
         if (this.mode !== NodeMaterialModes.Material) {
-            console.log("Incompatible material mode");
+            Logger.Log("Incompatible material mode");
             return;
         }
 
@@ -1214,7 +1482,7 @@ export class NodeMaterial extends PushMaterial {
 
         // Global defines
         const scene = this.getScene();
-        if (MaterialHelper.PrepareDefinesForCamera(scene, defines)) {
+        if (PrepareDefinesForCamera(scene, defines)) {
             defines.markAsMiscDirty();
         }
 
@@ -1293,7 +1561,7 @@ export class NodeMaterial extends PushMaterial {
      * @param useInstances specifies that instances should be used
      * @returns a boolean indicating that the submesh is ready or not
      */
-    public isReadyForSubMesh(mesh: AbstractMesh, subMesh: SubMesh, useInstances: boolean = false): boolean {
+    public override isReadyForSubMesh(mesh: AbstractMesh, subMesh: SubMesh, useInstances: boolean = false): boolean {
         if (!this._buildWasSuccessful) {
             return false;
         }
@@ -1311,8 +1579,10 @@ export class NodeMaterial extends PushMaterial {
             }
         }
 
-        if (subMesh.effect && this.isFrozen) {
-            if (subMesh.effect._wasPreviouslyReady && subMesh.effect._wasPreviouslyUsingInstances === useInstances) {
+        const drawWrapper = subMesh._drawWrapper;
+
+        if (drawWrapper.effect && this.isFrozen) {
+            if (drawWrapper._wasPreviouslyReady && drawWrapper._wasPreviouslyUsingInstances === useInstances) {
                 return true;
             }
         }
@@ -1357,7 +1627,9 @@ export class NodeMaterial extends PushMaterial {
                     fallbacks: result.fallbacks,
                     onCompiled: this.onCompiled,
                     onError: this.onError,
+                    multiTarget: defines.PREPASS,
                     indexParameters: { maxSimultaneousLights: this.maxSimultaneousLights, maxSimultaneousMorphTargets: defines.NUM_MORPH_INFLUENCERS },
+                    shaderLanguage: this.shaderLanguage,
                 },
                 engine
             );
@@ -1391,8 +1663,8 @@ export class NodeMaterial extends PushMaterial {
         }
 
         defines._renderId = scene.getRenderId();
-        subMesh.effect._wasPreviouslyReady = true;
-        subMesh.effect._wasPreviouslyUsingInstances = useInstances;
+        drawWrapper._wasPreviouslyReady = true;
+        drawWrapper._wasPreviouslyUsingInstances = useInstances;
 
         this._checkScenePerformancePriority();
 
@@ -1403,14 +1675,14 @@ export class NodeMaterial extends PushMaterial {
      * Get a string representing the shaders built by the current node graph
      */
     public get compiledShaders() {
-        return `// Vertex shader\r\n${this._vertexCompilationState.compilationString}\r\n\r\n// Fragment shader\r\n${this._fragmentCompilationState.compilationString}`;
+        return `// Vertex shader\n${this._vertexCompilationState.compilationString}\n\n// Fragment shader\n${this._fragmentCompilationState.compilationString}`;
     }
 
     /**
      * Binds the world matrix to the material
      * @param world defines the world transformation matrix
      */
-    public bindOnlyWorldMatrix(world: Matrix): void {
+    public override bindOnlyWorldMatrix(world: Matrix): void {
         const scene = this.getScene();
 
         if (!this._activeEffect) {
@@ -1439,7 +1711,7 @@ export class NodeMaterial extends PushMaterial {
      * @param mesh defines the mesh containing the submesh
      * @param subMesh defines the submesh to bind the material to
      */
-    public bindForSubMesh(world: Matrix, mesh: Mesh, subMesh: SubMesh): void {
+    public override bindForSubMesh(world: Matrix, mesh: Mesh, subMesh: SubMesh): void {
         const scene = this.getScene();
         const effect = subMesh.effect;
         if (!effect) {
@@ -1450,7 +1722,7 @@ export class NodeMaterial extends PushMaterial {
         // Matrices
         this.bindOnlyWorldMatrix(world);
 
-        const mustRebind = this._mustRebind(scene, effect, mesh.visibility);
+        const mustRebind = this._mustRebind(scene, effect, subMesh, mesh.visibility);
         const sharedData = this._sharedData;
 
         if (mustRebind) {
@@ -1473,14 +1745,14 @@ export class NodeMaterial extends PushMaterial {
             }
         }
 
-        this._afterBind(mesh, this._activeEffect);
+        this._afterBind(mesh, this._activeEffect, subMesh);
     }
 
     /**
      * Gets the active textures from the material
      * @returns an array of textures
      */
-    public getActiveTextures(): BaseTexture[] {
+    public override getActiveTextures(): BaseTexture[] {
         const activeTextures = super.getActiveTextures();
 
         if (this._sharedData) {
@@ -1525,7 +1797,7 @@ export class NodeMaterial extends PushMaterial {
      * @param texture defines the texture to check against the material
      * @returns a boolean specifying if the material uses the texture
      */
-    public hasTexture(texture: BaseTexture): boolean {
+    public override hasTexture(texture: BaseTexture): boolean {
         if (super.hasTexture(texture)) {
             return true;
         }
@@ -1549,7 +1821,7 @@ export class NodeMaterial extends PushMaterial {
      * @param forceDisposeTextures specifies if textures should be forcefully disposed
      * @param notBoundToMesh specifies if the material that is being disposed is known to be not bound to any mesh
      */
-    public dispose(forceDisposeEffect?: boolean, forceDisposeTextures?: boolean, notBoundToMesh?: boolean): void {
+    public override dispose(forceDisposeEffect?: boolean, forceDisposeTextures?: boolean, notBoundToMesh?: boolean): void {
         if (forceDisposeTextures) {
             for (const texture of this.getTextureBlocks()
                 .filter((tb) => tb.texture)
@@ -1577,11 +1849,15 @@ export class NodeMaterial extends PushMaterial {
         super.dispose(forceDisposeEffect, forceDisposeTextures, notBoundToMesh);
     }
 
-    /** Creates the node editor window. */
-    private _createNodeEditor() {
-        this.BJSNODEMATERIALEDITOR.NodeEditor.Show({
+    /** Creates the node editor window.
+     * @param additionalConfig Define the configuration of the editor
+     */
+    private _createNodeEditor(additionalConfig?: any) {
+        const nodeEditorConfig: any = {
             nodeMaterial: this,
-        });
+            ...additionalConfig,
+        };
+        this.BJSNODEMATERIALEDITOR.NodeEditor.Show(nodeEditorConfig);
     }
 
     /**
@@ -1596,14 +1872,14 @@ export class NodeMaterial extends PushMaterial {
                 const editorUrl = config && config.editorURL ? config.editorURL : NodeMaterial.EditorURL;
 
                 // Load editor and add it to the DOM
-                Tools.LoadScript(editorUrl, () => {
+                Tools.LoadBabylonScript(editorUrl, () => {
                     this.BJSNODEMATERIALEDITOR = this.BJSNODEMATERIALEDITOR || this._getGlobalNodeMaterialEditor();
-                    this._createNodeEditor();
+                    this._createNodeEditor(config?.nodeEditorConfig);
                     resolve();
                 });
             } else {
                 // Otherwise creates the editor
-                this._createNodeEditor();
+                this._createNodeEditor(config?.nodeEditorConfig);
                 resolve();
             }
         });
@@ -1834,6 +2110,14 @@ export class NodeMaterial extends PushMaterial {
                 }
             }
         }
+
+        // Teleportation
+        if (rootNode.isTeleportOut) {
+            const block = rootNode as NodeMaterialTeleportOutBlock;
+            if (block.entryPoint) {
+                this._gatherBlocks(block.entryPoint, list);
+            }
+        }
     }
 
     /**
@@ -1855,7 +2139,8 @@ export class NodeMaterial extends PushMaterial {
         }
 
         // Generate vertex shader
-        let codeString = `var nodeMaterial = new BABYLON.NodeMaterial("${this.name || "node material"}");\r\n`;
+        let codeString = `var nodeMaterial = new BABYLON.NodeMaterial("${this.name || "node material"}");\n`;
+        codeString += `nodeMaterial.mode = BABYLON.NodeMaterialModes.${NodeMaterialModes[this.mode]};\n`;
         for (const node of vertexBlocks) {
             if (node.isInput && alreadyDumped.indexOf(node) === -1) {
                 codeString += node._dumpCode(uniqueNames, alreadyDumped);
@@ -1871,7 +2156,7 @@ export class NodeMaterial extends PushMaterial {
 
         // Connections
         alreadyDumped = [];
-        codeString += "\r\n// Connections\r\n";
+        codeString += "\n// Connections\n";
         for (const node of this._vertexOutputNodes) {
             codeString += node._dumpCodeForOutputConnections(alreadyDumped);
         }
@@ -1880,26 +2165,26 @@ export class NodeMaterial extends PushMaterial {
         }
 
         // Output nodes
-        codeString += "\r\n// Output nodes\r\n";
+        codeString += "\n// Output nodes\n";
         for (const node of this._vertexOutputNodes) {
-            codeString += `nodeMaterial.addOutputNode(${node._codeVariableName});\r\n`;
+            codeString += `nodeMaterial.addOutputNode(${node._codeVariableName});\n`;
         }
 
         for (const node of this._fragmentOutputNodes) {
-            codeString += `nodeMaterial.addOutputNode(${node._codeVariableName});\r\n`;
+            codeString += `nodeMaterial.addOutputNode(${node._codeVariableName});\n`;
         }
 
-        codeString += `nodeMaterial.build();\r\n`;
+        codeString += `nodeMaterial.build();\n`;
 
         return codeString;
     }
 
     /**
      * Serializes this material in a JSON representation
-     * @param selectedBlocks
+     * @param selectedBlocks defines an optional list of blocks to serialize
      * @returns the serialized material object
      */
-    public serialize(selectedBlocks?: NodeMaterialBlock[]): any {
+    public override serialize(selectedBlocks?: NodeMaterialBlock[]): any {
         const serializationObject = selectedBlocks ? {} : SerializationHelper.Serialize(this);
         serializationObject.editorData = JSON.parse(JSON.stringify(this.editorData)); // Copy
 
@@ -1942,6 +2227,8 @@ export class NodeMaterial extends PushMaterial {
             }
         }
 
+        serializationObject.uniqueId = this.uniqueId;
+
         return serializationObject;
     }
 
@@ -1975,8 +2262,9 @@ export class NodeMaterial extends PushMaterial {
      * @param source defines the JSON representation of the material
      * @param rootUrl defines the root URL to use to load textures and relative dependencies
      * @param merge defines whether or not the source must be merged or replace the current content
+     * @param urlRewriter defines a function used to rewrite urls
      */
-    public parseSerializedObject(source: any, rootUrl: string = "", merge = false) {
+    public parseSerializedObject(source: any, rootUrl: string = "", merge = false, urlRewriter?: (url: string) => string) {
         if (!merge) {
             this.clear();
         }
@@ -1988,10 +2276,22 @@ export class NodeMaterial extends PushMaterial {
             const blockType = GetClass(parsedBlock.customType);
             if (blockType) {
                 const block: NodeMaterialBlock = new blockType();
-                block._deserialize(parsedBlock, this.getScene(), rootUrl);
+                block._deserialize(parsedBlock, this.getScene(), rootUrl, urlRewriter);
                 map[parsedBlock.id] = block;
 
                 this.attachedBlocks.push(block);
+            }
+        }
+
+        // Reconnect teleportation
+        for (const block of this.attachedBlocks) {
+            if (block.isTeleportOut) {
+                const teleportOut = block as NodeMaterialTeleportOutBlock;
+                const id = teleportOut._tempEntryPointUniqueId;
+                if (id) {
+                    const source = map[id] as NodeMaterialTeleportInBlock;
+                    source.attachToEndpoint(teleportOut);
+                }
             }
         }
 
@@ -2059,6 +2359,10 @@ export class NodeMaterial extends PushMaterial {
             this.forceAlphaBlending = source.forceAlphaBlending;
         }
 
+        if (source.alphaMode !== undefined) {
+            this.alphaMode = source.alphaMode;
+        }
+
         if (!merge) {
             this._mode = source.mode ?? NodeMaterialModes.Material;
         }
@@ -2079,8 +2383,9 @@ export class NodeMaterial extends PushMaterial {
      * Makes a duplicate of the current material.
      * @param name defines the name to use for the new material
      * @param shareEffect defines if the clone material should share the same effect (default is false)
+     * @returns the cloned material
      */
-    public clone(name: string, shareEffect: boolean = false): NodeMaterial {
+    public override clone(name: string, shareEffect: boolean = false): NodeMaterial {
         const serializationObject = this.serialize();
 
         const clone = SerializationHelper.Clone(() => new NodeMaterial(name, this.getScene(), this.options), this);
@@ -2095,14 +2400,41 @@ export class NodeMaterial extends PushMaterial {
     }
 
     /**
+     * Awaits for all the material textures to be ready before resolving the returned promise.
+     * @returns A promise that resolves when the textures are ready.
+     */
+    public whenTexturesReadyAsync(): Promise<void[]> {
+        // Ensures all textures are ready to render.
+        const textureReadyPromises: Promise<void>[] = [];
+        this.getActiveTextures().forEach((texture) => {
+            const internalTexture = texture.getInternalTexture();
+            if (internalTexture && !internalTexture.isReady) {
+                textureReadyPromises.push(
+                    new Promise((textureResolve, textureReject) => {
+                        internalTexture.onLoadedObservable.addOnce(() => {
+                            textureResolve();
+                        });
+                        internalTexture.onErrorObservable.addOnce((e) => {
+                            textureReject(e);
+                        });
+                    })
+                );
+            }
+        });
+
+        return Promise.all(textureReadyPromises);
+    }
+
+    /**
      * Creates a node material from parsed material data
      * @param source defines the JSON representation of the material
      * @param scene defines the hosting scene
      * @param rootUrl defines the root URL to use to load textures and relative dependencies
+     * @param shaderLanguage defines the language to use (GLSL by default)
      * @returns a new node material
      */
-    public static Parse(source: any, scene: Scene, rootUrl: string = ""): NodeMaterial {
-        const nodeMaterial = SerializationHelper.Parse(() => new NodeMaterial(source.name, scene), source, scene, rootUrl);
+    public static override Parse(source: any, scene: Scene, rootUrl: string = "", shaderLanguage = ShaderLanguage.GLSL): NodeMaterial {
+        const nodeMaterial = SerializationHelper.Parse(() => new NodeMaterial(source.name, scene, { shaderLanguage: shaderLanguage }), source, scene, rootUrl);
 
         nodeMaterial.parseSerializedObject(source, rootUrl);
         nodeMaterial.build();
@@ -2118,6 +2450,7 @@ export class NodeMaterial extends PushMaterial {
      * @param rootUrl defines the root URL for nested url in the node material
      * @param skipBuild defines whether to build the node material
      * @param targetMaterial defines a material to use instead of creating a new one
+     * @param urlRewriter defines a function used to rewrite urls
      * @returns a promise that will resolve to the new node material
      */
     public static async ParseFromFileAsync(
@@ -2126,13 +2459,14 @@ export class NodeMaterial extends PushMaterial {
         scene: Scene,
         rootUrl: string = "",
         skipBuild: boolean = false,
-        targetMaterial?: NodeMaterial
+        targetMaterial?: NodeMaterial,
+        urlRewriter?: (url: string) => string
     ): Promise<NodeMaterial> {
         const material = targetMaterial ?? new NodeMaterial(name, scene);
 
         const data = await scene._loadFileAsync(url);
-        const serializationObject = JSON.parse(data as string);
-        material.parseSerializedObject(serializationObject, rootUrl);
+        const serializationObject = JSON.parse(data);
+        material.parseSerializedObject(serializationObject, rootUrl, undefined, urlRewriter);
         if (!skipBuild) {
             material.build();
         }
@@ -2146,6 +2480,8 @@ export class NodeMaterial extends PushMaterial {
      * @param rootUrl defines the root URL to use to load textures and relative dependencies
      * @param nodeMaterial defines a node material to update (instead of creating a new one)
      * @param skipBuild defines whether to build the node material
+     * @param waitForTextureReadyness defines whether to wait for texture readiness resolving the promise (default: false)
+     * @param urlRewriter defines a function used to rewrite urls
      * @returns a promise that will resolve to the new node material
      */
     public static ParseFromSnippetAsync(
@@ -2153,7 +2489,9 @@ export class NodeMaterial extends PushMaterial {
         scene: Scene = EngineStore.LastCreatedScene!,
         rootUrl: string = "",
         nodeMaterial?: NodeMaterial,
-        skipBuild: boolean = false
+        skipBuild: boolean = false,
+        waitForTextureReadyness: boolean = false,
+        urlRewriter?: (url: string) => string
     ): Promise<NodeMaterial> {
         if (snippetId === "_BLANK") {
             return Promise.resolve(NodeMaterial.CreateDefault("blank", scene));
@@ -2172,16 +2510,31 @@ export class NodeMaterial extends PushMaterial {
                             nodeMaterial.uniqueId = scene.getUniqueId();
                         }
 
-                        nodeMaterial.parseSerializedObject(serializationObject);
+                        nodeMaterial.parseSerializedObject(serializationObject, undefined, undefined, urlRewriter);
                         nodeMaterial.snippetId = snippetId;
+
+                        // We reset sideOrientation to default value
+                        nodeMaterial.sideOrientation = null;
 
                         try {
                             if (!skipBuild) {
                                 nodeMaterial.build();
                             }
-                            resolve(nodeMaterial);
                         } catch (err) {
                             reject(err);
+                        }
+
+                        if (waitForTextureReadyness) {
+                            nodeMaterial
+                                .whenTexturesReadyAsync()
+                                .then(() => {
+                                    resolve(nodeMaterial!);
+                                })
+                                .catch((err) => {
+                                    reject(err);
+                                });
+                        } else {
+                            resolve(nodeMaterial);
                         }
                     } else {
                         reject("Unable to load the snippet " + snippetId);

@@ -33,6 +33,7 @@ export class GlobalState {
 
     public onExtensionLoadedObservable: Observable<IGLTFLoaderExtension>;
 
+    public glTFLoaderOverrideExtensionsConfig = false;
     public glTFLoaderExtensionDefaults: { [name: string]: { [key: string]: any } } = {
         MSFT_lod: { enabled: true, maxLODsToLoad: 10 },
         MSFT_minecraftMesh: { enabled: true },
@@ -52,16 +53,19 @@ export class GlobalState {
         KHR_materials_unlit: { enabled: true },
         KHR_materials_variants: { enabled: true },
         KHR_materials_transmission: { enabled: true },
-        KHR_materials_translucency: { enabled: true },
+        KHR_materials_diffuse_transmission: { enabled: true },
         KHR_materials_volume: { enabled: true },
+        KHR_materials_dispersion: { enabled: true },
         KHR_lights_punctual: { enabled: true },
         KHR_texture_basisu: { enabled: true },
         KHR_texture_transform: { enabled: true },
         EXT_lights_image_based: { enabled: true },
         EXT_mesh_gpu_instancing: { enabled: true },
         EXT_texture_webp: { enabled: true },
+        EXT_texture_avif: { enabled: true },
     };
 
+    public glTFLoaderOverrideConfig = false;
     public glTFLoaderDefaults: { [key: string]: any } = {
         alwaysComputeBoundingBox: false,
         alwaysComputeSkeletonRootNode: false,
@@ -129,18 +133,23 @@ export class GlobalState {
 
     public prepareGLTFPlugin(loader: GLTFFileLoader) {
         this.glTFLoaderExtensions = {};
-        const loaderState = this.glTFLoaderDefaults;
-        if (loaderState !== undefined) {
-            for (const key in loaderState) {
-                (loader as any)[key] = loaderState[key];
+
+        if (this.glTFLoaderOverrideConfig) {
+            const loaderState = this.glTFLoaderDefaults;
+            if (loaderState !== undefined) {
+                for (const key in loaderState) {
+                    (loader as any)[key] = loaderState[key];
+                }
             }
         }
 
         loader.onExtensionLoadedObservable.add((extension: import("loaders/glTF/index").IGLTFLoaderExtension) => {
-            const extensionState = this.glTFLoaderExtensionDefaults[extension.name];
-            if (extensionState !== undefined) {
-                for (const key in extensionState) {
-                    (extension as any)[key] = extensionState[key];
+            if (this.glTFLoaderOverrideExtensionsConfig) {
+                const extensionState = this.glTFLoaderExtensionDefaults[extension.name];
+                if (extensionState !== undefined) {
+                    for (const key in extensionState) {
+                        (extension as any)[key] = extensionState[key];
+                    }
                 }
             }
 
@@ -167,7 +176,7 @@ export class GlobalState {
 
     // Light gizmos
     public lightGizmos: Array<LightGizmo> = [];
-    public enableLightGizmo(light: Light, enable = true) {
+    public enableLightGizmo(light: Light, enable = true, gizmoCamera: Nullable<Camera> = null) {
         if (enable) {
             if (!light.reservedDataStore) {
                 light.reservedDataStore = {};
@@ -177,6 +186,9 @@ export class GlobalState {
                 this.lightGizmos.push(light.reservedDataStore.lightGizmo);
                 light.reservedDataStore.lightGizmo.light = light;
                 light.reservedDataStore.lightGizmo.material.reservedDataStore = { hidden: true };
+                if (gizmoCamera) {
+                    light.reservedDataStore.lightGizmo.gizmoLayer.setRenderCamera(gizmoCamera);
+                }
             }
         } else if (light.reservedDataStore && light.reservedDataStore.lightGizmo) {
             this.lightGizmos.splice(this.lightGizmos.indexOf(light.reservedDataStore.lightGizmo), 1);
@@ -186,7 +198,7 @@ export class GlobalState {
     }
     // Camera gizmos
     public cameraGizmos: Array<CameraGizmo> = [];
-    public enableCameraGizmo(camera: Camera, enable = true) {
+    public enableCameraGizmo(camera: Camera, enable = true, gizmoCamera: Nullable<Camera> = null) {
         if (enable) {
             if (!camera.reservedDataStore) {
                 camera.reservedDataStore = {};
@@ -196,6 +208,9 @@ export class GlobalState {
                 this.cameraGizmos.push(camera.reservedDataStore.cameraGizmo);
                 camera.reservedDataStore.cameraGizmo.camera = camera;
                 camera.reservedDataStore.cameraGizmo.material.reservedDataStore = { hidden: true };
+                if (gizmoCamera) {
+                    camera.reservedDataStore.cameraGizmo.gizmoLayer.setRenderCamera(gizmoCamera);
+                }
             }
         } else if (camera.reservedDataStore && camera.reservedDataStore.cameraGizmo) {
             this.cameraGizmos.splice(this.cameraGizmos.indexOf(camera.reservedDataStore.cameraGizmo), 1);

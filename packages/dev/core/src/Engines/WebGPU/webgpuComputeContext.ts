@@ -1,3 +1,4 @@
+import type { DataBuffer } from "core/Buffers/dataBuffer";
 import type { StorageBuffer } from "../../Buffers/storageBuffer";
 import type { IComputeContext } from "../../Compute/IComputeContext";
 import type { BaseTexture } from "../../Materials/Textures/baseTexture";
@@ -9,6 +10,7 @@ import { ComputeBindingType } from "../Extensions/engine.computeShader";
 import type { WebGPUCacheSampler } from "./webgpuCacheSampler";
 import * as WebGPUConstants from "./webgpuConstants";
 import type { WebGPUHardwareTexture } from "./webgpuHardwareTexture";
+import type { ExternalTexture } from "core/Materials/Textures/externalTexture";
 
 /** @internal */
 export class WebGPUComputeContext implements IComputeContext {
@@ -99,10 +101,30 @@ export class WebGPUComputeContext implements IComputeContext {
                         break;
                     }
 
+                    case ComputeBindingType.ExternalTexture: {
+                        const texture = object as ExternalTexture;
+                        const externalTexture = texture.underlyingResource;
+                        if (indexInGroupEntries !== undefined && bindGroupEntriesExist) {
+                            entries[indexInGroupEntries].resource = this._device.importExternalTexture({ source: externalTexture });
+                        } else {
+                            binding.indexInGroupEntries = entries.length;
+                            entries.push({
+                                binding: index,
+                                resource: this._device.importExternalTexture({ source: externalTexture }),
+                            });
+                        }
+                        break;
+                    }
+
                     case ComputeBindingType.UniformBuffer:
-                    case ComputeBindingType.StorageBuffer: {
-                        const buffer = type === ComputeBindingType.UniformBuffer ? (object as UniformBuffer) : (object as StorageBuffer);
-                        const dataBuffer = buffer.getBuffer()!;
+                    case ComputeBindingType.StorageBuffer:
+                    case ComputeBindingType.DataBuffer: {
+                        const dataBuffer =
+                            type === ComputeBindingType.DataBuffer
+                                ? (object as DataBuffer)
+                                : type === ComputeBindingType.UniformBuffer
+                                  ? (object as UniformBuffer).getBuffer()!
+                                  : (object as StorageBuffer).getBuffer()!;
                         const webgpuBuffer = dataBuffer.underlyingResource as GPUBuffer;
                         if (indexInGroupEntries !== undefined && bindGroupEntriesExist) {
                             (entries[indexInGroupEntries].resource as GPUBufferBinding).buffer = webgpuBuffer;

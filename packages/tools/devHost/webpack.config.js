@@ -1,68 +1,98 @@
 const path = require("path");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
 const webpackTools = require("@dev/build-tools").webpackTools;
+const BundleAnalyzerPlugin = require("webpack-bundle-analyzer").BundleAnalyzerPlugin;
+
+const outputDirectoryForAliases = "src";
+const buildTools = require("@dev/build-tools");
+const externalsFunction = buildTools.webpackTools.externalsFunction;
+const rules = buildTools.webpackTools.getRules({
+    includeAssets: true,
+    includeCSS: true,
+    sideEffects: true,
+    tsOptions: {
+        transpileOnly: true,
+        compilerOptions: {
+            declaration: false,
+        },
+    },
+});
 
 module.exports = (env) => {
-    const source = env.source || process.env.SOURCE || "dev";
-    const production = env.mode === "production" || process.env.NODE_ENV === "production";
+    const source = env.source || process.env.SOURCE || "dev"; // || "lts";
+    const basePathForSources = path.resolve(__dirname, "../../", source);
+    const basePathForTools = path.resolve(__dirname, "../../", "tools");
+    const externals = externalsFunction([], "umd");
+    rules.shift();
+    rules.push({
+        test: /\.tsx?$/,
+        oneOf: [
+            {
+                loader: "ts-loader",
+                options: {
+                    transpileOnly: true,
+                    configFile: "tsconfig.build.json",
+                },
+            },
+        ],
+        exclude: /node_modules/,
+        sideEffects: true,
+    });
     const commonConfig = {
-        mode: env.mode === "production" ? "production" : "development",
-        devtool: production ? "source-map" : "eval-cheap-module-source-map",
-        entry: "./src/index.ts",
-        output: {
-            path: path.resolve(__dirname, "dist"),
-            filename: "main.js",
-            // library: { type: "module" },
-            // environment: { module: true },
-            // module: true,
-            devtoolModuleFilenameTemplate: production ? "webpack://[namespace]/[resource-path]?[loaders]" : "file:///[absolute-resource-path]",
+        ...buildTools.webpackTools.commonDevWebpackConfiguration(
+            {
+                ...env,
+                outputFilename: "main.js",
+                dirName: __dirname,
+            },
+            {
+                static: ["public"],
+                port: process.env.TOOLS_PORT || 1338,
+                showBuildProgress: true,
+            }
+        ),
+        entry: {
+            entry: "./src/index.ts",
         },
         resolve: {
-            extensions: [".ts", ".js"],
+            extensions: [".js", ".ts", ".tsx"],
             alias: {
-                core: `@${source}/core/dist`,
-                loaders: `@${source}/loaders/dist`,
-                gui: `@${source}/gui/dist`,
-                serializers: `@${source}/serializers/dist`,
-                inspector: `@dev/inspector/dist`,
-                "shared-ui-components": `@dev/shared-ui-components/dist`,
-                materials: `@${source}/materials/dist`,
-                "post-processes": `@${source}/post-processes/dist`,
-                "procedural-textures": `@${source}/procedural-textures/dist`,
-                "gui-editor": `@tools/gui-editor/dist`,
-                "node-editor": `@tools/node-editor/dist`,
+                core: path.resolve(basePathForSources, "core", outputDirectoryForAliases),
+                gui: path.resolve(basePathForSources, "gui", outputDirectoryForAliases),
+                serializers: path.resolve(basePathForSources, "serializers", outputDirectoryForAliases),
+                loaders: path.resolve(basePathForSources, "loaders", outputDirectoryForAliases),
+                materials: path.resolve(basePathForSources, "materials", outputDirectoryForAliases),
+                inspector: path.resolve(__dirname, "../../", "dev", "inspector", outputDirectoryForAliases),
+                "shared-ui-components": path.resolve(__dirname, "../../", "dev", "sharedUiComponents", outputDirectoryForAliases),
+                "post-processes": path.resolve(basePathForSources, "postProcesses", outputDirectoryForAliases),
+                "procedural-textures": path.resolve(basePathForSources, "proceduralTextures", outputDirectoryForAliases),
+                "node-editor": path.resolve(basePathForTools, "nodeEditor", outputDirectoryForAliases),
+                "node-geometry-editor": path.resolve(basePathForTools, "nodeGeometryEditor", outputDirectoryForAliases),
+                "gui-editor": path.resolve(basePathForTools, "guiEditor", outputDirectoryForAliases),
+                accessibility: path.resolve(basePathForTools, "accessibility", outputDirectoryForAliases),
+                "babylonjs-gltf2interface": path.resolve("./src", "babylon.glTF2Interface.ts"),
             },
+            symlinks: false,
         },
         experiments: {
             outputModule: true,
         },
-        // externalsType: "module",
-        // externals: [
-        //     function ({ context, request }, callback) {
-        //         if (/^core\//.test(request)) {
-        //             // Externalize to a commonjs module using the request path
-        //             const changed = request.replace(/^core\//, "core/dist/");
-        //             return callback(null, "../../dev/" + changed + ".js");
-        //         }
-
-        //         // Continue without externalizing the import
-        //         callback();
-        //     },
-        // ],
-        module: {
-            rules: webpackTools.getRules(),
+        performance: {
+            hints: false,
         },
-        devServer: {
-            static: ["public"],
-            port: process.env.TOOLS_PORT || 1338,
-            server: env.enableHttps !== undefined || process.env.ENABLE_HTTPS === "true" ? "https" : "http",
-            hot: (env.enableHotReload !== undefined || process.env.ENABLE_HOT_RELOAD === "true") && !production ? true : false,
-            liveReload: (env.enableLiveReload !== undefined || process.env.ENABLE_LIVE_RELOAD === "true") && !production ? true : false,
-            headers: {
-                "Access-Control-Allow-Origin": "*",
-            },
+        module: {
+            rules,
         },
         plugins: [
+            ...(env.analyze
+                ? [
+                      new BundleAnalyzerPlugin({
+                          analyzerMode: "static",
+                          generateStatsFile: true,
+                          defaultSizes: "stat",
+                      }),
+                  ]
+                : []),
             new HtmlWebpackPlugin({
                 inject: true,
                 template: path.resolve("./public/index.html"),
@@ -70,5 +100,6 @@ module.exports = (env) => {
             }),
         ],
     };
+
     return commonConfig;
 };

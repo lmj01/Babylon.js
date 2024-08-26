@@ -2,14 +2,14 @@ import type { PostProcessOptions } from "./postProcess";
 import { PostProcess } from "./postProcess";
 import type { Camera } from "../Cameras/camera";
 import type { Effect } from "../Materials/effect";
-import type { Engine } from "../Engines/engine";
+import type { AbstractEngine } from "../Engines/abstractEngine";
 
-import "../Shaders/blackAndWhite.fragment";
 import { RegisterClass } from "../Misc/typeStore";
-import { serialize, SerializationHelper } from "../Misc/decorators";
+import { serialize } from "../Misc/decorators";
+import { SerializationHelper } from "../Misc/decorators.serialization";
 import type { Nullable } from "../types";
 
-declare type Scene = import("../scene").Scene;
+import type { Scene } from "../scene";
 
 /**
  * Post process used to render in black and white
@@ -25,7 +25,7 @@ export class BlackAndWhitePostProcess extends PostProcess {
      * Gets a string identifying the name of the class
      * @returns "BlackAndWhitePostProcess" string
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "BlackAndWhitePostProcess";
     }
 
@@ -39,7 +39,7 @@ export class BlackAndWhitePostProcess extends PostProcess {
      * @param engine The engine which the post process will be applied. (default: current engine)
      * @param reusable If the post process can be reused on the same frame. (default: false)
      */
-    constructor(name: string, options: number | PostProcessOptions, camera: Nullable<Camera>, samplingMode?: number, engine?: Engine, reusable?: boolean) {
+    constructor(name: string, options: number | PostProcessOptions, camera: Nullable<Camera>, samplingMode?: number, engine?: AbstractEngine, reusable?: boolean) {
         super(name, "blackAndWhite", ["degree"], null, options, camera, samplingMode, engine, reusable);
 
         this.onApplyObservable.add((effect: Effect) => {
@@ -47,10 +47,21 @@ export class BlackAndWhitePostProcess extends PostProcess {
         });
     }
 
+    protected override _gatherImports(useWebGPU: boolean, list: Promise<any>[]) {
+        if (useWebGPU) {
+            this._webGPUReady = true;
+            list.push(import("../ShadersWGSL/blackAndWhite.fragment"));
+        } else {
+            list.push(import("../Shaders/blackAndWhite.fragment"));
+        }
+
+        super._gatherImports(useWebGPU, list);
+    }
+
     /**
      * @internal
      */
-    public static _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string): Nullable<BlackAndWhitePostProcess> {
+    public static override _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string): Nullable<BlackAndWhitePostProcess> {
         return SerializationHelper.Parse(
             () => {
                 return new BlackAndWhitePostProcess(

@@ -2,7 +2,7 @@
 
 var hostElement = document.getElementById("host-element");
 
-const fallbackUrl = "https://babylonsnapshots.z22.web.core.windows.net/refs/heads/master";
+const fallbackUrl = "https://snapshots-cvgtc2eugrd3cgfd.z01.azurefd.net/refs/heads/master";
 
 let loadScriptAsync = function (url, instantResolve) {
     return new Promise((resolve) => {
@@ -35,7 +35,7 @@ let loadScriptAsync = function (url, instantResolve) {
 
 const Versions = {
     dist: [
-        "https://preview.babylonjs.com/timestamp.js?t=" + Date.now(),
+        "https://cdn.babylonjs.com/timestamp.js?t=" + Date.now(),
         "https://preview.babylonjs.com/babylon.js",
         "https://preview.babylonjs.com/loaders/babylonjs.loaders.min.js",
         "https://preview.babylonjs.com/serializers/babylonjs.serializers.min.js",
@@ -72,15 +72,25 @@ let checkBabylonVersionAsync = function () {
     let snapshot = "";
     // see if a snapshot should be used
     if (window.location.search.indexOf("snapshot=") !== -1) {
-        snapshot = window.location.search.split("=")[1];
+        snapshot = window.location.search.split("snapshot=")[1];
         // cleanup, just in case
         snapshot = snapshot.split("&")[0];
         activeVersion = "dist";
     }
 
+    let version = "";
+    if (window.location.search.indexOf("version=") !== -1) {
+        version = window.location.search.split("version=")[1];
+        // cleanup, just in case
+        version = version.split("&")[0];
+        activeVersion = "dist";
+    }
+
     let versions = Versions[activeVersion] || Versions["dist"];
     if (snapshot && activeVersion === "dist") {
-        versions = versions.map((v) => v.replace("https://preview.babylonjs.com", "https://babylonsnapshots.z22.web.core.windows.net/" + snapshot));
+        versions = versions.map((v) => v.replace("https://preview.babylonjs.com", "https://snapshots-cvgtc2eugrd3cgfd.z01.azurefd.net/" + snapshot));
+    } else if (version && activeVersion === "dist") {
+        versions = versions.map((v) => v.replace("https://preview.babylonjs.com", "https://cdn.babylonjs.com/v" + version));
     }
 
     return new Promise((resolve, _reject) => {
@@ -93,15 +103,3 @@ checkBabylonVersionAsync().then(() => {
         BABYLON.Sandbox.Show(hostElement);
     });
 });
-
-/**
- *     <script src="https://preview.babylonjs.com/babylon.js"></script>
-
-    <script src="https://preview.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
-    <script src="https://preview.babylonjs.com/serializers/babylonjs.serializers.min.js"></script>
-    <script src="https://preview.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
-    <script src="https://preview.babylonjs.com/gui/babylon.gui.min.js"></script>
-
-    <script src="https://preview.babylonjs.com/inspector/babylon.inspector.bundle.js"></script>
-    <script src="dist/babylon.sandbox.js"></script>
- */

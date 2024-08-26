@@ -17,6 +17,7 @@ import { StateManager } from "shared-ui-components/nodeGraphSystem/stateManager"
 import { RegisterDefaultInput } from "./graphSystem/registerDefaultInput";
 import { RegisterExportData } from "./graphSystem/registerExportData";
 import type { FilesInput } from "core/Misc/filesInput";
+import { RegisterDebugSupport } from "./graphSystem/registerDebugSupport";
 
 export class GlobalState {
     nodeMaterial: NodeMaterial;
@@ -32,6 +33,7 @@ export class GlobalState {
     onIsLoadingChanged = new Observable<boolean>();
     onPreviewCommandActivated = new Observable<boolean>();
     onLightUpdated = new Observable<void>();
+    onBackgroundHDRUpdated = new Observable<void>();
     onPreviewBackgroundChanged = new Observable<void>();
     onBackFaceCullingChanged = new Observable<void>();
     onDepthPrePassChanged = new Observable<void>();
@@ -42,6 +44,8 @@ export class GlobalState {
     onGetNodeFromBlock: (block: NodeMaterialBlock) => GraphNode;
     previewType: PreviewType;
     previewFile: File;
+    envType: PreviewType;
+    envFile: File;
     particleSystemBlendMode = ParticleSystem.BLENDMODE_ONEONE;
     listOfCustomPreviewFiles: File[] = [];
     rotatePreview: boolean;
@@ -52,8 +56,10 @@ export class GlobalState {
     hemisphericLight: boolean;
     directionalLight0: boolean;
     directionalLight1: boolean;
+    backgroundHDR: boolean;
     controlCamera: boolean;
     _mode: NodeMaterialModes;
+    _engine: number;
     pointerOverCanvas: boolean = false;
     filesInput: FilesInput;
     onRefreshPreviewMeshControlComponentRequiredObservable = new Observable<void>();
@@ -70,22 +76,42 @@ export class GlobalState {
         this.onPreviewCommandActivated.notifyObservers(true);
     }
 
+    /** Gets the engine */
+    public get engine(): number {
+        return this._engine;
+    }
+
+    /** Sets the engine */
+    public set engine(e: number) {
+        if (e === this._engine) {
+            return;
+        }
+        DataStorage.WriteNumber("Engine", e);
+        this._engine = e;
+        location.reload();
+    }
+
     customSave?: { label: string; action: (data: string) => Promise<void> };
 
     public constructor() {
         this.previewType = DataStorage.ReadNumber("PreviewType", PreviewType.Box);
+        this.envType = DataStorage.ReadNumber("EnvType", PreviewType.Room);
         this.backFaceCulling = DataStorage.ReadBoolean("BackFaceCulling", true);
         this.depthPrePass = DataStorage.ReadBoolean("DepthPrePass", false);
         this.hemisphericLight = DataStorage.ReadBoolean("HemisphericLight", true);
         this.directionalLight0 = DataStorage.ReadBoolean("DirectionalLight0", false);
         this.directionalLight1 = DataStorage.ReadBoolean("DirectionalLight1", false);
+        this.backgroundHDR = DataStorage.ReadBoolean("backgroundHDR", false);
         this.controlCamera = DataStorage.ReadBoolean("ControlCamera", true);
         this._mode = DataStorage.ReadNumber("Mode", NodeMaterialModes.Material);
+        this._engine = DataStorage.ReadNumber("Engine", 0);
+
         this.stateManager = new StateManager();
         this.stateManager.data = this;
         this.stateManager.lockObject = this.lockObject;
 
         RegisterElbowSupport(this.stateManager);
+        RegisterDebugSupport(this.stateManager);
         RegisterNodePortDesign(this.stateManager);
         RegisterDefaultInput(this.stateManager);
         RegisterExportData(this.stateManager);

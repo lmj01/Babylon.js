@@ -2,7 +2,7 @@ import type { IExplorerExtensibilityGroup } from "core/Debug/debugLayer";
 import type { AbstractMesh } from "core/Meshes/abstractMesh";
 
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faCube } from "@fortawesome/free-solid-svg-icons";
+import { faCube, faPen } from "@fortawesome/free-solid-svg-icons";
 import { faEye, faEyeSlash, faSquare } from "@fortawesome/free-regular-svg-icons";
 import { TreeItemLabelComponent } from "../treeItemLabelComponent";
 import { ExtensionsComponent } from "../extensionsComponent";
@@ -30,6 +30,12 @@ export class MeshTreeItemComponent extends React.Component<IMeshTreeItemComponen
     showBoundingBox(): void {
         const mesh = this.props.mesh;
         mesh.showBoundingBox = !this.state.isBoundingBoxEnabled;
+        this.props.globalState.onPropertyChangedObservable.notifyObservers({
+            object: mesh,
+            property: "showBoundingBox",
+            value: mesh.showBoundingBox,
+            initialValue: !mesh.showBoundingBox,
+        });
         this.setState({ isBoundingBoxEnabled: !this.state.isBoundingBoxEnabled });
     }
 
@@ -37,6 +43,7 @@ export class MeshTreeItemComponent extends React.Component<IMeshTreeItemComponen
         const newState = !this.state.isVisible;
         this.setState({ isVisible: newState });
         this.props.mesh.isVisible = newState;
+        this.props.globalState.onPropertyChangedObservable.notifyObservers({ object: this.props.mesh, property: "isVisible", value: newState, initialValue: !newState });
     }
 
     // mesh.name can fail the type check when we're in javascript, so
@@ -45,7 +52,18 @@ export class MeshTreeItemComponent extends React.Component<IMeshTreeItemComponen
         return typeof this.props.mesh.name === "string" ? this.props.mesh.name : "no name";
     }
 
-    render() {
+    private _editGeometry(): void {
+        const mesh = this.props.mesh;
+        mesh._internalMetadata.nodeGeometry.edit({
+            nodeGeometryEditorConfig: {
+                backgroundColor: mesh.getScene().clearColor,
+                hostMesh: mesh,
+                hostScene: mesh.getScene(),
+            },
+        });
+    }
+
+    override render() {
         const mesh = this.props.mesh;
 
         const visibilityElement = this.state.isVisible ? <FontAwesomeIcon icon={faEye} /> : <FontAwesomeIcon icon={faEyeSlash} className="isNotActive" />;
@@ -53,6 +71,11 @@ export class MeshTreeItemComponent extends React.Component<IMeshTreeItemComponen
         return (
             <div className="meshTools">
                 <TreeItemLabelComponent label={this._getNameForLabel()} onClick={() => this.props.onClick()} icon={faCube} color="dodgerblue" />
+                {mesh._internalMetadata && mesh._internalMetadata.nodeGeometry && (
+                    <div className="edit icon" onClick={() => this._editGeometry()} title="Edit Node Geometry">
+                        <FontAwesomeIcon icon={faPen} />
+                    </div>
+                )}
                 <div
                     className={this.state.isBoundingBoxEnabled ? "bounding-box selected icon" : "bounding-box icon"}
                     onClick={() => this.showBoundingBox()}

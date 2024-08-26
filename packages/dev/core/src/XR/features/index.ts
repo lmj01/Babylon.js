@@ -19,3 +19,5 @@ export * from "./WebXREyeTracking";
 export * from "./WebXRWalkingLocomotion";
 export * from "./WebXRLayers";
 export * from "./WebXRDepthSensing";
+export * from "./WebXRSpaceWarp";
+export * from "./WebXRRawCameraAccess";

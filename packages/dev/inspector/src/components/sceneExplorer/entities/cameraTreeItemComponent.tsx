@@ -16,6 +16,7 @@ interface ICameraTreeItemComponentProps {
     extensibilityGroups?: IExplorerExtensibilityGroup[];
     onClick: () => void;
     globalState: GlobalState;
+    gizmoCamera?: Camera;
 }
 
 export class CameraTreeItemComponent extends React.Component<ICameraTreeItemComponentProps, { isActive: boolean; isGizmoEnabled: boolean }> {
@@ -34,13 +35,16 @@ export class CameraTreeItemComponent extends React.Component<ICameraTreeItemComp
         const camera = this.props.camera;
         const scene = camera.getScene();
 
+        const previousActiveCamera = scene.activeCamera;
         scene.activeCamera = camera;
         camera.attachControl(true);
+
+        this.props.globalState.onPropertyChangedObservable.notifyObservers({ object: scene, property: "activeCamera", value: camera, initialValue: previousActiveCamera });
 
         this.setState({ isActive: true });
     }
 
-    componentDidMount() {
+    override componentDidMount() {
         const scene = this.props.camera.getScene();
 
         this._onBeforeRenderObserver = scene.onBeforeRenderObservable.add(() => {
@@ -57,7 +61,7 @@ export class CameraTreeItemComponent extends React.Component<ICameraTreeItemComp
         });
     }
 
-    componentWillUnmount() {
+    override componentWillUnmount() {
         if (this._onBeforeRenderObserver) {
             const camera = this.props.camera;
             const scene = camera.getScene();
@@ -75,12 +79,12 @@ export class CameraTreeItemComponent extends React.Component<ICameraTreeItemComp
             this.props.globalState.enableCameraGizmo(camera, false);
             this.setState({ isGizmoEnabled: false });
         } else {
-            this.props.globalState.enableCameraGizmo(camera, true);
+            this.props.globalState.enableCameraGizmo(camera, true, this.props.gizmoCamera);
             this.setState({ isGizmoEnabled: true });
         }
     }
 
-    render() {
+    override render() {
         const isActiveElement = this.state.isActive ? <FontAwesomeIcon icon={faVideo} /> : <FontAwesomeIcon icon={faVideo} className="isNotActive" />;
         const scene = this.props.camera.getScene()!;
         const isGizmoEnabled =

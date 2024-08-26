@@ -4,13 +4,13 @@ import { Matrix, Vector3 } from "../../Maths/math.vector";
 import { BaseTexture } from "../../Materials/Textures/baseTexture";
 import { Texture } from "../../Materials/Textures/texture";
 import { Constants } from "../../Engines/constants";
-import { HDRTools } from "../../Misc/HighDynamicRange/hdr";
+import { GetCubeMapTextureData } from "../../Misc/HighDynamicRange/hdr";
 import { CubeMapToSphericalPolynomialTools } from "../../Misc/HighDynamicRange/cubemapToSphericalPolynomial";
 import { RegisterClass } from "../../Misc/typeStore";
 import { Observable } from "../../Misc/observable";
 import { Tools } from "../../Misc/tools";
 import { ToGammaSpace } from "../../Maths/math.constants";
-import type { ThinEngine } from "../../Engines/thinEngine";
+import type { AbstractEngine } from "../../Engines/abstractEngine";
 import { HDRFiltering } from "../../Materials/Textures/Filtering/hdrFiltering";
 import { ToHalfFloat } from "../../Misc/textureTools";
 import "../../Engines/Extensions/engine.rawTexture";
@@ -43,13 +43,13 @@ export class HDRCubeTexture extends BaseTexture {
     /**
      * Sets whether or not the texture is blocking during loading.
      */
-    public set isBlocking(value: boolean) {
+    public override set isBlocking(value: boolean) {
         this._isBlocking = value;
     }
     /**
      * Gets whether or not the texture is blocking during loading.
      */
-    public get isBlocking(): boolean {
+    public override get isBlocking(): boolean {
         return this._isBlocking;
     }
 
@@ -111,12 +111,13 @@ export class HDRCubeTexture extends BaseTexture {
      * @param generateHarmonics Specifies whether you want to extract the polynomial harmonics during the generation process
      * @param gammaSpace Specifies if the texture will be use in gamma or linear space (the PBR material requires those texture in linear space, but the standard material would require them in Gamma space)
      * @param prefilterOnLoad Prefilters HDR texture to allow use of this texture as a PBR reflection texture.
-     * @param onLoad
-     * @param onError
+     * @param onLoad on success callback function
+     * @param onError on error callback function
+     * @param supersample Defines if texture must be supersampled (default: false)
      */
     constructor(
         url: string,
-        sceneOrEngine: Scene | ThinEngine,
+        sceneOrEngine: Scene | AbstractEngine,
         size: number,
         noMipmap = false,
         generateHarmonics = true,
@@ -175,7 +176,7 @@ export class HDRCubeTexture extends BaseTexture {
      * Get the current class name of the texture useful for serialization or dynamic coding.
      * @returns "HDRCubeTexture"
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "HDRCubeTexture";
     }
 
@@ -198,7 +199,7 @@ export class HDRCubeTexture extends BaseTexture {
             this.lodGenerationScale = 0.8;
 
             // Extract the raw linear data.
-            const data = HDRTools.GetCubeMapTextureData(buffer, this._size, this._supersample);
+            const data = GetCubeMapTextureData(buffer, this._size, this._supersample);
 
             // Generate harmonics if needed.
             if (this._generateHarmonics) {
@@ -296,7 +297,7 @@ export class HDRCubeTexture extends BaseTexture {
         );
     }
 
-    public clone(): HDRCubeTexture {
+    public override clone(): HDRCubeTexture {
         const newTexture = new HDRCubeTexture(this.url, this.getScene() || this._getEngine()!, this._size, this._noMipmap, this._generateHarmonics, this.gammaSpace);
 
         // Base texture
@@ -310,7 +311,7 @@ export class HDRCubeTexture extends BaseTexture {
     }
 
     // Methods
-    public delayLoad(): void {
+    public override delayLoad(): void {
         if (this.delayLoadState !== Constants.DELAYLOADSTATE_NOTLOADED) {
             return;
         }
@@ -327,7 +328,7 @@ export class HDRCubeTexture extends BaseTexture {
      * Get the texture reflection matrix used to rotate/transform the reflection.
      * @returns the reflection matrix
      */
-    public getReflectionTextureMatrix(): Matrix {
+    public override getReflectionTextureMatrix(): Matrix {
         return this._textureMatrix;
     }
 
@@ -350,7 +351,7 @@ export class HDRCubeTexture extends BaseTexture {
     /**
      * Dispose the texture and release its associated resources.
      */
-    public dispose(): void {
+    public override dispose(): void {
         this.onLoadObservable.clear();
         super.dispose();
     }
@@ -393,7 +394,7 @@ export class HDRCubeTexture extends BaseTexture {
         return texture;
     }
 
-    public serialize(): any {
+    public override serialize(): any {
         if (!this.name) {
             return null;
         }

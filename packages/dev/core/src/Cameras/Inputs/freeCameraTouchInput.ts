@@ -54,7 +54,7 @@ export class FreeCameraTouchInput implements ICameraInput<FreeCamera> {
      */
     constructor(
         /**
-         * Define if mouse events can be treated as touch events
+         * [false] Define if mouse events can be treated as touch events
          */
         public allowMouse = false
     ) {
@@ -185,7 +185,8 @@ export class FreeCameraTouchInput implements ICameraInput<FreeCamera> {
         }
 
         const camera = this.camera;
-        camera.cameraRotation.y = this._offsetX / this.touchAngularSensibility;
+        const handednessMultiplier = camera._calculateHandednessMultiplier();
+        camera.cameraRotation.y = (handednessMultiplier * this._offsetX) / this.touchAngularSensibility;
 
         const rotateCamera = (this.singleFingerRotate && this._pointerPressed.length === 1) || (!this.singleFingerRotate && this._pointerPressed.length > 1);
 

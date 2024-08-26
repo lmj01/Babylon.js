@@ -1,3 +1,4 @@
+/* eslint-disable jsdoc/require-returns-check */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import type { Nullable, FloatArray, IndicesArray, DeepImmutable } from "../types";
 import type { Matrix, Vector2 } from "../Maths/math.vector";
@@ -13,10 +14,9 @@ import { makeSyncFunction, runCoroutineSync } from "../Misc/coroutine";
 import type { ICreateCapsuleOptions } from "./Builders/capsuleBuilder";
 import { RuntimeError, ErrorCodes } from "../Misc/error";
 
-declare type Geometry = import("../Meshes/geometry").Geometry;
-declare type Mesh = import("../Meshes/mesh").Mesh;
-
-declare type PolyhedronData = import("./geodesicMesh").PolyhedronData;
+import type { Geometry } from "../Meshes/geometry";
+import type { Mesh } from "../Meshes/mesh";
+import { SubMesh } from "./subMesh";
 
 /**
  * Define an interface for all classes that will get and set the data on vertices
@@ -80,6 +80,20 @@ export interface IGetSetVerticesData {
     setIndices(indices: IndicesArray, totalVertices: Nullable<number>, updatable?: boolean): void;
 }
 
+/** Class used to attach material info to sub section of a vertex data class */
+export class VertexDataMaterialInfo {
+    /** Defines the material index to use */
+    public materialIndex: number;
+    /** Defines vertex index start*/
+    public verticesStart: number;
+    /** Defines vertices count */
+    public verticesCount: number;
+    /** Defines index start */
+    public indexStart: number;
+    /** Defines indices count */
+    public indexCount: number;
+}
+
 /**
  * This class contains the various kinds of data on every vertex of a mesh used in determining its shape and appearance
  */
@@ -100,6 +114,8 @@ export class VertexData {
      * Mesh side orientation : by default, `FRONTSIDE`
      */
     public static readonly DEFAULTSIDE = 0;
+
+    private static _UniqueIDGenerator = 0;
 
     /**
      * An array of the x, y, z position of each vertex  [...., x, y, z, .....]
@@ -175,6 +191,34 @@ export class VertexData {
      * An array of i, j, k the three vertex indices required for each triangular facet  [...., i, j, k .....]
      */
     public indices: Nullable<IndicesArray>;
+
+    /**
+     * An array defining material association for sub sections of the vertex data
+     */
+    public materialInfos: Nullable<Array<VertexDataMaterialInfo>>;
+
+    /**
+     * Gets the unique ID of this vertex Data
+     */
+    public uniqueId = 0;
+
+    /**
+     * Metadata used to store contextual values
+     */
+    public metadata: any = {};
+
+    /**
+     * Gets or sets a value indicating that the mesh must be flagged with hasVertexAlpha = true
+     */
+    public hasVertexAlpha: boolean;
+
+    /**
+     * Creates a new VertexData
+     */
+    public constructor() {
+        this.uniqueId = VertexData._UniqueIDGenerator;
+        VertexData._UniqueIDGenerator++;
+    }
 
     /**
      * Uses the passed data array to set the set the values for the specified kind of data
@@ -347,6 +391,10 @@ export class VertexData {
 
         if (this.colors) {
             meshOrGeometry.setVerticesData(VertexBuffer.ColorKind, this.colors, updatable);
+            if (this.hasVertexAlpha && (meshOrGeometry as any).hasVertexAlpha !== undefined) {
+                (meshOrGeometry as any).hasVertexAlpha = true;
+            }
+
             if (isAsync) {
                 yield;
             }
@@ -387,6 +435,14 @@ export class VertexData {
             }
         } else {
             meshOrGeometry.setIndices([], null);
+        }
+
+        if ((meshOrGeometry as Mesh).subMeshes && this.materialInfos && this.materialInfos.length > 1) {
+            const mesh = meshOrGeometry as Mesh;
+            mesh.subMeshes = [];
+            for (const matInfo of this.materialInfos) {
+                new SubMesh(matInfo.materialIndex, matInfo.verticesStart, matInfo.verticesCount, matInfo.indexStart, matInfo.indexCount, mesh);
+            }
         }
 
         return this;
@@ -531,19 +587,111 @@ export class VertexData {
     }
 
     /**
+     * Generates an array of vertex data where each vertex data only has one material info
+     * @returns An array of VertexData
+     */
+    public splitBasedOnMaterialID() {
+        if (!this.materialInfos || this.materialInfos.length < 2) {
+            return [this];
+        }
+
+        const result: VertexData[] = [];
+        for (const materialInfo of this.materialInfos) {
+            const vertexData = new VertexData();
+
+            if (this.positions) {
+                vertexData.positions = this.positions.slice(materialInfo.verticesStart * 3, (materialInfo.verticesCount + materialInfo.verticesStart) * 3);
+            }
+
+            if (this.normals) {
+                vertexData.normals = this.normals.slice(materialInfo.verticesStart * 3, (materialInfo.verticesCount + materialInfo.verticesStart) * 3);
+            }
+
+            if (this.tangents) {
+                vertexData.tangents = this.tangents.slice(materialInfo.verticesStart * 4, (materialInfo.verticesCount + materialInfo.verticesStart) * 4);
+            }
+
+            if (this.colors) {
+                vertexData.colors = this.colors.slice(materialInfo.verticesStart * 4, (materialInfo.verticesCount + materialInfo.verticesStart) * 4);
+            }
+
+            if (this.uvs) {
+                vertexData.uvs = this.uvs.slice(materialInfo.verticesStart * 2, (materialInfo.verticesCount + materialInfo.verticesStart) * 2);
+            }
+
+            if (this.uvs2) {
+                vertexData.uvs2 = this.uvs2.slice(materialInfo.verticesStart * 2, (materialInfo.verticesCount + materialInfo.verticesStart) * 2);
+            }
+
+            if (this.uvs3) {
+                vertexData.uvs3 = this.uvs3.slice(materialInfo.verticesStart * 2, (materialInfo.verticesCount + materialInfo.verticesStart) * 2);
+            }
+
+            if (this.uvs4) {
+                vertexData.uvs4 = this.uvs4.slice(materialInfo.verticesStart * 2, (materialInfo.verticesCount + materialInfo.verticesStart) * 2);
+            }
+
+            if (this.uvs5) {
+                vertexData.uvs5 = this.uvs5.slice(materialInfo.verticesStart * 2, (materialInfo.verticesCount + materialInfo.verticesStart) * 2);
+            }
+
+            if (this.uvs6) {
+                vertexData.uvs6 = this.uvs6.slice(materialInfo.verticesStart * 2, (materialInfo.verticesCount + materialInfo.verticesStart) * 2);
+            }
+
+            if (this.matricesIndices) {
+                vertexData.matricesIndices = this.matricesIndices.slice(materialInfo.verticesStart * 4, (materialInfo.verticesCount + materialInfo.verticesStart) * 4);
+            }
+
+            if (this.matricesIndicesExtra) {
+                vertexData.matricesIndicesExtra = this.matricesIndicesExtra.slice(materialInfo.verticesStart * 4, (materialInfo.verticesCount + materialInfo.verticesStart) * 4);
+            }
+
+            if (this.matricesWeights) {
+                vertexData.matricesWeights = this.matricesWeights.slice(materialInfo.verticesStart * 4, (materialInfo.verticesCount + materialInfo.verticesStart) * 4);
+            }
+
+            if (this.matricesWeightsExtra) {
+                vertexData.matricesWeightsExtra = this.matricesWeightsExtra.slice(materialInfo.verticesStart * 4, (materialInfo.verticesCount + materialInfo.verticesStart) * 4);
+            }
+
+            if (this.indices) {
+                vertexData.indices = [];
+                for (let index = materialInfo.indexStart; index < materialInfo.indexStart + materialInfo.indexCount; index++) {
+                    vertexData.indices.push(this.indices[index] - materialInfo.verticesStart);
+                }
+            }
+
+            const newMaterialInfo = new VertexDataMaterialInfo();
+            newMaterialInfo.indexStart = 0;
+            newMaterialInfo.indexCount = vertexData.indices ? vertexData.indices.length : 0;
+            newMaterialInfo.materialIndex = materialInfo.materialIndex;
+            newMaterialInfo.verticesStart = 0;
+            newMaterialInfo.verticesCount = (vertexData.positions ? vertexData.positions.length : 0) / 3;
+            vertexData.materialInfos = [newMaterialInfo];
+
+            result.push(vertexData);
+        }
+
+        return result;
+    }
+
+    /**
      * Merges the passed VertexData into the current one
      * @param others the VertexData to be merged into the current one
      * @param use32BitsIndices defines a boolean indicating if indices must be store in a 32 bits array
      * @param forceCloneIndices defines a boolean indicating if indices are forced to be cloned
+     * @param mergeMaterialIds defines a boolean indicating if we need to merge the material infos
+     * @param enableCompletion defines a boolean indicating if the vertex data should be completed to be compatible
      * @returns the modified VertexData
      */
-    public merge(others: VertexData | VertexData[], use32BitsIndices = false, forceCloneIndices = false) {
+    public merge(others: VertexData | VertexData[], use32BitsIndices = false, forceCloneIndices = false, mergeMaterialIds = false, enableCompletion = false) {
         const vertexDatas: { vertexData: VertexData; transform?: Matrix }[] = Array.isArray(others)
             ? others.map((other) => {
                   return { vertexData: other };
               })
             : [{ vertexData: others }];
-        return runCoroutineSync(this._mergeCoroutine(undefined, vertexDatas, use32BitsIndices, false, forceCloneIndices));
+        return runCoroutineSync(this._mergeCoroutine(undefined, vertexDatas, use32BitsIndices, false, forceCloneIndices, mergeMaterialIds, enableCompletion));
     }
 
     /**
@@ -554,37 +702,237 @@ export class VertexData {
         vertexDatas: { vertexData: VertexData; transform?: Matrix }[],
         use32BitsIndices = false,
         isAsync: boolean,
-        forceCloneIndices: boolean
+        forceCloneIndices: boolean,
+        mergeMaterialIds = false,
+        enableCompletion = false
     ): Coroutine<VertexData> {
         this._validate();
 
-        const others = vertexDatas.map((vertexData) => vertexData.vertexData);
+        let others = vertexDatas.map((vertexData) => vertexData.vertexData);
+        // eslint-disable-next-line @typescript-eslint/no-this-alias
+        let root: VertexData = this;
 
-        for (const other of others) {
-            other._validate();
+        if (enableCompletion) {
+            // First let's make sure we have the max set of attributes on the main vertex data
+            for (const other of others) {
+                if (!other) {
+                    continue;
+                }
 
-            if (
-                !this.normals !== !other.normals ||
-                !this.tangents !== !other.tangents ||
-                !this.uvs !== !other.uvs ||
-                !this.uvs2 !== !other.uvs2 ||
-                !this.uvs3 !== !other.uvs3 ||
-                !this.uvs4 !== !other.uvs4 ||
-                !this.uvs5 !== !other.uvs5 ||
-                !this.uvs6 !== !other.uvs6 ||
-                !this.colors !== !other.colors ||
-                !this.matricesIndices !== !other.matricesIndices ||
-                !this.matricesWeights !== !other.matricesWeights ||
-                !this.matricesIndicesExtra !== !other.matricesIndicesExtra ||
-                !this.matricesWeightsExtra !== !other.matricesWeightsExtra
-            ) {
-                throw new Error("Cannot merge vertex data that do not have the same set of attributes");
+                other._validate();
+
+                if (!this.normals && other.normals) {
+                    this.normals = new Float32Array(this.positions!.length);
+                }
+
+                if (!this.tangents && other.tangents) {
+                    this.tangents = new Float32Array((this.positions!.length / 3) * 4);
+                }
+
+                if (!this.uvs && other.uvs) {
+                    this.uvs = new Float32Array((this.positions!.length / 3) * 2);
+                }
+
+                if (!this.uvs2 && other.uvs2) {
+                    this.uvs2 = new Float32Array((this.positions!.length / 3) * 2);
+                }
+
+                if (!this.uvs3 && other.uvs3) {
+                    this.uvs3 = new Float32Array((this.positions!.length / 3) * 2);
+                }
+
+                if (!this.uvs4 && other.uvs4) {
+                    this.uvs4 = new Float32Array((this.positions!.length / 3) * 2);
+                }
+
+                if (!this.uvs5 && other.uvs5) {
+                    this.uvs5 = new Float32Array((this.positions!.length / 3) * 2);
+                }
+
+                if (!this.uvs6 && other.uvs6) {
+                    this.uvs6 = new Float32Array((this.positions!.length / 3) * 2);
+                }
+
+                if (!this.colors && other.colors) {
+                    this.colors = new Float32Array((this.positions!.length / 3) * 4);
+                    this.colors.fill(1); // Set to white by default
+                }
+
+                if (!this.matricesIndices && other.matricesIndices) {
+                    this.matricesIndices = new Float32Array((this.positions!.length / 3) * 4);
+                }
+
+                if (!this.matricesWeights && other.matricesWeights) {
+                    this.matricesWeights = new Float32Array((this.positions!.length / 3) * 4);
+                }
+
+                if (!this.matricesIndicesExtra && other.matricesIndicesExtra) {
+                    this.matricesIndicesExtra = new Float32Array((this.positions!.length / 3) * 4);
+                }
+
+                if (!this.matricesWeightsExtra && other.matricesWeightsExtra) {
+                    this.matricesWeightsExtra = new Float32Array((this.positions!.length / 3) * 4);
+                }
             }
         }
 
-        const totalIndices = others.reduce((indexSum, vertexData) => indexSum + (vertexData.indices?.length ?? 0), this.indices?.length ?? 0);
-        const sliceIndices = forceCloneIndices || others.some((vertexData) => vertexData.indices === this.indices);
-        let indices = sliceIndices ? this.indices?.slice() : this.indices;
+        for (const other of others) {
+            if (!other) {
+                continue;
+            }
+
+            if (!enableCompletion) {
+                other._validate();
+                if (
+                    !this.normals !== !other.normals ||
+                    !this.tangents !== !other.tangents ||
+                    !this.uvs !== !other.uvs ||
+                    !this.uvs2 !== !other.uvs2 ||
+                    !this.uvs3 !== !other.uvs3 ||
+                    !this.uvs4 !== !other.uvs4 ||
+                    !this.uvs5 !== !other.uvs5 ||
+                    !this.uvs6 !== !other.uvs6 ||
+                    !this.colors !== !other.colors ||
+                    !this.matricesIndices !== !other.matricesIndices ||
+                    !this.matricesWeights !== !other.matricesWeights ||
+                    !this.matricesIndicesExtra !== !other.matricesIndicesExtra ||
+                    !this.matricesWeightsExtra !== !other.matricesWeightsExtra
+                ) {
+                    throw new Error("Cannot merge vertex data that do not have the same set of attributes");
+                }
+            } else {
+                // Align the others with main set of attributes
+                if (this.normals && !other.normals) {
+                    other.normals = new Float32Array(other.positions!.length);
+                }
+
+                if (this.tangents && !other.tangents) {
+                    other.tangents = new Float32Array((other.positions!.length / 3) * 4);
+                }
+
+                if (this.uvs && !other.uvs) {
+                    other.uvs = new Float32Array((other.positions!.length / 3) * 2);
+                }
+
+                if (this.uvs2 && !other.uvs2) {
+                    other.uvs2 = new Float32Array((other.positions!.length / 3) * 2);
+                }
+
+                if (this.uvs3 && !other.uvs3) {
+                    other.uvs3 = new Float32Array((other.positions!.length / 3) * 2);
+                }
+
+                if (this.uvs4 && !other.uvs4) {
+                    other.uvs4 = new Float32Array((other.positions!.length / 3) * 2);
+                }
+                if (this.uvs5 && !other.uvs5) {
+                    other.uvs5 = new Float32Array((other.positions!.length / 3) * 2);
+                }
+
+                if (this.uvs6 && !other.uvs6) {
+                    other.uvs6 = new Float32Array((other.positions!.length / 3) * 2);
+                }
+
+                if (this.colors && !other.colors) {
+                    other.colors = new Float32Array((other.positions!.length / 3) * 4);
+                    other.colors.fill(1); // Set to white by default
+                }
+
+                if (this.matricesIndices && !other.matricesIndices) {
+                    other.matricesIndices = new Float32Array((other.positions!.length / 3) * 4);
+                }
+                if (this.matricesWeights && !other.matricesWeights) {
+                    other.matricesWeights = new Float32Array((other.positions!.length / 3) * 4);
+                }
+
+                if (this.matricesIndicesExtra && !other.matricesIndicesExtra) {
+                    other.matricesIndicesExtra = new Float32Array((other.positions!.length / 3) * 4);
+                }
+
+                if (this.matricesWeightsExtra && !other.matricesWeightsExtra) {
+                    other.matricesWeightsExtra = new Float32Array((other.positions!.length / 3) * 4);
+                }
+            }
+        }
+
+        if (mergeMaterialIds) {
+            // Merge material infos
+            let materialIndex = 0;
+            let indexOffset = 0;
+            let vertexOffset = 0;
+            const materialInfos: VertexDataMaterialInfo[] = [];
+            let currentMaterialInfo: Nullable<VertexDataMaterialInfo> = null;
+            const vertexDataList: { vertexData: VertexData; transform?: Matrix }[] = [];
+
+            // We need to split vertexData with more than one materialInfo
+            for (const split of this.splitBasedOnMaterialID()) {
+                vertexDataList.push({ vertexData: split, transform: transform });
+            }
+
+            for (const data of vertexDatas) {
+                if (!data.vertexData) {
+                    continue;
+                }
+                for (const split of data.vertexData.splitBasedOnMaterialID()) {
+                    vertexDataList.push({ vertexData: split, transform: data.transform });
+                }
+            }
+
+            // Sort by material IDs
+            vertexDataList.sort((a, b) => {
+                const matInfoA = a.vertexData.materialInfos ? a.vertexData.materialInfos[0].materialIndex : 0;
+                const matInfoB = b.vertexData.materialInfos ? b.vertexData.materialInfos[0].materialIndex : 0;
+
+                if (matInfoA > matInfoB) {
+                    return 1;
+                }
+
+                if (matInfoA === matInfoB) {
+                    return 0;
+                }
+
+                return -1;
+            });
+
+            // Build the new material info
+            for (const vertexDataSource of vertexDataList) {
+                const vertexData = vertexDataSource.vertexData;
+                if (vertexData.materialInfos) {
+                    materialIndex = vertexData.materialInfos[0].materialIndex;
+                } else {
+                    materialIndex = 0;
+                }
+                if (currentMaterialInfo && currentMaterialInfo.materialIndex === materialIndex) {
+                    currentMaterialInfo.indexCount += vertexData.indices!.length;
+                    currentMaterialInfo.verticesCount += vertexData.positions!.length / 3;
+                } else {
+                    const materialInfo = new VertexDataMaterialInfo();
+                    materialInfo.materialIndex = materialIndex;
+                    materialInfo.indexStart = indexOffset;
+                    materialInfo.indexCount = vertexData.indices!.length;
+                    materialInfo.verticesStart = vertexOffset;
+                    materialInfo.verticesCount = vertexData.positions!.length / 3;
+
+                    materialInfos.push(materialInfo);
+                    currentMaterialInfo = materialInfo;
+                }
+                indexOffset += vertexData.indices!.length;
+                vertexOffset += vertexData.positions!.length / 3;
+            }
+            // Extract sorted values
+            const first = vertexDataList.splice(0, 1)[0];
+            root = first.vertexData;
+            transform = first.transform;
+            others = vertexDataList.map((v) => v.vertexData);
+            vertexDatas = vertexDataList;
+
+            this.materialInfos = materialInfos;
+        }
+
+        // Merge geometries
+        const totalIndices = others.reduce((indexSum, vertexData) => indexSum + (vertexData.indices?.length ?? 0), root.indices?.length ?? 0);
+        const sliceIndices = forceCloneIndices || others.some((vertexData) => vertexData.indices === root.indices);
+        let indices = sliceIndices ? root.indices?.slice() : root.indices;
         if (totalIndices > 0) {
             let indicesOffset = indices?.length ?? 0;
 
@@ -606,7 +954,7 @@ export class VertexData {
                 }
             }
 
-            let positionsOffset = this.positions ? this.positions.length / 3 : 0;
+            let positionsOffset = root.positions ? root.positions.length / 3 : 0;
             for (const { vertexData: other, transform } of vertexDatas) {
                 if (other.indices) {
                     for (let index = 0; index < other.indices.length; index++) {
@@ -632,127 +980,156 @@ export class VertexData {
 
         this.positions = VertexData._MergeElement(
             VertexBuffer.PositionKind,
-            this.positions,
+            root.positions,
             transform,
             vertexDatas.map((other) => [other.vertexData.positions, other.transform])
         );
         if (isAsync) {
             yield;
         }
-        this.normals = VertexData._MergeElement(
-            VertexBuffer.NormalKind,
-            this.normals,
-            transform,
-            vertexDatas.map((other) => [other.vertexData.normals, other.transform])
-        );
-        if (isAsync) {
-            yield;
+        if (root.normals) {
+            this.normals = VertexData._MergeElement(
+                VertexBuffer.NormalKind,
+                root.normals,
+                transform,
+                vertexDatas.map((other) => [other.vertexData.normals, other.transform])
+            );
+            if (isAsync) {
+                yield;
+            }
         }
-        this.tangents = VertexData._MergeElement(
-            VertexBuffer.TangentKind,
-            this.tangents,
-            transform,
-            vertexDatas.map((other) => [other.vertexData.tangents, other.transform])
-        );
-        if (isAsync) {
-            yield;
+        if (root.tangents) {
+            this.tangents = VertexData._MergeElement(
+                VertexBuffer.TangentKind,
+                root.tangents,
+                transform,
+                vertexDatas.map((other) => [other.vertexData.tangents, other.transform])
+            );
+            if (isAsync) {
+                yield;
+            }
         }
-        this.uvs = VertexData._MergeElement(
-            VertexBuffer.UVKind,
-            this.uvs,
-            transform,
-            vertexDatas.map((other) => [other.vertexData.uvs, other.transform])
-        );
-        if (isAsync) {
-            yield;
+        if (root.uvs) {
+            this.uvs = VertexData._MergeElement(
+                VertexBuffer.UVKind,
+                root.uvs,
+                transform,
+                vertexDatas.map((other) => [other.vertexData.uvs, other.transform])
+            );
+            if (isAsync) {
+                yield;
+            }
         }
-        this.uvs2 = VertexData._MergeElement(
-            VertexBuffer.UV2Kind,
-            this.uvs2,
-            transform,
-            vertexDatas.map((other) => [other.vertexData.uvs2, other.transform])
-        );
-        if (isAsync) {
-            yield;
+        if (root.uvs2) {
+            this.uvs2 = VertexData._MergeElement(
+                VertexBuffer.UV2Kind,
+                root.uvs2,
+                transform,
+                vertexDatas.map((other) => [other.vertexData.uvs2, other.transform])
+            );
+            if (isAsync) {
+                yield;
+            }
         }
-        this.uvs3 = VertexData._MergeElement(
-            VertexBuffer.UV3Kind,
-            this.uvs3,
-            transform,
-            vertexDatas.map((other) => [other.vertexData.uvs3, other.transform])
-        );
-        if (isAsync) {
-            yield;
+        if (root.uvs3) {
+            this.uvs3 = VertexData._MergeElement(
+                VertexBuffer.UV3Kind,
+                root.uvs3,
+                transform,
+                vertexDatas.map((other) => [other.vertexData.uvs3, other.transform])
+            );
+            if (isAsync) {
+                yield;
+            }
         }
-        this.uvs4 = VertexData._MergeElement(
-            VertexBuffer.UV4Kind,
-            this.uvs4,
-            transform,
-            vertexDatas.map((other) => [other.vertexData.uvs4, other.transform])
-        );
-        if (isAsync) {
-            yield;
+        if (root.uvs4) {
+            this.uvs4 = VertexData._MergeElement(
+                VertexBuffer.UV4Kind,
+                root.uvs4,
+                transform,
+                vertexDatas.map((other) => [other.vertexData.uvs4, other.transform])
+            );
+            if (isAsync) {
+                yield;
+            }
         }
-        this.uvs5 = VertexData._MergeElement(
-            VertexBuffer.UV5Kind,
-            this.uvs5,
-            transform,
-            vertexDatas.map((other) => [other.vertexData.uvs5, other.transform])
-        );
-        if (isAsync) {
-            yield;
+        if (root.uvs5) {
+            this.uvs5 = VertexData._MergeElement(
+                VertexBuffer.UV5Kind,
+                root.uvs5,
+                transform,
+                vertexDatas.map((other) => [other.vertexData.uvs5, other.transform])
+            );
+            if (isAsync) {
+                yield;
+            }
         }
-        this.uvs6 = VertexData._MergeElement(
-            VertexBuffer.UV6Kind,
-            this.uvs6,
-            transform,
-            vertexDatas.map((other) => [other.vertexData.uvs6, other.transform])
-        );
-        if (isAsync) {
-            yield;
+        if (root.uvs6) {
+            this.uvs6 = VertexData._MergeElement(
+                VertexBuffer.UV6Kind,
+                root.uvs6,
+                transform,
+                vertexDatas.map((other) => [other.vertexData.uvs6, other.transform])
+            );
+            if (isAsync) {
+                yield;
+            }
         }
-        this.colors = VertexData._MergeElement(
-            VertexBuffer.ColorKind,
-            this.colors,
-            transform,
-            vertexDatas.map((other) => [other.vertexData.colors, other.transform])
-        );
-        if (isAsync) {
-            yield;
+        if (root.colors) {
+            this.colors = VertexData._MergeElement(
+                VertexBuffer.ColorKind,
+                root.colors,
+                transform,
+                vertexDatas.map((other) => [other.vertexData.colors, other.transform])
+            );
+            if (root.hasVertexAlpha !== undefined || vertexDatas.some((other) => other.vertexData.hasVertexAlpha !== undefined)) {
+                this.hasVertexAlpha = root.hasVertexAlpha || vertexDatas.some((other) => other.vertexData.hasVertexAlpha);
+            }
+            if (isAsync) {
+                yield;
+            }
         }
-        this.matricesIndices = VertexData._MergeElement(
-            VertexBuffer.MatricesIndicesKind,
-            this.matricesIndices,
-            transform,
-            vertexDatas.map((other) => [other.vertexData.matricesIndices, other.transform])
-        );
-        if (isAsync) {
-            yield;
+        if (root.matricesIndices) {
+            this.matricesIndices = VertexData._MergeElement(
+                VertexBuffer.MatricesIndicesKind,
+                root.matricesIndices,
+                transform,
+                vertexDatas.map((other) => [other.vertexData.matricesIndices, other.transform])
+            );
+            if (isAsync) {
+                yield;
+            }
         }
-        this.matricesWeights = VertexData._MergeElement(
-            VertexBuffer.MatricesWeightsKind,
-            this.matricesWeights,
-            transform,
-            vertexDatas.map((other) => [other.vertexData.matricesWeights, other.transform])
-        );
-        if (isAsync) {
-            yield;
+        if (root.matricesWeights) {
+            this.matricesWeights = VertexData._MergeElement(
+                VertexBuffer.MatricesWeightsKind,
+                root.matricesWeights,
+                transform,
+                vertexDatas.map((other) => [other.vertexData.matricesWeights, other.transform])
+            );
+            if (isAsync) {
+                yield;
+            }
         }
-        this.matricesIndicesExtra = VertexData._MergeElement(
-            VertexBuffer.MatricesIndicesExtraKind,
-            this.matricesIndicesExtra,
-            transform,
-            vertexDatas.map((other) => [other.vertexData.matricesIndicesExtra, other.transform])
-        );
-        if (isAsync) {
-            yield;
+        if (root.matricesIndicesExtra) {
+            this.matricesIndicesExtra = VertexData._MergeElement(
+                VertexBuffer.MatricesIndicesExtraKind,
+                root.matricesIndicesExtra,
+                transform,
+                vertexDatas.map((other) => [other.vertexData.matricesIndicesExtra, other.transform])
+            );
+            if (isAsync) {
+                yield;
+            }
         }
-        this.matricesWeightsExtra = VertexData._MergeElement(
-            VertexBuffer.MatricesWeightsExtraKind,
-            this.matricesWeightsExtra,
-            transform,
-            vertexDatas.map((other) => [other.vertexData.matricesWeightsExtra, other.transform])
-        );
+        if (root.matricesWeightsExtra) {
+            this.matricesWeightsExtra = VertexData._MergeElement(
+                VertexBuffer.MatricesWeightsExtraKind,
+                root.matricesWeightsExtra,
+                transform,
+                vertexDatas.map((other) => [other.vertexData.matricesWeightsExtra, other.transform])
+            );
+        }
 
         return this;
     }
@@ -780,10 +1157,10 @@ export class VertexData {
             kind === VertexBuffer.PositionKind
                 ? VertexData._TransformVector3Coordinates
                 : kind === VertexBuffer.NormalKind
-                ? VertexData._TransformVector3Normals
-                : kind === VertexBuffer.TangentKind
-                ? VertexData._TransformVector4Normals
-                : () => {};
+                  ? VertexData._TransformVector3Normals
+                  : kind === VertexBuffer.TangentKind
+                    ? VertexData._TransformVector4Normals
+                    : () => {};
 
         if (source instanceof Float32Array) {
             // use non-loop method when the source is Float32Array
@@ -883,6 +1260,15 @@ export class VertexData {
     }
 
     /**
+     * Clone the current vertex data
+     * @returns a copy of the current data
+     */
+    public clone() {
+        const serializationObject = this.serialize();
+        return VertexData.Parse(serializationObject);
+    }
+
+    /**
      * Serializes the VertexData
      * @returns a serialized object
      */
@@ -890,64 +1276,79 @@ export class VertexData {
         const serializationObject: any = {};
 
         if (this.positions) {
-            serializationObject.positions = this.positions;
+            serializationObject.positions = Array.from(this.positions);
         }
 
         if (this.normals) {
-            serializationObject.normals = this.normals;
+            serializationObject.normals = Array.from(this.normals);
         }
 
         if (this.tangents) {
-            serializationObject.tangents = this.tangents;
+            serializationObject.tangents = Array.from(this.tangents);
         }
 
         if (this.uvs) {
-            serializationObject.uvs = this.uvs;
+            serializationObject.uvs = Array.from(this.uvs);
         }
 
         if (this.uvs2) {
-            serializationObject.uvs2 = this.uvs2;
+            serializationObject.uvs2 = Array.from(this.uvs2);
         }
 
         if (this.uvs3) {
-            serializationObject.uvs3 = this.uvs3;
+            serializationObject.uvs3 = Array.from(this.uvs3);
         }
 
         if (this.uvs4) {
-            serializationObject.uvs4 = this.uvs4;
+            serializationObject.uvs4 = Array.from(this.uvs4);
         }
 
         if (this.uvs5) {
-            serializationObject.uvs5 = this.uvs5;
+            serializationObject.uvs5 = Array.from(this.uvs5);
         }
 
         if (this.uvs6) {
-            serializationObject.uvs6 = this.uvs6;
+            serializationObject.uvs6 = Array.from(this.uvs6);
         }
 
         if (this.colors) {
-            serializationObject.colors = this.colors;
+            serializationObject.colors = Array.from(this.colors);
+            serializationObject.hasVertexAlpha = this.hasVertexAlpha;
         }
 
         if (this.matricesIndices) {
-            serializationObject.matricesIndices = this.matricesIndices;
+            serializationObject.matricesIndices = Array.from(this.matricesIndices);
             serializationObject.matricesIndices._isExpanded = true;
         }
 
         if (this.matricesWeights) {
-            serializationObject.matricesWeights = this.matricesWeights;
+            serializationObject.matricesWeights = Array.from(this.matricesWeights);
         }
 
         if (this.matricesIndicesExtra) {
-            serializationObject.matricesIndicesExtra = this.matricesIndicesExtra;
+            serializationObject.matricesIndicesExtra = Array.from(this.matricesIndicesExtra);
             serializationObject.matricesIndicesExtra._isExpanded = true;
         }
 
         if (this.matricesWeightsExtra) {
-            serializationObject.matricesWeightsExtra = this.matricesWeightsExtra;
+            serializationObject.matricesWeightsExtra = Array.from(this.matricesWeightsExtra);
         }
 
-        serializationObject.indices = this.indices;
+        serializationObject.indices = Array.from(this.indices as number[]);
+
+        if (this.materialInfos) {
+            serializationObject.materialInfos = [];
+            for (const materialInfo of this.materialInfos) {
+                const materialInfoSerializationObject = {
+                    indexStart: materialInfo.indexStart,
+                    indexCount: materialInfo.indexCount,
+                    materialIndex: materialInfo.materialIndex,
+                    verticesStart: materialInfo.verticesStart,
+                    verticesCount: materialInfo.verticesCount,
+                };
+                serializationObject.materialInfos.push(materialInfoSerializationObject);
+            }
+        }
 
         return serializationObject;
     }
@@ -1015,7 +1416,23 @@ export class VertexData {
         }
 
         if (meshOrGeometry.isVerticesDataPresent(VertexBuffer.ColorKind)) {
-            result.colors = meshOrGeometry.getVerticesData(VertexBuffer.ColorKind, copyWhenShared, forceCopy);
+            const geometry = (meshOrGeometry as Mesh).geometry || (meshOrGeometry as Geometry);
+            const vertexBuffer = geometry.getVertexBuffer(VertexBuffer.ColorKind)!;
+            const colors = geometry.getVerticesData(VertexBuffer.ColorKind, copyWhenShared, forceCopy)!;
+            if (vertexBuffer.getSize() === 3) {
+                const newColors = new Float32Array((colors.length * 4) / 3);
+                for (let i = 0, j = 0; i < colors.length; i += 3, j += 4) {
+                    newColors[j] = colors[i];
+                    newColors[j + 1] = colors[i + 1];
+                    newColors[j + 2] = colors[i + 2];
+                    newColors[j + 3] = 1;
+                }
+                result.colors = newColors;
+            } else if (vertexBuffer.getSize() === 4) {
+                result.colors = colors;
+            } else {
+                throw new Error(`Unexpected number of color components: ${vertexBuffer.getSize()}`);
+            }
         }
 
         if (meshOrGeometry.isVerticesDataPresent(VertexBuffer.MatricesIndicesKind)) {
@@ -1052,16 +1469,6 @@ export class VertexData {
      * * invertUV swaps in the U and V coordinates when applying a texture, optional, default false
      * * uvs a linear array, of length 2 * number of vertices, of custom UV values, optional
      * * colors a linear array, of length 4 * number of vertices, of custom color values, optional
-     * @param options.pathArray
-     * @param options.closeArray
-     * @param options.closePath
-     * @param options.offset
-     * @param options.sideOrientation
-     * @param options.frontUVs
-     * @param options.backUVs
-     * @param options.invertUV
-     * @param options.uvs
-     * @param options.colors
      * @returns the VertexData of the ribbon
      * @deprecated use CreateRibbonVertexData instead
      */
@@ -1092,15 +1499,6 @@ export class VertexData {
      * * sideOrientation optional and takes the values : Mesh.FRONTSIDE (default), Mesh.BACKSIDE or Mesh.DOUBLESIDE
      * * frontUvs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the front side, optional, default vector4 (0, 0, 1, 1)
      * * backUVs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the back side, optional, default vector4 (0, 0, 1, 1)
-     * @param options.size
-     * @param options.width
-     * @param options.height
-     * @param options.depth
-     * @param options.faceUV
-     * @param options.faceColors
-     * @param options.sideOrientation
-     * @param options.frontUVs
-     * @param options.backUVs
      * @returns the VertexData of the box
      * @deprecated Please use CreateBoxVertexData from the BoxBuilder file instead
      */
@@ -1167,18 +1565,6 @@ export class VertexData {
      * * sideOrientation optional and takes the values : Mesh.FRONTSIDE (default), Mesh.BACKSIDE or Mesh.DOUBLESIDE
      * * frontUvs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the front side, optional, default vector4 (0, 0, 1, 1)
      * * backUVs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the back side, optional, default vector4 (0, 0, 1, 1)
-     * @param options.pattern
-     * @param options.tileSize
-     * @param options.tileWidth
-     * @param options.tileHeight
-     * @param options.size
-     * @param options.width
-     * @param options.height
-     * @param options.alignHorizontal
-     * @param options.alignVertical
-     * @param options.sideOrientation
-     * @param options.frontUVs
-     * @param options.backUVs
      * @returns the VertexData of the tiled plane
      * @deprecated use CreateTiledPlaneVertexData instead
      */
@@ -1212,16 +1598,6 @@ export class VertexData {
      * * sideOrientation optional and takes the values : Mesh.FRONTSIDE (default), Mesh.BACKSIDE or Mesh.DOUBLESIDE
      * * frontUvs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the front side, optional, default vector4 (0, 0, 1, 1)
      * * backUVs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the back side, optional, default vector4 (0, 0, 1, 1)
-     * @param options.segments
-     * @param options.diameter
-     * @param options.diameterX
-     * @param options.diameterY
-     * @param options.diameterZ
-     * @param options.arc
-     * @param options.slice
-     * @param options.sideOrientation
-     * @param options.frontUVs
-     * @param options.backUVs
      * @returns the VertexData of the ellipsoid
      * @deprecated use CreateSphereVertexData instead
      */
@@ -1257,20 +1633,6 @@ export class VertexData {
      * * sideOrientation optional and takes the values : Mesh.FRONTSIDE (default), Mesh.BACKSIDE or Mesh.DOUBLESIDE
      * * frontUvs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the front side, optional, default vector4 (0, 0, 1, 1)
      * * backUVs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the back side, optional, default vector4 (0, 0, 1, 1)
-     * @param options.height
-     * @param options.diameterTop
-     * @param options.diameterBottom
-     * @param options.diameter
-     * @param options.tessellation
-     * @param options.subdivisions
-     * @param options.arc
-     * @param options.faceColors
-     * @param options.faceUV
-     * @param options.hasRings
-     * @param options.enclose
-     * @param options.sideOrientation
-     * @param options.frontUVs
-     * @param options.backUVs
      * @returns the VertexData of the cylinder, cone or prism
      * @deprecated please use CreateCylinderVertexData instead
      */
@@ -1302,12 +1664,6 @@ export class VertexData {
      * * sideOrientation optional and takes the values : Mesh.FRONTSIDE (default), Mesh.BACKSIDE or Mesh.DOUBLESIDE
      * * frontUvs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the front side, optional, default vector4 (0, 0, 1, 1)
      * * backUVs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the back side, optional, default vector4 (0, 0, 1, 1)
-     * @param options.diameter
-     * @param options.thickness
-     * @param options.tessellation
-     * @param options.sideOrientation
-     * @param options.frontUVs
-     * @param options.backUVs
      * @returns the VertexData of the torus
      * @deprecated use CreateTorusVertexData instead
      */
@@ -1327,8 +1683,6 @@ export class VertexData {
      * @param options an object used to set the following optional parameters for the LineSystem, required but can be empty
      *  - lines an array of lines, each line being an array of successive Vector3
      *  - colors an array of line colors, each of the line colors being an array of successive Color4, one per line point
-     * @param options.lines
-     * @param options.colors
      * @returns the VertexData of the LineSystem
      * @deprecated use CreateLineSystemVertexData instead
      */
@@ -1343,10 +1697,6 @@ export class VertexData {
      *  - dashSize the size of the dashes relative to the dash number, optional, default 3
      *  - gapSize the size of the gap between two successive dashes relative to the dash number, optional, default 1
      *  - dashNb the intended total number of dashes, optional, default 200
-     * @param options.points
-     * @param options.dashSize
-     * @param options.gapSize
-     * @param options.dashNb
      * @returns the VertexData for the DashedLines
      * @deprecated use CreateDashedLinesVertexData instead
      */
@@ -1360,11 +1710,6 @@ export class VertexData {
      *  - width the width (x direction) of the ground, optional, default 1
      *  - height the height (z direction) of the ground, optional, default 1
      *  - subdivisions the number of subdivisions per side, optional, default 1
-     * @param options.width
-     * @param options.height
-     * @param options.subdivisions
-     * @param options.subdivisionsX
-     * @param options.subdivisionsY
      * @returns the VertexData of the Ground
      * @deprecated Please use CreateGroundVertexData instead
      */
@@ -1381,16 +1726,6 @@ export class VertexData {
      * * zmax the ground maximum Z coordinate, optional, default 1
      * * subdivisions a javascript object {w: positive integer, h: positive integer}, `w` and `h` are the numbers of subdivisions on the ground width and height creating 'tiles', default {w: 6, h: 6}
      * * precision a javascript object {w: positive integer, h: positive integer}, `w` and `h` are the numbers of subdivisions on the tile width and height, default {w: 2, h: 2}
-     * @param options.xmin
-     * @param options.zmin
-     * @param options.xmax
-     * @param options.zmax
-     * @param options.subdivisions
-     * @param options.subdivisions.w
-     * @param options.subdivisions.h
-     * @param options.precision
-     * @param options.precision.w
-     * @param options.precision.h
      * @returns the VertexData of the TiledGround
      * @deprecated use CreateTiledGroundVertexData instead
      */
@@ -1418,16 +1753,6 @@ export class VertexData {
      * * bufferWidth the width of image
      * * bufferHeight the height of image
      * * alphaFilter Remove any data where the alpha channel is below this value, defaults 0 (all data visible)
-     * @param options.width
-     * @param options.height
-     * @param options.subdivisions
-     * @param options.minHeight
-     * @param options.maxHeight
-     * @param options.colorFilter
-     * @param options.buffer
-     * @param options.bufferWidth
-     * @param options.bufferHeight
-     * @param options.alphaFilter
      * @returns the VertexData of the Ground designed from a heightmap
      * @deprecated use CreateGroundFromHeightMapVertexData instead
      */
@@ -1455,12 +1780,6 @@ export class VertexData {
      * * sideOrientation optional and takes the values : Mesh.FRONTSIDE (default), Mesh.BACKSIDE or Mesh.DOUBLESIDE
      * * frontUvs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the front side, optional, default vector4 (0, 0, 1, 1)
      * * backUVs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the back side, optional, default vector4 (0, 0, 1, 1)
-     * @param options.size
-     * @param options.width
-     * @param options.height
-     * @param options.sideOrientation
-     * @param options.frontUVs
-     * @param options.backUVs
      * @returns the VertexData of the box
      * @deprecated use CreatePlaneVertexData instead
      */
@@ -1477,12 +1796,6 @@ export class VertexData {
      * * sideOrientation optional and takes the values : Mesh.FRONTSIDE (default), Mesh.BACKSIDE or Mesh.DOUBLESIDE
      * * frontUvs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the front side, optional, default vector4 (0, 0, 1, 1)
      * * backUVs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the back side, optional, default vector4 (0, 0, 1, 1)
-     * @param options.radius
-     * @param options.tessellation
-     * @param options.arc
-     * @param options.sideOrientation
-     * @param options.frontUVs
-     * @param options.backUVs
      * @returns the VertexData of the box
      * @deprecated use CreateDiscVertexData instead
      */
@@ -1519,15 +1832,6 @@ export class VertexData {
      * * sideOrientation optional and takes the values : Mesh.FRONTSIDE (default), Mesh.BACKSIDE or Mesh.DOUBLESIDE
      * * frontUvs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the front side, optional, default vector4 (0, 0, 1, 1)
      * * backUVs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the back side, optional, default vector4 (0, 0, 1, 1)
-     * @param options.radius
-     * @param options.radiusX
-     * @param options.radiusY
-     * @param options.radiusZ
-     * @param options.flat
-     * @param options.subdivisions
-     * @param options.sideOrientation
-     * @param options.frontUVs
-     * @param options.backUVs
      * @returns the VertexData of the IcoSphere
      * @deprecated use CreateIcoSphereVertexData instead
      */
@@ -1564,18 +1868,6 @@ export class VertexData {
      * * sideOrientation optional and takes the values : Mesh.FRONTSIDE (default), Mesh.BACKSIDE or Mesh.DOUBLESIDE
      * * frontUvs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the front side, optional, default vector4 (0, 0, 1, 1)
      * * backUVs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the back side, optional, default vector4 (0, 0, 1, 1)
-     * @param options.type
-     * @param options.size
-     * @param options.sizeX
-     * @param options.sizeY
-     * @param options.sizeZ
-     * @param options.custom
-     * @param options.faceUV
-     * @param options.faceColors
-     * @param options.flat
-     * @param options.sideOrientation
-     * @param options.frontUVs
-     * @param options.backUVs
      * @returns the VertexData of the Polyhedron
      * @deprecated use CreatePolyhedronVertexData instead
      */
@@ -1628,15 +1920,6 @@ export class VertexData {
      * * sideOrientation optional and takes the values : Mesh.FRONTSIDE (default), Mesh.BACKSIDE or Mesh.DOUBLESIDE
      * * frontUvs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the front side, optional, default vector4 (0, 0, 1, 1)
      * * backUVs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the back side, optional, default vector4 (0, 0, 1, 1)
-     * @param options.radius
-     * @param options.tube
-     * @param options.radialSegments
-     * @param options.tubularSegments
-     * @param options.p
-     * @param options.q
-     * @param options.sideOrientation
-     * @param options.frontUVs
-     * @param options.backUVs
      * @returns the VertexData of the Torus Knot
      * @deprecated use CreateTorusKnotVertexData instead
      */
@@ -1673,17 +1956,6 @@ export class VertexData {
      * * depthSort : optional boolean to enable the facet depth sort computation
      * * distanceTo : optional Vector3 to compute the facet depth from this location
      * * depthSortedFacets : optional array of depthSortedFacets to store the facet distances from the reference location
-     * @param options.facetNormals
-     * @param options.facetPositions
-     * @param options.facetPartitioning
-     * @param options.ratio
-     * @param options.bInfo
-     * @param options.bbSize
-     * @param options.subDiv
-     * @param options.useRightHandedSystem
-     * @param options.depthSort
-     * @param options.distanceTo
-     * @param options.depthSortedFacets
      */
     public static ComputeNormals(
         positions: any,
@@ -1962,11 +2234,11 @@ export class VertexData {
     }
 
     /**
-     * Applies VertexData created from the imported parameters to the geometry
+     * Creates a VertexData from serialized data
      * @param parsedVertexData the parsed data from an imported file
-     * @param geometry the geometry to apply the VertexData to
+     * @returns a VertexData
      */
-    public static ImportVertexData(parsedVertexData: any, geometry: Geometry) {
+    public static Parse(parsedVertexData: any) {
         const vertexData = new VertexData();
 
         // positions
@@ -1994,39 +2266,42 @@ export class VertexData {
         }
 
         // uv2s
-        const uv2s = parsedVertexData.uv2s;
-        if (uv2s) {
-            vertexData.set(uv2s, VertexBuffer.UV2Kind);
+        const uvs2 = parsedVertexData.uvs2;
+        if (uvs2) {
+            vertexData.set(uvs2, VertexBuffer.UV2Kind);
         }
 
         // uv3s
-        const uv3s = parsedVertexData.uv3s;
-        if (uv3s) {
-            vertexData.set(uv3s, VertexBuffer.UV3Kind);
+        const uvs3 = parsedVertexData.uvs3;
+        if (uvs3) {
+            vertexData.set(uvs3, VertexBuffer.UV3Kind);
         }
 
         // uv4s
-        const uv4s = parsedVertexData.uv4s;
-        if (uv4s) {
-            vertexData.set(uv4s, VertexBuffer.UV4Kind);
+        const uvs4 = parsedVertexData.uvs4;
+        if (uvs4) {
+            vertexData.set(uvs4, VertexBuffer.UV4Kind);
         }
 
         // uv5s
-        const uv5s = parsedVertexData.uv5s;
-        if (uv5s) {
-            vertexData.set(uv5s, VertexBuffer.UV5Kind);
+        const uvs5 = parsedVertexData.uvs5;
+        if (uvs5) {
+            vertexData.set(uvs5, VertexBuffer.UV5Kind);
         }
 
         // uv6s
-        const uv6s = parsedVertexData.uv6s;
-        if (uv6s) {
-            vertexData.set(uv6s, VertexBuffer.UV6Kind);
+        const uvs6 = parsedVertexData.uvs6;
+        if (uvs6) {
+            vertexData.set(uvs6, VertexBuffer.UV6Kind);
         }
 
         // colors
         const colors = parsedVertexData.colors;
         if (colors) {
             vertexData.set(Color4.CheckColors4(colors, positions.length / 3), VertexBuffer.ColorKind);
+            if (parsedVertexData.hasVertexAlpha !== undefined) {
+                vertexData.hasVertexAlpha = parsedVertexData.hasVertexAlpha;
+            }
         }
 
         // matricesIndices
@@ -2046,6 +2321,32 @@ export class VertexData {
         if (indices) {
             vertexData.indices = indices;
         }
+
+        // MaterialInfos
+        const materialInfos = parsedVertexData.materialInfos;
+        if (materialInfos) {
+            vertexData.materialInfos = [];
+            for (const materialInfoFromJSON of materialInfos) {
+                const materialInfo = new VertexDataMaterialInfo();
+                materialInfo.indexCount = materialInfoFromJSON.indexCount;
+                materialInfo.indexStart = materialInfoFromJSON.indexStart;
+                materialInfo.verticesCount = materialInfoFromJSON.verticesCount;
+                materialInfo.verticesStart = materialInfoFromJSON.verticesStart;
+                materialInfo.materialIndex = materialInfoFromJSON.materialIndex;
+                vertexData.materialInfos.push(materialInfo);
+            }
+        }
+
+        return vertexData;
+    }
+
+    /**
+     * Applies VertexData created from the imported parameters to the geometry
+     * @param parsedVertexData the parsed data from an imported file
+     * @param geometry the geometry to apply the VertexData to
+     */
+    public static ImportVertexData(parsedVertexData: any, geometry: Geometry) {
+        const vertexData = VertexData.Parse(parsedVertexData);
 
         geometry.setAllVerticesData(vertexData, parsedVertexData.updatable);
     }

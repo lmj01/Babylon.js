@@ -9,20 +9,20 @@ declare function importScripts(...urls: string[]): void;
 declare function postMessage(message: any, transfer?: any[]): void;
 
 function validateAsync(
-    data: string | ArrayBuffer,
+    data: string | Uint8Array,
     rootUrl: string,
     fileName: string,
-    getExternalResource: (uri: string) => Promise<ArrayBuffer>
+    getExternalResource: (uri: string) => Promise<Uint8Array>
 ): Promise<GLTF2.IGLTFValidationResults> {
     const options: GLTF2.IGLTFValidationOptions = {
-        externalResourceFunction: (uri) => getExternalResource(uri).then((value) => new Uint8Array(value)),
+        externalResourceFunction: getExternalResource,
     };
 
     if (fileName) {
         options.uri = rootUrl === "file:" ? fileName : rootUrl + fileName;
     }
 
-    return data instanceof ArrayBuffer ? GLTFValidator.validateBytes(new Uint8Array(data), options) : GLTFValidator.validateString(data, options);
+    return ArrayBuffer.isView(data) ? GLTFValidator.validateBytes(data, options) : GLTFValidator.validateString(data, options);
 }
 
 /**
@@ -86,10 +86,10 @@ export interface IGLTFValidationConfiguration {
  */
 export class GLTFValidation {
     /**
-     * The configuration. Defaults to `{ url: "https://preview.babylonjs.com/gltf_validator.js" }`.
+     * The configuration. Defaults to `{ url: "https://cdn.babylonjs.com/gltf_validator.js" }`.
      */
     public static Configuration: IGLTFValidationConfiguration = {
-        url: "https://preview.babylonjs.com/gltf_validator.js",
+        url: `${Tools._DefaultCdnUrl}/gltf_validator.js`,
     };
 
     private static _LoadScriptPromise: Promise<void>;
@@ -103,10 +103,10 @@ export class GLTFValidation {
      * @returns A promise that resolves with the glTF validation results once complete
      */
     public static ValidateAsync(
-        data: string | ArrayBuffer,
+        data: string | Uint8Array,
         rootUrl: string,
         fileName: string,
-        getExternalResource: (uri: string) => Promise<ArrayBuffer>
+        getExternalResource: (uri: string) => Promise<Uint8Array>
     ): Promise<GLTF2.IGLTFValidationResults> {
         if (typeof Worker === "function") {
             return new Promise((resolve, reject) => {
@@ -126,7 +126,7 @@ export class GLTFValidation {
                         case "getExternalResource": {
                             getExternalResource(data.uri).then(
                                 (value) => {
-                                    worker.postMessage({ id: "getExternalResource.resolve", index: data.index, value: value }, [value]);
+                                    worker.postMessage({ id: "getExternalResource.resolve", index: data.index, value: value }, [value.buffer]);
                                 },
                                 (reason) => {
                                     worker.postMessage({ id: "getExternalResource.reject", index: data.index, reason: reason });
@@ -153,12 +153,19 @@ export class GLTFValidation {
                 worker.addEventListener("error", onError);
                 worker.addEventListener("message", onMessage);
 
-                worker.postMessage({ id: "init", url: this.Configuration.url });
-                worker.postMessage({ id: "validate", data: data, rootUrl: rootUrl, fileName: fileName });
+                worker.postMessage({ id: "init", url: Tools.GetBabylonScriptURL(this.Configuration.url) });
+
+                if (ArrayBuffer.isView(data)) {
+                    // Slice the data to avoid copying the whole array buffer.
+                    const slicedData = data.slice();
+                    worker.postMessage({ id: "validate", data: slicedData, rootUrl: rootUrl, fileName: fileName }, [slicedData.buffer]);
+                } else {
+                    worker.postMessage({ id: "validate", data: data, rootUrl: rootUrl, fileName: fileName });
+                }
             });
         } else {
             if (!this._LoadScriptPromise) {
-                this._LoadScriptPromise = Tools.LoadScriptAsync(this.Configuration.url);
+                this._LoadScriptPromise = Tools.LoadBabylonScriptAsync(this.Configuration.url);
             }
 
             return this._LoadScriptPromise.then(() => {

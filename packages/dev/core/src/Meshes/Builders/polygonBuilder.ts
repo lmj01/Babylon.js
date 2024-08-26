@@ -9,7 +9,7 @@ import { PolygonMeshBuilder } from "../polygonMesh";
 import type { FloatArray, IndicesArray, Nullable } from "../../types";
 import { VertexBuffer } from "../../Buffers/buffer";
 import { EngineStore } from "../../Engines/engineStore";
-import { CompatibilityOptions } from "../../Compat/compatibilityOptions";
+import { useOpenGLOrientationForUV } from "../../Compat/compatibilityOptions";
 
 declare let earcut: any;
 
@@ -94,15 +94,15 @@ export function CreatePolygonVertexData(polygon: Mesh, sideOrientation: number, 
                 }
             }
             if (disp % 2 === 0) {
-                uvs[2 * idx + 1] = CompatibilityOptions.UseOpenGLOrientationForUV ? 1.0 - faceUV[face].w : faceUV[face].w;
+                uvs[2 * idx + 1] = useOpenGLOrientationForUV ? 1.0 - faceUV[face].w : faceUV[face].w;
             } else {
-                uvs[2 * idx + 1] = CompatibilityOptions.UseOpenGLOrientationForUV ? 1.0 - faceUV[face].y : faceUV[face].y;
+                uvs[2 * idx + 1] = useOpenGLOrientationForUV ? 1.0 - faceUV[face].y : faceUV[face].y;
             }
         } else {
             uvs[2 * idx] = (1 - uvs[2 * idx]) * faceUV[face].x + uvs[2 * idx] * faceUV[face].z;
             uvs[2 * idx + 1] = (1 - uvs[2 * idx + 1]) * faceUV[face].y + uvs[2 * idx + 1] * faceUV[face].w;
 
-            if (CompatibilityOptions.UseOpenGLOrientationForUV) {
+            if (useOpenGLOrientationForUV) {
                 uvs[2 * idx + 1] = 1.0 - uvs[2 * idx + 1];
             }
         }
@@ -139,17 +139,6 @@ export function CreatePolygonVertexData(polygon: Mesh, sideOrientation: number, 
  * * Remember you can only change the shape positions, not their number when updating a polygon
  * @param name defines the name of the mesh
  * @param options defines the options used to create the mesh
- * @param options.shape
- * @param options.holes
- * @param options.depth
- * @param options.smoothingThreshold
- * @param options.faceUV
- * @param options.faceColors
- * @param options.updatable
- * @param options.sideOrientation
- * @param options.frontUVs
- * @param options.backUVs
- * @param options.wrap
  * @param scene defines the hosting scene
  * @param earcutInjection can be used to inject your own earcut reference
  * @returns the polygon mesh
@@ -211,16 +200,6 @@ export function CreatePolygon(
  * @see https://doc.babylonjs.com/features/featuresDeepDive/materials/using/texturePerBoxFace
  * @param name defines the name of the mesh
  * @param options defines the options used to create the mesh
- * @param options.shape
- * @param options.holes
- * @param options.depth
- * @param options.faceUV
- * @param options.faceColors
- * @param options.updatable
- * @param options.sideOrientation
- * @param options.frontUVs
- * @param options.backUVs
- * @param options.wrap
  * @param scene defines the hosting scene
  * @param earcutInjection can be used to inject your own earcut reference
  * @returns the polygon mesh
@@ -254,15 +233,7 @@ export const PolygonBuilder = {
 };
 
 VertexData.CreatePolygon = CreatePolygonVertexData;
-(Mesh as any).CreatePolygon = (
-    name: string,
-    shape: Vector3[],
-    scene: Scene,
-    holes?: Vector3[][],
-    updatable?: boolean,
-    sideOrientation?: number,
-    earcutInjection = earcut
-): Mesh => {
+Mesh.CreatePolygon = (name: string, shape: Vector3[], scene: Scene, holes?: Vector3[][], updatable?: boolean, sideOrientation?: number, earcutInjection = earcut): Mesh => {
     const options = {
         shape: shape,
         holes: holes,
@@ -272,7 +243,7 @@ VertexData.CreatePolygon = CreatePolygonVertexData;
     return CreatePolygon(name, options, scene, earcutInjection);
 };
 
-(Mesh as any).ExtrudePolygon = (
+Mesh.ExtrudePolygon = (
     name: string,
     shape: Vector3[],
     depth: number,

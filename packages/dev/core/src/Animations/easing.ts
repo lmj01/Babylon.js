@@ -94,7 +94,7 @@ export class CircleEase extends EasingFunction implements IEasingFunction {
     /**
      * @internal
      */
-    public easeInCore(gradient: number): number {
+    public override easeInCore(gradient: number): number {
         gradient = Math.max(0, Math.min(1, gradient));
         return 1.0 - Math.sqrt(1.0 - gradient * gradient);
     }
@@ -112,7 +112,7 @@ export class BackEase extends EasingFunction implements IEasingFunction {
      * @param amplitude Defines the amplitude of the function
      */
     constructor(
-        /** Defines the amplitude of the function */
+        /** [1] Defines the amplitude of the function */
         public amplitude: number = 1
     ) {
         super();
@@ -121,7 +121,7 @@ export class BackEase extends EasingFunction implements IEasingFunction {
     /**
      * @internal
      */
-    public easeInCore(gradient: number): number {
+    public override easeInCore(gradient: number): number {
         const num = Math.max(0, this.amplitude);
         return Math.pow(gradient, 3.0) - gradient * num * Math.sin(3.1415926535897931 * gradient);
     }
@@ -140,9 +140,9 @@ export class BounceEase extends EasingFunction implements IEasingFunction {
      * @param bounciness Defines the amplitude of the bounce
      */
     constructor(
-        /** Defines the number of bounces */
+        /** [3] Defines the number of bounces */
         public bounces: number = 3,
-        /** Defines the amplitude of the bounce */
+        /** [2] Defines the amplitude of the bounce */
         public bounciness: number = 2
     ) {
         super();
@@ -151,7 +151,7 @@ export class BounceEase extends EasingFunction implements IEasingFunction {
     /**
      * @internal
      */
-    public easeInCore(gradient: number): number {
+    public override easeInCore(gradient: number): number {
         const y = Math.max(0.0, this.bounces);
         let bounciness = this.bounciness;
         if (bounciness <= 1.0) {
@@ -182,7 +182,7 @@ export class CubicEase extends EasingFunction implements IEasingFunction {
     /**
      * @internal
      */
-    public easeInCore(gradient: number): number {
+    public override easeInCore(gradient: number): number {
         return gradient * gradient * gradient;
     }
 }
@@ -200,9 +200,9 @@ export class ElasticEase extends EasingFunction implements IEasingFunction {
      * @param springiness Defines the amplitude of the oscillations
      */
     constructor(
-        /** Defines the number of oscillations*/
+        /** [3] Defines the number of oscillations*/
         public oscillations: number = 3,
-        /** Defines the amplitude of the oscillations*/
+        /** [3] Defines the amplitude of the oscillations*/
         public springiness: number = 3
     ) {
         super();
@@ -211,7 +211,7 @@ export class ElasticEase extends EasingFunction implements IEasingFunction {
     /**
      * @internal
      */
-    public easeInCore(gradient: number): number {
+    public override easeInCore(gradient: number): number {
         let num2;
         const num3 = Math.max(0.0, this.oscillations);
         const num = Math.max(0.0, this.springiness);
@@ -237,7 +237,7 @@ export class ExponentialEase extends EasingFunction implements IEasingFunction {
      * @param exponent Defines the exponent of the function
      */
     constructor(
-        /** Defines the exponent of the function */
+        /** [3] Defines the exponent of the function */
         public exponent: number = 2
     ) {
         super();
@@ -246,7 +246,7 @@ export class ExponentialEase extends EasingFunction implements IEasingFunction {
     /**
      * @internal
      */
-    public easeInCore(gradient: number): number {
+    public override easeInCore(gradient: number): number {
         if (this.exponent <= 0) {
             return gradient;
         }
@@ -267,7 +267,7 @@ export class PowerEase extends EasingFunction implements IEasingFunction {
      * @param power Defines the power of the function
      */
     constructor(
-        /** Defines the power of the function */
+        /** [2] Defines the power of the function */
         public power: number = 2
     ) {
         super();
@@ -276,7 +276,7 @@ export class PowerEase extends EasingFunction implements IEasingFunction {
     /**
      * @internal
      */
-    public easeInCore(gradient: number): number {
+    public override easeInCore(gradient: number): number {
         const y = Math.max(0.0, this.power);
         return Math.pow(gradient, y);
     }
@@ -291,7 +291,7 @@ export class QuadraticEase extends EasingFunction implements IEasingFunction {
     /**
      * @internal
      */
-    public easeInCore(gradient: number): number {
+    public override easeInCore(gradient: number): number {
         return gradient * gradient;
     }
 }
@@ -305,7 +305,7 @@ export class QuarticEase extends EasingFunction implements IEasingFunction {
     /**
      * @internal
      */
-    public easeInCore(gradient: number): number {
+    public override easeInCore(gradient: number): number {
         return gradient * gradient * gradient * gradient;
     }
 }
@@ -319,7 +319,7 @@ export class QuinticEase extends EasingFunction implements IEasingFunction {
     /**
      * @internal
      */
-    public easeInCore(gradient: number): number {
+    public override easeInCore(gradient: number): number {
         return gradient * gradient * gradient * gradient * gradient;
     }
 }
@@ -333,7 +333,7 @@ export class SineEase extends EasingFunction implements IEasingFunction {
     /**
      * @internal
      */
-    public easeInCore(gradient: number): number {
+    public override easeInCore(gradient: number): number {
         return 1.0 - Math.sin(1.5707963267948966 * (1.0 - gradient));
     }
 }
@@ -353,13 +353,13 @@ export class BezierCurveEase extends EasingFunction implements IEasingFunction {
      * @param y2 Defines the y component of the end tangent in the bezier curve
      */
     constructor(
-        /** Defines the x component of the start tangent in the bezier curve */
+        /** [0] Defines the x component of the start tangent in the bezier curve */
         public x1: number = 0,
-        /** Defines the y component of the start tangent in the bezier curve */
+        /** [0] Defines the y component of the start tangent in the bezier curve */
         public y1: number = 0,
-        /** Defines the x component of the end tangent in the bezier curve */
+        /** [1] Defines the x component of the end tangent in the bezier curve */
         public x2: number = 1,
-        /** Defines the y component of the end tangent in the bezier curve */
+        /** [1] Defines the y component of the end tangent in the bezier curve */
         public y2: number = 1
     ) {
         super();
@@ -368,7 +368,7 @@ export class BezierCurveEase extends EasingFunction implements IEasingFunction {
     /**
      * @internal
      */
-    public easeInCore(gradient: number): number {
+    public override easeInCore(gradient: number): number {
         return BezierCurve.Interpolate(gradient, this.x1, this.y1, this.x2, this.y2);
     }
 }

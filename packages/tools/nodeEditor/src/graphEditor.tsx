@@ -89,7 +89,7 @@ export class GraphEditor extends React.Component<IGraphEditorProps, IGraphEditor
         return this.appendBlock(newInputBlock);
     }
 
-    componentDidMount() {
+    override componentDidMount() {
         window.addEventListener("wheel", this.onWheel, { passive: false });
 
         if (this.props.globalState.hostDocument) {
@@ -110,7 +110,7 @@ export class GraphEditor extends React.Component<IGraphEditorProps, IGraphEditor
         this.build();
     }
 
-    componentWillUnmount() {
+    override componentWillUnmount() {
         window.removeEventListener("wheel", this.onWheel);
 
         if (this.props.globalState.hostDocument) {
@@ -157,9 +157,9 @@ export class GraphEditor extends React.Component<IGraphEditorProps, IGraphEditor
             }
         });
 
-        this.props.globalState.stateManager.onRebuildRequiredObservable.add((autoConfigure) => {
+        this.props.globalState.stateManager.onRebuildRequiredObservable.add(() => {
             if (this.props.globalState.nodeMaterial) {
-                this.buildMaterial(autoConfigure);
+                this.buildMaterial();
             }
         });
 
@@ -231,14 +231,14 @@ export class GraphEditor extends React.Component<IGraphEditorProps, IGraphEditor
         this._graphCanvas.zoomToFit();
     }
 
-    buildMaterial(autoConfigure = true) {
+    buildMaterial() {
         if (!this.props.globalState.nodeMaterial) {
             return;
         }
 
         try {
             this.props.globalState.nodeMaterial.options.emitComments = true;
-            this.props.globalState.nodeMaterial.build(true, undefined, autoConfigure);
+            this.props.globalState.nodeMaterial.build(true);
             this.props.globalState.onLogRequiredObservable.notifyObservers(new LogEntry("Node material build successful", false));
         } catch (err) {
             this.props.globalState.onLogRequiredObservable.notifyObservers(new LogEntry(err, true));
@@ -378,6 +378,10 @@ export class GraphEditor extends React.Component<IGraphEditorProps, IGraphEditor
 
         let customBlockData: any;
 
+        // Dropped something that is not a block
+        if (blockType === "") {
+            return;
+        }
         if (blockType.indexOf("CustomBlock") > -1) {
             const storageData = localStorage.getItem(blockType);
             if (!storageData) {
@@ -435,7 +439,11 @@ export class GraphEditor extends React.Component<IGraphEditorProps, IGraphEditor
                 }
             }
 
-            block.autoConfigure(this.props.globalState.nodeMaterial);
+            // Don't allow blocks to automatically connect to other blocks that are inside frames
+            block.autoConfigure(
+                this.props.globalState.nodeMaterial,
+                (filterBlock: NodeMaterialBlock) => !this._graphCanvas.nodes.some((node: any) => node.enclosingFrameId >= 0 && node.content.data.uniqueId === filterBlock.uniqueId)
+            );
             newNode = this.appendBlock(block);
             newNode.addClassToVisual(block.getClassName());
         }
@@ -548,7 +556,7 @@ export class GraphEditor extends React.Component<IGraphEditorProps, IGraphEditor
         parentControl.style.display = "grid";
         parentControl.style.gridTemplateRows = "40px auto";
         parentControl.id = "node-editor-graph-root";
-        parentControl.className = "right-panel popup";
+        parentControl.className = "nme-right-panel popup";
 
         popupWindow.document.body.appendChild(parentControl);
 
@@ -630,7 +638,7 @@ export class GraphEditor extends React.Component<IGraphEditorProps, IGraphEditor
         }
     };
 
-    render() {
+    override render() {
         return (
             <Portal globalState={this.props.globalState}>
                 <div
@@ -687,7 +695,7 @@ export class GraphEditor extends React.Component<IGraphEditorProps, IGraphEditor
                     ></div>
 
                     {/* Property tab */}
-                    <div className="right-panel">
+                    <div className="nme-right-panel">
                         <PropertyTabComponent lockObject={this.props.globalState.lockObject} globalState={this.props.globalState} />
                         {!this.state.showPreviewPopUp ? <PreviewMeshControlComponent globalState={this.props.globalState} togglePreviewAreaComponent={this.handlePopUp} /> : null}
                         {!this.state.showPreviewPopUp ? <PreviewAreaComponent globalState={this.props.globalState} width={this._rightWidth} /> : null}

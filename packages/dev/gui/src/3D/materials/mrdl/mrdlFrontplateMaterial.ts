@@ -13,16 +13,17 @@ import { Color4 } from "core/Maths/math.color";
 import { Constants } from "core/Engines/constants";
 import { EffectFallbacks } from "core/Materials/effectFallbacks";
 import { MaterialDefines } from "core/Materials/materialDefines";
-import { MaterialHelper } from "core/Materials/materialHelper";
 import { PushMaterial } from "core/Materials/pushMaterial";
 import { RegisterClass } from "core/Misc/typeStore";
-import { SerializationHelper, serialize } from "core/Misc/decorators";
+import { serialize } from "core/Misc/decorators";
+import { SerializationHelper } from "core/Misc/decorators.serialization";
 import { Vector3 } from "core/Maths/math.vector";
 import { VertexBuffer } from "core/Buffers/buffer";
 import { Texture } from "core/Materials/Textures/texture";
 
 import "./shaders/mrdlFrontplate.fragment";
 import "./shaders/mrdlFrontplate.vertex";
+import { HandleFallbacksForShadows, PrepareAttributesForInstances, PrepareDefinesForAttributes, PrepareUniformsAndSamplersList } from "core/Materials/materialHelper.functions";
 
 /** @hidden */
 class MRDLFrontplateMaterialDefines extends MaterialDefines {
@@ -279,22 +280,24 @@ export class MRDLFrontplateMaterial extends PushMaterial {
         this._blobTexture = new Texture(MRDLFrontplateMaterial.BLOB_TEXTURE_URL, scene, true, false, Texture.NEAREST_SAMPLINGMODE);
     }
 
-    public needAlphaBlending(): boolean {
+    public override needAlphaBlending(): boolean {
         return true;
     }
 
-    public needAlphaTesting(): boolean {
+    public override needAlphaTesting(): boolean {
         return false;
     }
 
-    public getAlphaTestTexture(): Nullable<BaseTexture> {
+    public override getAlphaTestTexture(): Nullable<BaseTexture> {
         return null;
     }
 
     // Methods
-    public isReadyForSubMesh(mesh: AbstractMesh, subMesh: SubMesh): boolean {
+    public override isReadyForSubMesh(mesh: AbstractMesh, subMesh: SubMesh): boolean {
+        const drawWrapper = subMesh._drawWrapper;
+
         if (this.isFrozen) {
-            if (subMesh.effect && subMesh.effect._wasPreviouslyReady) {
+            if (drawWrapper.effect && drawWrapper._wasPreviouslyReady) {
                 return true;
             }
         }
@@ -313,7 +316,7 @@ export class MRDLFrontplateMaterial extends PushMaterial {
         const engine = scene.getEngine();
 
         // Attribs
-        MaterialHelper.PrepareDefinesForAttributes(mesh, defines, false, false);
+        PrepareDefinesForAttributes(mesh, defines, false, false);
 
         // Get correct effect
         if (defines.isDirty) {
@@ -327,7 +330,7 @@ export class MRDLFrontplateMaterial extends PushMaterial {
                 fallbacks.addFallback(1, "FOG");
             }
 
-            MaterialHelper.HandleFallbacksForShadows(defines, fallbacks);
+            HandleFallbacksForShadows(defines, fallbacks);
 
             defines.IMAGEPROCESSINGPOSTPROCESS = scene.imageProcessingConfiguration.applyByPostProcess;
 
@@ -354,7 +357,7 @@ export class MRDLFrontplateMaterial extends PushMaterial {
                 attribs.push(VertexBuffer.TangentKind);
             }
 
-            MaterialHelper.PrepareAttributesForInstances(attribs, defines);
+            PrepareAttributesForInstances(attribs, defines);
 
             // Legacy browser patch
             const shaderName = "mrdlFrontplate";
@@ -412,9 +415,9 @@ export class MRDLFrontplateMaterial extends PushMaterial {
                 "_Use_Global_Right_Index_",
             ];
             const samplers: string[] = [];
-            const uniformBuffers = new Array<string>();
+            const uniformBuffers: string[] = [];
 
-            MaterialHelper.PrepareUniformsAndSamplersList(<IEffectCreationOptions>{
+            PrepareUniformsAndSamplersList(<IEffectCreationOptions>{
                 uniformsNames: uniforms,
                 uniformBuffersNames: uniformBuffers,
                 samplers: samplers,
@@ -446,12 +449,12 @@ export class MRDLFrontplateMaterial extends PushMaterial {
         }
 
         defines._renderId = scene.getRenderId();
-        subMesh.effect._wasPreviouslyReady = true;
+        drawWrapper._wasPreviouslyReady = true;
 
         return true;
     }
 
-    public bindForSubMesh(world: Matrix, mesh: Mesh, subMesh: SubMesh): void {
+    public override bindForSubMesh(world: Matrix, mesh: Mesh, subMesh: SubMesh): void {
         const scene = this.getScene();
 
         const defines = <MRDLFrontplateMaterialDefines>subMesh.materialDefines;
@@ -531,37 +534,37 @@ export class MRDLFrontplateMaterial extends PushMaterial {
         // "Antialiasing"
         //define SMOOTH_EDGES true;
 
-        this._afterBind(mesh, this._activeEffect);
+        this._afterBind(mesh, this._activeEffect, subMesh);
     }
 
     /**
      * Get the list of animatables in the material.
      * @returns the list of animatables object used in the material
      */
-    public getAnimatables(): IAnimatable[] {
+    public override getAnimatables(): IAnimatable[] {
         return [];
     }
 
-    public dispose(forceDisposeEffect?: boolean): void {
+    public override dispose(forceDisposeEffect?: boolean): void {
         super.dispose(forceDisposeEffect);
     }
 
-    public clone(name: string): MRDLFrontplateMaterial {
+    public override clone(name: string): MRDLFrontplateMaterial {
         return SerializationHelper.Clone(() => new MRDLFrontplateMaterial(name, this.getScene()), this);
     }
 
-    public serialize(): unknown {
+    public override serialize(): unknown {
         const serializationObject = SerializationHelper.Serialize(this);
         serializationObject.customType = "BABYLON.MRDLFrontplateMaterial";
         return serializationObject;
     }
 
-    public getClassName(): string {
+    public override getClassName(): string {
         return "MRDLFrontplateMaterial";
     }
 
     // Statics
-    public static Parse(source: any, scene: Scene, rootUrl: string): MRDLFrontplateMaterial {
+    public static override Parse(source: any, scene: Scene, rootUrl: string): MRDLFrontplateMaterial {
         return SerializationHelper.Parse(() => new MRDLFrontplateMaterial(source.name, scene), source, scene, rootUrl);
     }
 }

@@ -48,6 +48,7 @@ export enum ConstraintDirection {
  *
  * @param callback callback to call.
  * @param time time to wait between calls in ms.
+ * @returns callback function.
  */
 function throttle(callback: (...args: any[]) => void, time: number) {
     let lastCalledTime: number = 0;
@@ -1189,7 +1190,7 @@ export class WorkbenchComponent extends React.Component<IWorkbenchComponentProps
         }
     }
 
-    render() {
+    override render() {
         let cursor = "default";
         if (this.props.globalState.tool === GUIEditorTool.PAN) {
             cursor = "grab";

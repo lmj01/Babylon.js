@@ -85,8 +85,12 @@ export class XmlLoader {
                     } else {
                         guiNode.linkWithMesh(window[node.attributes[i].value]);
                     }
-                } else if (node.attributes[i].value.startsWith("{{") && node.attributes[i].value.endsWith("}}")) {
-                    const element = this._getChainElement(node.attributes[i].value.substring(2, node.attributes[i].value.length - 2));
+                } else if (node.attributes[i].value.match(/{{.*}}/)) {
+                    const matches = node.attributes[i].value.match(/{{(.*)}}/);
+                    let element = this._getChainElement(matches[1]);
+                    if (!(node.attributes[i].value.startsWith("{{") && node.attributes[i].value.endsWith("}}"))) {
+                        element = (node.attributes[i].value as string).replace(/{{.*}}/, `${element}`);
+                    }
                     guiNode[node.attributes[i].name] = element;
                 } else if (!this._objectAttributes[node.attributes[i].name]) {
                     if (node.attributes[i].value == "true" || node.attributes[i].value == "false") {
@@ -112,10 +116,12 @@ export class XmlLoader {
             if (!this._nodes[id]) {
                 this._nodes[id] = guiNode;
             } else {
+                // eslint-disable-next-line no-throw-literal
                 throw "XmlLoader Exception : Duplicate ID, every element should have an unique ID attribute";
             }
             return guiNode;
         } catch (exception) {
+            // eslint-disable-next-line no-throw-literal
             throw "XmlLoader Exception : Error parsing Control " + node.nodeName + "," + exception + ".";
         }
     }
@@ -137,12 +143,14 @@ export class XmlLoader {
                 continue;
             }
             if (rows[i].nodeName != "Row") {
+                // eslint-disable-next-line no-throw-literal
                 throw "XmlLoader Exception : Expecting Row node, received " + rows[i].nodeName;
             }
             rowNumber += 1;
             columns = rows[i].children;
 
             if (!rows[i].attributes.getNamedItem("height")) {
+                // eslint-disable-next-line no-throw-literal
                 throw "XmlLoader Exception : Height must be defined for grid rows";
             }
             height = Number(rows[i].attributes.getNamedItem("height").nodeValue);
@@ -154,15 +162,18 @@ export class XmlLoader {
                     continue;
                 }
                 if (columns[j].nodeName != "Column") {
+                    // eslint-disable-next-line no-throw-literal
                     throw "XmlLoader Exception : Expecting Column node, received " + columns[j].nodeName;
                 }
                 columnNumber += 1;
                 if (rowNumber > 0 && columnNumber > totalColumnsNumber) {
+                    // eslint-disable-next-line no-throw-literal
                     throw "XmlLoader Exception : In the Grid element, the number of columns is defined in the first row, do not add more columns in the subsequent rows.";
                 }
 
                 if (rowNumber == 0) {
                     if (!columns[j].attributes.getNamedItem("width")) {
+                        // eslint-disable-next-line no-throw-literal
                         throw "XmlLoader Exception : Width must be defined for all the grid columns in the first row";
                     }
                     width = Number(columns[j].attributes.getNamedItem("width").nodeValue);
@@ -220,11 +231,13 @@ export class XmlLoader {
         const dataSource = node.attributes.getNamedItem("dataSource").value;
 
         if (!dataSource.includes(" in ")) {
+            // eslint-disable-next-line no-throw-literal
             throw "XmlLoader Exception : Malformed XML, Data Source must include an in";
         } else {
             let isArray = true;
             const splittedSource = dataSource.split(" in ");
             if (splittedSource.length < 2) {
+                // eslint-disable-next-line no-throw-literal
                 throw "XmlLoader Exception : Malformed XML, Data Source must have an iterator and a source";
             }
             let source = splittedSource[1];

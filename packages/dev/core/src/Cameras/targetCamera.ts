@@ -6,6 +6,12 @@ import { Quaternion, Matrix, Vector3, Vector2, TmpVectors } from "../Maths/math.
 import { Epsilon } from "../Maths/math.constants";
 import { Axis } from "../Maths/math.axis";
 import type { AbstractMesh } from "../Meshes/abstractMesh";
+import { Node } from "../node";
+
+Node.AddNodeConstructor("TargetCamera", (name, scene) => {
+    return () => new TargetCamera(name, Vector3.Zero(), scene);
+});
+
 /**
  * A target camera takes a mesh or position as a target and continues to look at it while it moves.
  * This is the base of the follow, arc rotate cameras and Free camera
@@ -96,6 +102,12 @@ export class TargetCamera extends Camera {
     /** @internal */
     public _transformedReferencePoint = Vector3.Zero();
 
+    protected _deferredPositionUpdate = new Vector3();
+    protected _deferredRotationQuaternionUpdate = new Quaternion();
+    protected _deferredRotationUpdate = new Vector3();
+    protected _deferredUpdated = false;
+    protected _deferOnly: boolean = false;
+
     /** @internal */
     public _reset: () => void;
 
@@ -151,7 +163,7 @@ export class TargetCamera extends Camera {
      * Store current camera state of the camera (fov, position, rotation, etc..)
      * @returns the camera
      */
-    public storeState(): Camera {
+    public override storeState(): Camera {
         this._storedPosition = this.position.clone();
         this._storedRotation = this.rotation.clone();
         if (this.rotationQuaternion) {
@@ -166,7 +178,7 @@ export class TargetCamera extends Camera {
      * @returns whether it was successful or not
      * @internal
      */
-    public _restoreStateValues(): boolean {
+    public override _restoreStateValues(): boolean {
         if (!super._restoreStateValues()) {
             return false;
         }
@@ -185,7 +197,7 @@ export class TargetCamera extends Camera {
     }
 
     /** @internal */
-    public _initCache() {
+    public override _initCache() {
         super._initCache();
         this._cache.lockedTarget = new Vector3(Number.MAX_VALUE, Number.MAX_VALUE, Number.MAX_VALUE);
         this._cache.rotation = new Vector3(Number.MAX_VALUE, Number.MAX_VALUE, Number.MAX_VALUE);
@@ -195,7 +207,7 @@ export class TargetCamera extends Camera {
     /**
      * @internal
      */
-    public _updateCache(ignoreParentClass?: boolean): void {
+    public override _updateCache(ignoreParentClass?: boolean): void {
         if (!ignoreParentClass) {
             super._updateCache();
         }
@@ -219,7 +231,7 @@ export class TargetCamera extends Camera {
 
     // Synchronized
     /** @internal */
-    public _isSynchronizedViewMatrix(): boolean {
+    public override _isSynchronizedViewMatrix(): boolean {
         if (!super._isSynchronizedViewMatrix()) {
             return false;
         }
@@ -317,17 +329,34 @@ export class TargetCamera extends Camera {
         if (this.parent) {
             this.parent.getWorldMatrix().invertToRef(TmpVectors.Matrix[0]);
             Vector3.TransformNormalToRef(this.cameraDirection, TmpVectors.Matrix[0], TmpVectors.Vector3[0]);
-            this.position.addInPlace(TmpVectors.Vector3[0]);
+            this._deferredPositionUpdate.addInPlace(TmpVectors.Vector3[0]);
+            if (!this._deferOnly) {
+                this.position.copyFrom(this._deferredPositionUpdate);
+            } else {
+                this._deferredUpdated = true;
+            }
             return;
         }
-        this.position.addInPlace(this.cameraDirection);
+        this._deferredPositionUpdate.addInPlace(this.cameraDirection);
+        if (!this._deferOnly) {
+            this.position.copyFrom(this._deferredPositionUpdate);
+        } else {
+            this._deferredUpdated = true;
+        }
     }
 
     /** @internal */
-    public _checkInputs(): void {
+    public override _checkInputs(): void {
         const directionMultiplier = this.invertRotation ? -this.inverseRotationSpeed : 1.0;
         const needToMove = this._decideIfNeedsToMove();
-        const needToRotate = Math.abs(this.cameraRotation.x) > 0 || Math.abs(this.cameraRotation.y) > 0;
+        const needToRotate = this.cameraRotation.x || this.cameraRotation.y;
+
+        this._deferredUpdated = false;
+        this._deferredRotationUpdate.copyFrom(this.rotation);
+        this._deferredPositionUpdate.copyFrom(this.position);
+        if (this.rotationQuaternion) {
+            this._deferredRotationQuaternionUpdate.copyFrom(this.rotationQuaternion);
+        }
 
         // Move
         if (needToMove) {
@@ -338,29 +367,45 @@ export class TargetCamera extends Camera {
         if (needToRotate) {
             //rotate, if quaternion is set and rotation was used
             if (this.rotationQuaternion) {
-                this.rotationQuaternion.toEulerAnglesToRef(this.rotation);
+                this.rotationQuaternion.toEulerAnglesToRef(this._deferredRotationUpdate);
             }
 
-            this.rotation.x += this.cameraRotation.x * directionMultiplier;
-            this.rotation.y += this.cameraRotation.y * directionMultiplier;
+            this._deferredRotationUpdate.x += this.cameraRotation.x * directionMultiplier;
+            this._deferredRotationUpdate.y += this.cameraRotation.y * directionMultiplier;
 
             // Apply constraints
             if (!this.noRotationConstraint) {
                 const limit = 1.570796;
 
-                if (this.rotation.x > limit) {
-                    this.rotation.x = limit;
+                if (this._deferredRotationUpdate.x > limit) {
+                    this._deferredRotationUpdate.x = limit;
                 }
-                if (this.rotation.x < -limit) {
-                    this.rotation.x = -limit;
+                if (this._deferredRotationUpdate.x < -limit) {
+                    this._deferredRotationUpdate.x = -limit;
                 }
+            }
+
+            if (!this._deferOnly) {
+                this.rotation.copyFrom(this._deferredRotationUpdate);
+            } else {
+                this._deferredUpdated = true;
             }
 
             //rotate, if quaternion is set and rotation was used
             if (this.rotationQuaternion) {
-                const len = this.rotation.lengthSquared();
+                const len = this._deferredRotationUpdate.lengthSquared();
                 if (len) {
-                    Quaternion.RotationYawPitchRollToRef(this.rotation.y, this.rotation.x, this.rotation.z, this.rotationQuaternion);
+                    Quaternion.RotationYawPitchRollToRef(
+                        this._deferredRotationUpdate.y,
+                        this._deferredRotationUpdate.x,
+                        this._deferredRotationUpdate.z,
+                        this._deferredRotationQuaternionUpdate
+                    );
+                    if (!this._deferOnly) {
+                        this.rotationQuaternion.copyFrom(this._deferredRotationQuaternionUpdate);
+                    } else {
+                        this._deferredUpdated = true;
+                    }
                 }
             }
         }
@@ -415,7 +460,7 @@ export class TargetCamera extends Camera {
     private _cachedRotationZ = 0;
     private _cachedQuaternionRotationZ = 0;
     /** @internal */
-    public _getViewMatrix(): Matrix {
+    public override _getViewMatrix(): Matrix {
         if (this.lockedTarget) {
             this.setTarget(this._getLockedTargetPosition()!);
         }
@@ -492,12 +537,12 @@ export class TargetCamera extends Camera {
      * @internal
      */
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    public createRigCamera(name: string, cameraIndex: number): Nullable<Camera> {
+    public override createRigCamera(name: string, cameraIndex: number): Nullable<Camera> {
         if (this.cameraRigMode !== Camera.RIG_MODE_NONE) {
             const rigCamera = new TargetCamera(name, this.position.clone(), this.getScene());
             rigCamera.isRigCamera = true;
             rigCamera.rigParent = this;
-            if (this.cameraRigMode === Camera.RIG_MODE_VR || this.cameraRigMode === Camera.RIG_MODE_WEBVR) {
+            if (this.cameraRigMode === Camera.RIG_MODE_VR) {
                 if (!this.rotationQuaternion) {
                     this.rotationQuaternion = new Quaternion();
                 }
@@ -519,7 +564,7 @@ export class TargetCamera extends Camera {
     /**
      * @internal
      */
-    public _updateRigCameras() {
+    public override _updateRigCameras() {
         const camLeft = <TargetCamera>this._rigCameras[0];
         const camRight = <TargetCamera>this._rigCameras[1];
 
@@ -575,7 +620,7 @@ export class TargetCamera extends Camera {
      * Gets the current object class name.
      * @returns the class name
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "TargetCamera";
     }
 }

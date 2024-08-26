@@ -1,4 +1,5 @@
-import { serializeAsColor3, SerializationHelper } from "core/Misc/decorators";
+import { serializeAsColor3 } from "core/Misc/decorators";
+import { SerializationHelper } from "core/Misc/decorators.serialization";
 import { Color3 } from "core/Maths/math.color";
 import type { Texture } from "core/Materials/Textures/texture";
 import { ProceduralTexture } from "core/Materials/Textures/Procedurals/proceduralTexture";
@@ -33,7 +34,7 @@ export class RoadProceduralTexture extends ProceduralTexture {
      * Serializes this road procedural texture
      * @returns a serialized road procedural texture object
      */
-    public serialize(): any {
+    public override serialize(): any {
         const serializationObject = SerializationHelper.Serialize(this, super.serialize());
         serializationObject.customType = "BABYLON.RoadProceduralTexture";
 
@@ -47,7 +48,7 @@ export class RoadProceduralTexture extends ProceduralTexture {
      * @param rootUrl defines the root URL containing road procedural texture information
      * @returns a parsed Road Procedural Texture
      */
-    public static Parse(parsedTexture: any, scene: Scene, rootUrl: string): RoadProceduralTexture {
+    public static override Parse(parsedTexture: any, scene: Scene, rootUrl: string): RoadProceduralTexture {
         const texture = SerializationHelper.Parse(
             () => new RoadProceduralTexture(parsedTexture.name, parsedTexture._size, scene, undefined, parsedTexture._generateMipMaps),
             parsedTexture,

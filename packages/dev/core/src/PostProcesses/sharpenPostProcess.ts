@@ -7,10 +7,11 @@ import { Constants } from "../Engines/constants";
 
 import "../Shaders/sharpen.fragment";
 import { RegisterClass } from "../Misc/typeStore";
-import { serialize, SerializationHelper } from "../Misc/decorators";
+import { serialize } from "../Misc/decorators";
+import { SerializationHelper } from "../Misc/decorators.serialization";
 
-declare type Engine = import("../Engines/engine").Engine;
-declare type Scene = import("../scene").Scene;
+import type { AbstractEngine } from "../Engines/abstractEngine";
+import type { Scene } from "../scene";
 
 /**
  * The SharpenPostProcess applies a sharpen kernel to every pixel
@@ -32,7 +33,7 @@ export class SharpenPostProcess extends PostProcess {
      * Gets a string identifying the name of the class
      * @returns "SharpenPostProcess" string
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "SharpenPostProcess";
     }
 
@@ -52,7 +53,7 @@ export class SharpenPostProcess extends PostProcess {
         options: number | PostProcessOptions,
         camera: Nullable<Camera>,
         samplingMode?: number,
-        engine?: Engine,
+        engine?: AbstractEngine,
         reusable?: boolean,
         textureType: number = Constants.TEXTURETYPE_UNSIGNED_INT,
         blockCompilation = false
@@ -65,10 +66,21 @@ export class SharpenPostProcess extends PostProcess {
         };
     }
 
+    protected override _gatherImports(useWebGPU: boolean, list: Promise<any>[]) {
+        if (useWebGPU) {
+            this._webGPUReady = true;
+            list.push(Promise.all([import("../ShadersWGSL/sharpen.fragment")]));
+        } else {
+            list.push(Promise.all([import("../Shaders/sharpen.fragment")]));
+        }
+
+        super._gatherImports(useWebGPU, list);
+    }
+
     /**
      * @internal
      */
-    public static _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string) {
+    public static override _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string) {
         return SerializationHelper.Parse(
             () => {
                 return new SharpenPostProcess(

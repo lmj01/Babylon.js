@@ -1,5 +1,5 @@
 import { Scene } from "core/scene";
-import type { Engine } from "core/Engines/engine";
+import type { AbstractEngine } from "core/Engines/abstractEngine";
 import type { FloatArray, Nullable } from "core/types";
 import type { Observer } from "core/Misc/observable";
 import type { Camera } from "core/Cameras/camera";
@@ -9,6 +9,7 @@ import { SceneComponentConstants } from "core/sceneComponent";
 import type { SmartArrayNoDuplicate } from "core/Misc/smartArray";
 import type { RenderTargetTexture } from "core/Materials/Textures/renderTargetTexture";
 import { Constants } from "core/Engines/constants";
+import type { Buffer } from "core/Buffers/buffer";
 
 import type { FluidRenderingObject } from "./fluidRenderingObject";
 import { FluidRenderingObjectParticleSystem } from "./fluidRenderingObjectParticleSystem";
@@ -81,6 +82,10 @@ function IsParticleSystemObject(obj: FluidRenderingObject): obj is FluidRenderin
     return !!(obj as FluidRenderingObjectParticleSystem).particleSystem;
 }
 
+function IsCustomParticlesObject(obj: FluidRenderingObject): obj is FluidRenderingObjectCustomParticles {
+    return !!(obj as FluidRenderingObjectCustomParticles).addBuffers;
+}
+
 /**
  * Defines the fluid renderer scene component responsible to render objects as fluids
  */
@@ -128,13 +133,25 @@ export class FluidRendererSceneComponent implements ISceneComponent {
      * context lost for instance.
      */
     public rebuild(): void {
-        if (this.scene._fluidRenderer) {
-            // Release resources first
-            this.scene.disableFluidRenderer();
-
-            // Re-enable
-            this.scene.enableFluidRenderer();
+        const fluidRenderer = this.scene.fluidRenderer;
+        if (!fluidRenderer) {
+            return;
         }
+
+        const buffers = new Set<Buffer>();
+        for (let i = 0; i < fluidRenderer.renderObjects.length; ++i) {
+            const obj = fluidRenderer.renderObjects[i].object;
+            if (IsCustomParticlesObject(obj)) {
+                const vbuffers = obj.vertexBuffers;
+                for (const name in vbuffers) {
+                    buffers.add(vbuffers[name].getWrapperBuffer());
+                }
+            }
+        }
+
+        buffers.forEach((buffer) => {
+            buffer._rebuild();
+        });
     }
 
     /**
@@ -171,8 +188,8 @@ export class FluidRenderer {
     }
 
     private _scene: Scene;
-    private _engine: Engine;
-    private _onEngineResizeObserver: Nullable<Observer<Engine>>;
+    private _engine: AbstractEngine;
+    private _onEngineResizeObserver: Nullable<Observer<AbstractEngine>>;
     private _cameras: Map<Camera, CameraMapForFluidRendering>;
 
     /** Retrieves all the render objects managed by the class */
@@ -221,7 +238,6 @@ export class FluidRenderer {
 
     /**
      * Adds a particle system to the fluid renderer.
-     * Note that you should not normally call this method directly, as you can simply use the renderAsFluid property of the ParticleSystem/GPUParticleSystem class
      * @param ps particle system
      * @param generateDiffuseTexture True if you want to generate a diffuse texture from the particle system and use it as part of the fluid rendering (default: false)
      * @param targetRenderer The target renderer used to display the particle system as a fluid. If not provided, the method will create a new one
@@ -231,7 +247,7 @@ export class FluidRenderer {
     public addParticleSystem(ps: IParticleSystem, generateDiffuseTexture?: boolean, targetRenderer?: FluidRenderingTargetRenderer, camera?: Camera): IFluidRenderingRenderObject {
         const object = new FluidRenderingObjectParticleSystem(this._scene, ps);
 
-        object.onParticleSizeChanged.add(this._setParticleSizeForRenderTargets.bind(this));
+        object.onParticleSizeChanged.add(() => this._setParticleSizeForRenderTargets());
 
         if (!targetRenderer) {
             targetRenderer = new FluidRenderingTargetRenderer(this._scene, camera);
@@ -239,7 +255,7 @@ export class FluidRenderer {
         }
 
         if (!targetRenderer._onUseVelocityChanged.hasObservers()) {
-            targetRenderer._onUseVelocityChanged.add(this._setUseVelocityForRenderObject.bind(this));
+            targetRenderer._onUseVelocityChanged.add(() => this._setUseVelocityForRenderObject());
         }
 
         if (generateDiffuseTexture !== undefined) {
@@ -275,7 +291,7 @@ export class FluidRenderer {
     ): IFluidRenderingRenderObject {
         const object = new FluidRenderingObjectCustomParticles(this._scene, buffers, numParticles);
 
-        object.onParticleSizeChanged.add(this._setParticleSizeForRenderTargets.bind(this));
+        object.onParticleSizeChanged.add(() => this._setParticleSizeForRenderTargets());
 
         if (!targetRenderer) {
             targetRenderer = new FluidRenderingTargetRenderer(this._scene, camera);
@@ -283,7 +299,7 @@ export class FluidRenderer {
         }
 
         if (!targetRenderer._onUseVelocityChanged.hasObservers()) {
-            targetRenderer._onUseVelocityChanged.add(this._setUseVelocityForRenderObject.bind(this));
+            targetRenderer._onUseVelocityChanged.add(() => this._setUseVelocityForRenderObject());
         }
 
         if (generateDiffuseTexture !== undefined) {
@@ -425,7 +441,7 @@ export class FluidRenderer {
                         if (!copyDepthTexture) {
                             copyDepthTexture = copyDepthTextures[key] = new FluidRenderingDepthTextureCopy(this._engine, thicknessTexture.width, thicknessTexture.height);
                         }
-                        copyDepthTexture.depthRTWrapper._shareDepth(thicknessRT);
+                        copyDepthTexture.depthRTWrapper.shareDepth(thicknessRT);
                     }
                 }
             });

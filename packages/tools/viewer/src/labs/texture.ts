@@ -4,6 +4,7 @@ import { InternalTexture, InternalTextureSource } from "core/Materials/Textures/
 import { Scalar } from "core/Maths/math.scalar";
 import type { BaseTexture } from "core/Materials/Textures/baseTexture";
 import { Texture } from "core/Materials/Textures/texture";
+import type { Engine } from "core/Engines/engine";
 
 /**
  * WebGL Pixel Formats
@@ -159,7 +160,11 @@ export class TextureCube {
      * @param type WebGL pixel type of the supplied data and texture on the GPU
      * @param source An array containing mipmap levels of faces, where each mipmap level is an array of faces and each face is a TextureSource object
      */
-    constructor(public internalFormat: PixelFormat, public type: PixelType, public source: MipmapsCube = []) {}
+    constructor(
+        public internalFormat: PixelFormat,
+        public type: PixelType,
+        public source: MipmapsCube = []
+    ) {}
 }
 
 /**
@@ -247,7 +252,7 @@ export class TextureUtils {
 
                 const gl = (<any>scene.getEngine())._gl;
                 gl.bindTexture(gl.TEXTURE_CUBE_MAP, glTexture);
-                scene.getEngine()._unpackFlipY(false);
+                (scene.getEngine() as Engine)._unpackFlipY(false);
                 if (face instanceof HTMLElement || face instanceof ImageData) {
                     gl.texImage2D(gl.TEXTURE_CUBE_MAP_POSITIVE_X + i, level, textureCube.internalFormat, textureCube.internalFormat, textureCube.type, <any>face);
                 } else {

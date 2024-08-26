@@ -17,14 +17,15 @@ export interface INativeEngine {
     dispose(): void;
 
     requestAnimationFrame(callback: () => void): void;
+    setDeviceLostCallback(callback: () => void): void;
 
     createVertexArray(): NativeData;
 
-    createIndexBuffer(bytes: ArrayBuffer, byteOffset: number, byteLength: number, is32Bits: boolean, dynamic: boolean): NativeData;
+    createIndexBuffer(dataBuffer: ArrayBuffer, dataByteOffset: number, dataByteLength: number, is32Bits: boolean, dynamic: boolean): NativeData;
     recordIndexBuffer(vertexArray: NativeData, indexBuffer: NativeData): void;
-    updateDynamicIndexBuffer(buffer: NativeData, bytes: ArrayBuffer, byteOffset: number, byteLength: number, startIndex: number): void;
+    updateDynamicIndexBuffer(indexBuffer: NativeData, data: ArrayBuffer, dataByteOffset: number, dataByteLength: number, startIndex: number): void;
 
-    createVertexBuffer(bytes: ArrayBuffer, byteOffset: number, byteLength: number, dynamic: boolean): NativeData;
+    createVertexBuffer(dataBuffer: ArrayBuffer, dataByteOffset: number, dataByteLength: number, dynamic: boolean): NativeData;
     recordVertexBuffer(
         vertexArray: NativeData,
         vertexBuffer: NativeData,
@@ -36,7 +37,7 @@ export interface INativeEngine {
         normalized: boolean,
         instanceDivisor: number
     ): void;
-    updateDynamicVertexBuffer(vertexBuffer: NativeData, bytes: ArrayBuffer, byteOffset: number, byteLength: number): void;
+    updateDynamicVertexBuffer(vertexBuffer: NativeData, dataBuffer: ArrayBuffer, dataByteOffset: number, dataByteLength: number, vertexByteOffset?: number): void;
 
     createProgram(vertexShader: string, fragmentShader: string): NativeProgram;
     createProgramAsync(vertexShader: string, fragmentShader: string, onSuccess: () => void, onError: (error: Error) => void): NativeProgram;
@@ -44,7 +45,7 @@ export interface INativeEngine {
     getAttributes(shaderProgram: NativeProgram, attributeNames: string[]): number[];
 
     createTexture(): NativeTexture;
-    initializeTexture(texture: NativeTexture, width: number, height: number, hasMips: boolean, format: number, renderTarget: boolean, srgb: boolean): void;
+    initializeTexture(texture: NativeTexture, width: number, height: number, hasMips: boolean, format: number, renderTarget: boolean, srgb: boolean, samples: number): void;
     loadTexture(texture: NativeTexture, data: ArrayBufferView, generateMips: boolean, invertY: boolean, srgb: boolean, onSuccess: () => void, onError: () => void): void;
     loadRawTexture(texture: NativeTexture, data: ArrayBufferView, width: number, height: number, format: number, generateMips: boolean, invertY: boolean): void;
     loadRawTexture2DArray(
@@ -78,7 +79,14 @@ export interface INativeEngine {
     createImageBitmap(data: ArrayBufferView | IImage): ImageBitmap;
     resizeImageBitmap(image: ImageBitmap, bufferWidth: number, bufferHeight: number): Uint8Array;
 
-    createFrameBuffer(texture: Nullable<NativeTexture>, width: number, height: number, generateStencilBuffer: boolean, generateDepthBuffer: boolean): NativeFramebuffer;
+    createFrameBuffer(
+        texture: Nullable<NativeTexture>,
+        width: number,
+        height: number,
+        generateStencilBuffer: boolean,
+        generateDepthBuffer: boolean,
+        samples: number
+    ): NativeFramebuffer;
 
     getRenderWidth(): number;
     getRenderHeight(): number;
@@ -92,9 +100,15 @@ export interface INativeEngine {
 }
 
 /** @internal */
+interface INativeEngineInfo {
+    version: string;
+    nonFloatVertexBuffers: true;
+}
+
+/** @internal */
 interface INativeEngineConstructor {
     prototype: INativeEngine;
-    new (): INativeEngine;
+    new (info: INativeEngineInfo): INativeEngine;
 
     readonly PROTOCOL_VERSION: number;
 
@@ -129,10 +143,102 @@ interface INativeEngineConstructor {
     readonly ADDRESS_MODE_BORDER: number;
     readonly ADDRESS_MODE_MIRROR_ONCE: number;
 
+    readonly TEXTURE_FORMAT_BC1: number;
+    readonly TEXTURE_FORMAT_BC2: number;
+    readonly TEXTURE_FORMAT_BC3: number;
+    readonly TEXTURE_FORMAT_BC4: number;
+    readonly TEXTURE_FORMAT_BC5: number;
+    readonly TEXTURE_FORMAT_BC6H: number;
+    readonly TEXTURE_FORMAT_BC7: number;
+    readonly TEXTURE_FORMAT_ETC1: number;
+    readonly TEXTURE_FORMAT_ETC2: number;
+    readonly TEXTURE_FORMAT_ETC2A: number;
+    readonly TEXTURE_FORMAT_ETC2A1: number;
+    readonly TEXTURE_FORMAT_PTC12: number;
+    readonly TEXTURE_FORMAT_PTC14: number;
+    readonly TEXTURE_FORMAT_PTC12A: number;
+    readonly TEXTURE_FORMAT_PTC14A: number;
+    readonly TEXTURE_FORMAT_PTC22: number;
+    readonly TEXTURE_FORMAT_PTC24: number;
+    readonly TEXTURE_FORMAT_ATC: number;
+    readonly TEXTURE_FORMAT_ATCE: number;
+    readonly TEXTURE_FORMAT_ATCI: number;
+    readonly TEXTURE_FORMAT_ASTC4x4: number;
+    readonly TEXTURE_FORMAT_ASTC5x4: number;
+    readonly TEXTURE_FORMAT_ASTC5x5: number;
+    readonly TEXTURE_FORMAT_ASTC6x5: number;
+    readonly TEXTURE_FORMAT_ASTC6x6: number;
+    readonly TEXTURE_FORMAT_ASTC8x5: number;
+    readonly TEXTURE_FORMAT_ASTC8x6: number;
+    readonly TEXTURE_FORMAT_ASTC8x8: number;
+    readonly TEXTURE_FORMAT_ASTC10x5: number;
+    readonly TEXTURE_FORMAT_ASTC10x6: number;
+    readonly TEXTURE_FORMAT_ASTC10x8: number;
+    readonly TEXTURE_FORMAT_ASTC10x10: number;
+    readonly TEXTURE_FORMAT_ASTC12x10: number;
+    readonly TEXTURE_FORMAT_ASTC12x12: number;
+
+    readonly TEXTURE_FORMAT_R1: number;
+    readonly TEXTURE_FORMAT_A8: number;
+    readonly TEXTURE_FORMAT_R8: number;
+    readonly TEXTURE_FORMAT_R8I: number;
+    readonly TEXTURE_FORMAT_R8U: number;
+    readonly TEXTURE_FORMAT_R8S: number;
+    readonly TEXTURE_FORMAT_R16: number;
+    readonly TEXTURE_FORMAT_R16I: number;
+    readonly TEXTURE_FORMAT_R16U: number;
+    readonly TEXTURE_FORMAT_R16F: number;
+    readonly TEXTURE_FORMAT_R16S: number;
+    readonly TEXTURE_FORMAT_R32I: number;
+    readonly TEXTURE_FORMAT_R32U: number;
+    readonly TEXTURE_FORMAT_R32F: number;
+    readonly TEXTURE_FORMAT_RG8: number;
+    readonly TEXTURE_FORMAT_RG8I: number;
+    readonly TEXTURE_FORMAT_RG8U: number;
+    readonly TEXTURE_FORMAT_RG8S: number;
+    readonly TEXTURE_FORMAT_RG16: number;
+    readonly TEXTURE_FORMAT_RG16I: number;
+    readonly TEXTURE_FORMAT_RG16U: number;
+    readonly TEXTURE_FORMAT_RG16F: number;
+    readonly TEXTURE_FORMAT_RG16S: number;
+    readonly TEXTURE_FORMAT_RG32I: number;
+    readonly TEXTURE_FORMAT_RG32U: number;
+    readonly TEXTURE_FORMAT_RG32F: number;
     readonly TEXTURE_FORMAT_RGB8: number;
+    readonly TEXTURE_FORMAT_RGB8I: number;
+    readonly TEXTURE_FORMAT_RGB8U: number;
+    readonly TEXTURE_FORMAT_RGB8S: number;
+    readonly TEXTURE_FORMAT_RGB9E5F: number;
+    readonly TEXTURE_FORMAT_BGRA8: number;
     readonly TEXTURE_FORMAT_RGBA8: number;
+    readonly TEXTURE_FORMAT_RGBA8I: number;
+    readonly TEXTURE_FORMAT_RGBA8U: number;
+    readonly TEXTURE_FORMAT_RGBA8S: number;
+    readonly TEXTURE_FORMAT_RGBA16: number;
+    readonly TEXTURE_FORMAT_RGBA16I: number;
+    readonly TEXTURE_FORMAT_RGBA16U: number;
     readonly TEXTURE_FORMAT_RGBA16F: number;
+    readonly TEXTURE_FORMAT_RGBA16S: number;
+    readonly TEXTURE_FORMAT_RGBA32I: number;
+    readonly TEXTURE_FORMAT_RGBA32U: number;
     readonly TEXTURE_FORMAT_RGBA32F: number;
+    readonly TEXTURE_FORMAT_B5G6R5: number;
+    readonly TEXTURE_FORMAT_R5G6B5: number;
+    readonly TEXTURE_FORMAT_BGRA4: number;
+    readonly TEXTURE_FORMAT_RGBA4: number;
+    readonly TEXTURE_FORMAT_BGR5A1: number;
+    readonly TEXTURE_FORMAT_RGB5A1: number;
+    readonly TEXTURE_FORMAT_RGB10A2: number;
+    readonly TEXTURE_FORMAT_RG11B10F: number;
+
+    readonly TEXTURE_FORMAT_D16: number;
+    readonly TEXTURE_FORMAT_D24: number;
+    readonly TEXTURE_FORMAT_D24S8: number;
+    readonly TEXTURE_FORMAT_D32: number;
+    readonly TEXTURE_FORMAT_D16F: number;
+    readonly TEXTURE_FORMAT_D24F: number;
+    readonly TEXTURE_FORMAT_D32F: number;
+    readonly TEXTURE_FORMAT_D0S8: number;
 
     readonly ATTRIB_TYPE_INT8: number;
     readonly ATTRIB_TYPE_UINT8: number;
@@ -209,6 +315,8 @@ interface INativeEngineConstructor {
     readonly COMMAND_SETTEXTUREWRAPMODE: NativeData;
     readonly COMMAND_SETTEXTUREANISOTROPICLEVEL: NativeData;
     readonly COMMAND_SETTEXTURE: NativeData;
+    readonly COMMAND_UNSETTEXTURE?: NativeData;
+    readonly COMMAND_DISCARDALLTEXTURES?: NativeData;
     readonly COMMAND_BINDVERTEXARRAY: NativeData;
     readonly COMMAND_SETSTATE: NativeData;
     readonly COMMAND_DELETEPROGRAM: NativeData;
@@ -226,10 +334,13 @@ interface INativeEngineConstructor {
     readonly COMMAND_UNBINDFRAMEBUFFER: NativeData;
     readonly COMMAND_DELETEFRAMEBUFFER: NativeData;
     readonly COMMAND_DRAWINDEXED: NativeData;
+    readonly COMMAND_DRAWINDEXEDINSTANCED?: NativeData;
     readonly COMMAND_DRAW: NativeData;
+    readonly COMMAND_DRAWINSTANCED?: NativeData;
     readonly COMMAND_CLEAR: NativeData;
     readonly COMMAND_SETSTENCIL: NativeData;
     readonly COMMAND_SETVIEWPORT: NativeData;
+    readonly COMMAND_SETSCISSOR: NativeData;
 }
 
 /** @internal */

@@ -2,13 +2,12 @@ import type { Nullable } from "../types";
 import type { Camera } from "../Cameras/camera";
 import type { PostProcessOptions } from "./postProcess";
 import { PostProcess } from "./postProcess";
-import type { Engine } from "../Engines/engine";
+import type { AbstractEngine } from "../Engines/abstractEngine";
 
-import "../Shaders/displayPass.fragment";
 import { RegisterClass } from "../Misc/typeStore";
-import { SerializationHelper } from "../Misc/decorators";
+import { SerializationHelper } from "../Misc/decorators.serialization";
 
-declare type Scene = import("../scene").Scene;
+import type { Scene } from "../scene";
 
 /**
  * DisplayPassPostProcess which produces an output the same as it's input
@@ -18,7 +17,7 @@ export class DisplayPassPostProcess extends PostProcess {
      * Gets a string identifying the name of the class
      * @returns "DisplayPassPostProcess" string
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "DisplayPassPostProcess";
     }
 
@@ -31,14 +30,25 @@ export class DisplayPassPostProcess extends PostProcess {
      * @param engine The engine which the post process will be applied. (default: current engine)
      * @param reusable If the post process can be reused on the same frame. (default: false)
      */
-    constructor(name: string, options: number | PostProcessOptions, camera: Nullable<Camera>, samplingMode?: number, engine?: Engine, reusable?: boolean) {
+    constructor(name: string, options: number | PostProcessOptions, camera: Nullable<Camera>, samplingMode?: number, engine?: AbstractEngine, reusable?: boolean) {
         super(name, "displayPass", ["passSampler"], ["passSampler"], options, camera, samplingMode, engine, reusable);
+    }
+
+    protected override _gatherImports(useWebGPU: boolean, list: Promise<any>[]) {
+        if (useWebGPU) {
+            this._webGPUReady = true;
+            list.push(Promise.all([import("../ShadersWGSL/displayPass.fragment")]));
+        } else {
+            list.push(Promise.all([import("../Shaders/displayPass.fragment")]));
+        }
+
+        super._gatherImports(useWebGPU, list);
     }
 
     /**
      * @internal
      */
-    public static _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string): Nullable<DisplayPassPostProcess> {
+    public static override _Parse(parsedPostProcess: any, targetCamera: Camera, scene: Scene, rootUrl: string): Nullable<DisplayPassPostProcess> {
         return SerializationHelper.Parse(
             () => {
                 return new DisplayPassPostProcess(

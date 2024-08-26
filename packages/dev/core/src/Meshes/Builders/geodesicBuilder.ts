@@ -26,19 +26,6 @@ import { _PrimaryIsoTriangle, GeodesicData } from "../geodesicMesh";
  * * sideOrientation optional and takes the values : Mesh.FRONTSIDE (default), Mesh.BACKSIDE or Mesh.DOUBLESIDE
  * * frontUvs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the front side, optional, default vector4 (0, 0, 1, 1)
  * * backUVs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the back side, optional, default vector4 (0, 0, 1, 1)
- * @param options.n
- * @param options.size
- * @param options.sizeX
- * @param options.sizeY
- * @param options.sizeZ
- * @param options.faceUV
- * @param options.faceColors
- * @param options.flat
- * @param options.updatable
- * @param options.sideOrientation
- * @param options.frontUVs
- * @param options.backUVs
- * @param options.m
  * @param scene defines the hosting scene
  * @returns Geodesic mesh
  */
@@ -63,12 +50,12 @@ export function CreateGeodesic(
 ): Mesh {
     let m: number = options.m || 1;
     if (m !== Math.floor(m)) {
-        m === Math.floor(m);
+        m = Math.floor(m);
         Logger.Warn("m not an integer only floor(m) used");
     }
     let n: number = options.n || 0;
     if (n !== Math.floor(n)) {
-        n === Math.floor(n);
+        n = Math.floor(n);
         Logger.Warn("n not an integer only floor(n) used");
     }
     if (n > m) {

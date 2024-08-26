@@ -9,8 +9,8 @@ import type { WebGLRenderTargetWrapper } from "../WebGL/webGLRenderTargetWrapper
 import type { WebGLHardwareTexture } from "../WebGL/webGLHardwareTexture";
 import type { TextureSize } from "../../Materials/Textures/textureCreationOptions";
 
-declare module "../../Engines/thinEngine" {
-    export interface ThinEngine {
+declare module "../../Engines/abstractEngine" {
+    export interface AbstractEngine {
         /**
          * Unbind a list of render target textures from the webGL context
          * This is used only when drawBuffer extension or webGL2 are active
@@ -140,7 +140,7 @@ ThinEngine.prototype.unBindMultiColorAttachmentFramebuffer = function (
 
     for (let i = 0; i < count; i++) {
         const texture = rtWrapper.textures![i];
-        if (texture?.generateMipMaps && !disableGenerateMipMaps && !texture.isCube) {
+        if (texture?.generateMipMaps && !disableGenerateMipMaps && !texture?.isCube && !texture?.is3D) {
             this._bindTextureDirectly(gl.TEXTURE_2D, texture, true);
             gl.generateMipmap(gl.TEXTURE_2D);
             this._bindTextureDirectly(gl.TEXTURE_2D, null);
@@ -172,14 +172,14 @@ ThinEngine.prototype.createMultipleRenderTarget = function (size: TextureSize, o
     const defaultFormat = Constants.TEXTUREFORMAT_RGBA;
     const defaultTarget = Constants.TEXTURE_2D;
 
-    let types = new Array<number>();
-    let samplingModes = new Array<number>();
-    let useSRGBBuffers = new Array<boolean>();
-    let formats = new Array<number>();
-    let targets = new Array<number>();
-    let faceIndex = new Array<number>();
-    let layerIndex = new Array<number>();
-    let layers = new Array<number>();
+    let types: number[] = [];
+    let samplingModes: number[] = [];
+    let useSRGBBuffers: boolean[] = [];
+    let formats: number[] = [];
+    let targets: number[] = [];
+    let faceIndex: number[] = [];
+    let layerIndex: number[] = [];
+    let layers: number[] = [];
 
     const rtWrapper = this._createHardwareRenderTargetWrapper(true, false, size) as WebGLRenderTargetWrapper;
 
@@ -225,6 +225,9 @@ ThinEngine.prototype.createMultipleRenderTarget = function (size: TextureSize, o
             depthTextureFormat = options.depthTextureFormat;
         }
     }
+
+    rtWrapper.label = options?.label ?? "MultiRenderTargetWrapper";
+
     const gl = this._gl;
     // Create the framebuffer
     const framebuffer = gl.createFramebuffer();
@@ -346,10 +349,10 @@ ThinEngine.prototype.createMultipleRenderTarget = function (size: TextureSize, o
         const depthTexture = new InternalTexture(this, InternalTextureSource.Depth);
 
         let depthTextureType = Constants.TEXTURETYPE_UNSIGNED_SHORT;
-        let glDepthTextureInternalFormat = gl.DEPTH_COMPONENT16;
-        let glDepthTextureFormat = gl.DEPTH_COMPONENT;
-        let glDepthTextureType = gl.UNSIGNED_SHORT;
-        let glDepthTextureAttachment = gl.DEPTH_ATTACHMENT;
+        let glDepthTextureInternalFormat: GLenum = gl.DEPTH_COMPONENT16;
+        let glDepthTextureFormat: GLenum = gl.DEPTH_COMPONENT;
+        let glDepthTextureType: GLenum = gl.UNSIGNED_SHORT;
+        let glDepthTextureAttachment: GLenum = gl.DEPTH_ATTACHMENT;
         if (this.webGLVersion < 2) {
             glDepthTextureInternalFormat = gl.DEPTH_COMPONENT;
         } else {
@@ -479,7 +482,7 @@ ThinEngine.prototype.updateMultipleRenderTargetTextureSampleCount = function (
                 texture.height,
                 samples,
                 -1 /* not used */,
-                this._getRGBAMultiSampleBufferFormat(texture.type, texture.format),
+                this._getRGBABufferInternalSizedFormat(texture.type, texture.format, texture._useSRGBBuffer),
                 attachment
             );
 

@@ -5,7 +5,7 @@ import { VertexData } from "../mesh.vertexData";
 import { Scene } from "../../scene";
 import type { Nullable } from "../../types";
 import { Axis } from "../../Maths/math.axis";
-import { CompatibilityOptions } from "../../Compat/compatibilityOptions";
+import { useOpenGLOrientationForUV } from "../../Compat/compatibilityOptions";
 
 /**
  * Creates the VertexData for a cylinder, cone or prism
@@ -24,21 +24,6 @@ import { CompatibilityOptions } from "../../Compat/compatibilityOptions";
  * * sideOrientation optional and takes the values : Mesh.FRONTSIDE (default), Mesh.BACKSIDE or Mesh.DOUBLESIDE
  * * frontUvs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the front side, optional, default vector4 (0, 0, 1, 1)
  * * backUVs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the back side, optional, default vector4 (0, 0, 1, 1)
- * @param options.height
- * @param options.diameterTop
- * @param options.diameterBottom
- * @param options.diameter
- * @param options.tessellation
- * @param options.subdivisions
- * @param options.arc
- * @param options.faceColors
- * @param options.faceUV
- * @param options.hasRings
- * @param options.enclose
- * @param options.cap
- * @param options.sideOrientation
- * @param options.frontUVs
- * @param options.backUVs
  * @returns the VertexData of the cylinder, cone or prism
  */
 // eslint-disable-next-line @typescript-eslint/naming-convention
@@ -64,8 +49,8 @@ export function CreateCylinderVertexData(options: {
     let diameterBottom: number = options.diameterBottom === 0 ? 0 : options.diameterBottom || options.diameter || 1;
     diameterTop = diameterTop || 0.00001; // Prevent broken normals
     diameterBottom = diameterBottom || 0.00001; // Prevent broken normals
-    const tessellation: number = options.tessellation || 24;
-    const subdivisions: number = options.subdivisions || 1;
+    const tessellation: number = (options.tessellation || 24) | 0;
+    const subdivisions: number = (options.subdivisions || 1) | 0;
     const hasRings: boolean = options.hasRings ? true : false;
     const enclose: boolean = options.enclose ? true : false;
     const cap = options.cap === 0 ? 0 : options.cap || Mesh.CAP_ALL;
@@ -90,11 +75,11 @@ export function CreateCylinderVertexData(options: {
         }
     }
 
-    const indices = new Array<number>();
-    const positions = new Array<number>();
-    const normals = new Array<number>();
-    const uvs = new Array<number>();
-    const colors = new Array<number>();
+    const indices: number[] = [];
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const uvs: number[] = [];
+    const colors: number[] = [];
 
     const angleStep = (Math.PI * 2 * arc) / tessellation;
     let angle: number;
@@ -162,7 +147,7 @@ export function CreateCylinderVertexData(options: {
                 } else {
                     v = faceUV[s].y + (faceUV[s].w - faceUV[s].y) * h;
                 }
-                uvs.push(faceUV[s].x + ((faceUV[s].z - faceUV[s].x) * j) / tessellation, CompatibilityOptions.UseOpenGLOrientationForUV ? 1 - v : v);
+                uvs.push(faceUV[s].x + ((faceUV[s].z - faceUV[s].x) * j) / tessellation, useOpenGLOrientationForUV ? 1 - v : v);
                 if (faceColors) {
                     colors.push(faceColors[s].r, faceColors[s].g, faceColors[s].b, faceColors[s].a);
                 }
@@ -185,15 +170,15 @@ export function CreateCylinderVertexData(options: {
                 } else {
                     v = faceUV[s + 1].y + (faceUV[s + 1].w - faceUV[s + 1].y) * h;
                 }
-                uvs.push(faceUV[s + 1].x, CompatibilityOptions.UseOpenGLOrientationForUV ? 1 - v : v);
-                uvs.push(faceUV[s + 1].z, CompatibilityOptions.UseOpenGLOrientationForUV ? 1 - v : v);
+                uvs.push(faceUV[s + 1].x, useOpenGLOrientationForUV ? 1 - v : v);
+                uvs.push(faceUV[s + 1].z, useOpenGLOrientationForUV ? 1 - v : v);
                 if (hasRings) {
                     v = cs !== s ? faceUV[s + 2].y : faceUV[s + 2].w;
                 } else {
                     v = faceUV[s + 2].y + (faceUV[s + 2].w - faceUV[s + 2].y) * h;
                 }
-                uvs.push(faceUV[s + 2].x, CompatibilityOptions.UseOpenGLOrientationForUV ? 1 - v : v);
-                uvs.push(faceUV[s + 2].z, CompatibilityOptions.UseOpenGLOrientationForUV ? 1 - v : v);
+                uvs.push(faceUV[s + 2].x, useOpenGLOrientationForUV ? 1 - v : v);
+                uvs.push(faceUV[s + 2].z, useOpenGLOrientationForUV ? 1 - v : v);
                 if (faceColors) {
                     colors.push(faceColors[s + 1].r, faceColors[s + 1].g, faceColors[s + 1].b, faceColors[s + 1].a);
                     colors.push(faceColors[s + 1].r, faceColors[s + 1].g, faceColors[s + 1].b, faceColors[s + 1].a);
@@ -256,7 +241,7 @@ export function CreateCylinderVertexData(options: {
         positions.push(center.x, center.y, center.z);
         normals.push(0, isTop ? 1 : -1, 0);
         const v = u.y + (u.w - u.y) * 0.5;
-        uvs.push(u.x + (u.z - u.x) * 0.5, CompatibilityOptions.UseOpenGLOrientationForUV ? 1 - v : v);
+        uvs.push(u.x + (u.z - u.x) * 0.5, useOpenGLOrientationForUV ? 1 - v : v);
         if (c) {
             colors.push(c.r, c.g, c.b, c.a);
         }
@@ -271,7 +256,7 @@ export function CreateCylinderVertexData(options: {
             positions.push(circleVector.x, circleVector.y, circleVector.z);
             normals.push(0, isTop ? 1 : -1, 0);
             const v = u.y + (u.w - u.y) * textureCoordinate.y;
-            uvs.push(u.x + (u.z - u.x) * textureCoordinate.x, CompatibilityOptions.UseOpenGLOrientationForUV ? 1 - v : v);
+            uvs.push(u.x + (u.z - u.x) * textureCoordinate.x, useOpenGLOrientationForUV ? 1 - v : v);
             if (c) {
                 colors.push(c.r, c.g, c.b, c.a);
             }
@@ -338,22 +323,6 @@ export function CreateCylinderVertexData(options: {
  * * The mesh can be set to updatable with the boolean parameter `updatable` (default false) if its internal geometry is supposed to change once created.
  * @param name defines the name of the mesh
  * @param options defines the options used to create the mesh
- * @param options.height
- * @param options.diameterTop
- * @param options.diameterBottom
- * @param options.diameter
- * @param options.tessellation
- * @param options.subdivisions
- * @param options.arc
- * @param options.faceColors
- * @param options.faceUV
- * @param options.updatable
- * @param options.hasRings
- * @param options.enclose
- * @param options.cap
- * @param options.sideOrientation
- * @param options.frontUVs
- * @param options.backUVs
  * @param scene defines the hosting scene
  * @returns the cylinder mesh
  * @see https://doc.babylonjs.com/features/featuresDeepDive/mesh/creation/set#cylinder-or-cone
@@ -403,7 +372,7 @@ export const CylinderBuilder = {
 
 VertexData.CreateCylinder = CreateCylinderVertexData;
 
-(Mesh as any).CreateCylinder = (
+Mesh.CreateCylinder = (
     name: string,
     height: number,
     diameterTop: number,

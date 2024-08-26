@@ -1,8 +1,8 @@
-import { serialize, SerializationHelper, serializeAsVector3 } from "../Misc/decorators";
+import { serialize, serializeAsVector3 } from "../Misc/decorators";
 import { SmartArray } from "../Misc/smartArray";
 import { Tools } from "../Misc/tools";
 import { Observable } from "../Misc/observable";
-import type { Nullable } from "../types";
+import type { DeepImmutable, Nullable } from "../types";
 import type { CameraInputsManager } from "./cameraInputsManager";
 import type { Scene } from "../scene";
 import { Matrix, Vector3, Quaternion } from "../Maths/math.vector";
@@ -18,11 +18,25 @@ import { Frustum } from "../Maths/math.frustum";
 import type { Plane } from "../Maths/math.plane";
 import { Constants } from "../Engines/constants";
 
-declare type PostProcess = import("../PostProcesses/postProcess").PostProcess;
-declare type RenderTargetTexture = import("../Materials/Textures/renderTargetTexture").RenderTargetTexture;
-declare type FreeCamera = import("./freeCamera").FreeCamera;
-declare type TargetCamera = import("./targetCamera").TargetCamera;
-declare type Ray = import("../Culling/ray").Ray;
+import type { PostProcess } from "../PostProcesses/postProcess";
+import type { RenderTargetTexture } from "../Materials/Textures/renderTargetTexture";
+import type { FreeCamera } from "./freeCamera";
+import type { TargetCamera } from "./targetCamera";
+import type { Ray } from "../Culling/ray";
+import type { ArcRotateCamera } from "./arcRotateCamera";
+import { SerializationHelper } from "../Misc/decorators.serialization";
+
+/**
+ * Oblique projection values
+ */
+export interface IObliqueParams {
+    /** The angle of the plane */
+    angle: number;
+    /** The length of the plane */
+    length: number;
+    /** The offset of the plane */
+    offset: number;
+}
 
 /**
  * This is the base class of all the camera used in the application.
@@ -90,10 +104,6 @@ export class Camera extends Node {
      */
     public static readonly RIG_MODE_VR = Constants.RIG_MODE_VR;
     /**
-     * Defines that both eyes of the camera should be renderered in a VR mode (webVR).
-     */
-    public static readonly RIG_MODE_WEBVR = Constants.RIG_MODE_WEBVR;
-    /**
      * Custom rig mode allowing rig cameras to be populated manually with any number of cameras
      */
     public static readonly RIG_MODE_CUSTOM = Constants.RIG_MODE_CUSTOM;
@@ -139,6 +149,11 @@ export class Camera extends Node {
     }
 
     /**
+     * Object containing oblique projection values (only used with ORTHOGRAPHIC_CAMERA)
+     */
+    public oblique: Nullable<IObliqueParams> = null;
+
+    /**
      * The screen area in scene units squared
      */
     public get screenArea(): number {
@@ -163,12 +178,12 @@ export class Camera extends Node {
         return x * y;
     }
 
+    private _orthoLeft: Nullable<number> = null;
+
     /**
      * Define the current limit on the left side for an orthographic camera
      * In scene unit
      */
-    private _orthoLeft: Nullable<number> = null;
-
     public set orthoLeft(value: Nullable<number>) {
         this._orthoLeft = value;
 
@@ -182,12 +197,12 @@ export class Camera extends Node {
         return this._orthoLeft;
     }
 
+    private _orthoRight: Nullable<number> = null;
+
     /**
      * Define the current limit on the right side for an orthographic camera
      * In scene unit
      */
-    private _orthoRight: Nullable<number> = null;
-
     public set orthoRight(value: Nullable<number>) {
         this._orthoRight = value;
 
@@ -201,12 +216,12 @@ export class Camera extends Node {
         return this._orthoRight;
     }
 
+    private _orthoBottom: Nullable<number> = null;
+
     /**
      * Define the current limit on the bottom side for an orthographic camera
      * In scene unit
      */
-    private _orthoBottom: Nullable<number> = null;
-
     public set orthoBottom(value: Nullable<number>) {
         this._orthoBottom = value;
 
@@ -220,12 +235,12 @@ export class Camera extends Node {
         return this._orthoBottom;
     }
 
+    private _orthoTop: Nullable<number> = null;
+
     /**
      * Define the current limit on the top side for an orthographic camera
      * In scene unit
      */
-    private _orthoTop: Nullable<number> = null;
-
     public set orthoTop(value: Nullable<number>) {
         this._orthoTop = value;
 
@@ -276,10 +291,11 @@ export class Camera extends Node {
     @serialize()
     public inertia = 0.9;
 
+    private _mode = Camera.PERSPECTIVE_CAMERA;
+
     /**
      * Define the mode of the camera (Camera.PERSPECTIVE_CAMERA or Camera.ORTHOGRAPHIC_CAMERA)
      */
-    private _mode = Camera.PERSPECTIVE_CAMERA;
     set mode(mode: number) {
         this._mode = mode;
 
@@ -346,7 +362,7 @@ export class Camera extends Node {
      *
      * To change the final output target of the camera, camera.outputRenderTarget should be used instead (eg. webXR renders to a render target corresponding to an HMD)
      */
-    public customRenderTargets = new Array<RenderTargetTexture>();
+    public customRenderTargets: RenderTargetTexture[] = [];
     /**
      * When set, the camera will render to this render target instead of the default canvas
      *
@@ -387,6 +403,15 @@ export class Camera extends Node {
      */
     public renderPassId: number;
 
+    private _hasMoved = false;
+
+    /**
+     * Gets a flag indicating that the camera has moved in some way since the last call to Camera.update()
+     */
+    public get hasMoved() {
+        return this._hasMoved;
+    }
+
     /** @internal */
     public _cameraRigParams: any;
     /** @internal */
@@ -394,7 +419,6 @@ export class Camera extends Node {
     /** @internal */
     public _rigPostProcess: Nullable<PostProcess>;
 
-    protected _webvrViewMatrix = Matrix.Identity();
     /** @internal */
     public _skipRendering = false;
 
@@ -429,7 +453,7 @@ export class Camera extends Node {
      * @param setActiveOnSceneIfNoneActive Defines if the camera should be set as active after creation if no other camera have been defined in the scene
      */
     constructor(name: string, position: Vector3, scene?: Scene, setActiveOnSceneIfNoneActive = true) {
-        super(name, scene);
+        super(name, scene, false);
 
         this.getScene().addCamera(this);
 
@@ -453,7 +477,15 @@ export class Camera extends Node {
     }
 
     /**
+     * Returns true if a state has been stored by calling storeState method.
+     * @returns true if state has been stored.
+     */
+    public hasStateStored(): boolean {
+        return !!this._stateStored;
+    }
+    /**
      * Restores the camera state values if it has been stored. You must call storeState() first
+     * @returns true if restored and false otherwise
      */
     protected _restoreStateValues(): boolean {
         if (!this._stateStored) {
@@ -482,7 +514,7 @@ export class Camera extends Node {
      * Gets the class name of the camera.
      * @returns the class name
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "Camera";
     }
 
@@ -494,7 +526,7 @@ export class Camera extends Node {
      * @param fullDetails Defines that a more verbose level of logging is required
      * @returns the string representation
      */
-    public toString(fullDetails?: boolean): string {
+    public override toString(fullDetails?: boolean): string {
         let ret = "Name: " + this.name;
         ret += ", type: " + this.getClassName();
         if (this.animations) {
@@ -543,7 +575,7 @@ export class Camera extends Node {
      * @param completeCheck defines if a complete check (including post processes) has to be done (false by default)
      * @returns true if the camera is ready
      */
-    public isReady(completeCheck = false): boolean {
+    public override isReady(completeCheck = false): boolean {
         if (completeCheck) {
             for (const pp of this._postProcesses) {
                 if (pp && !pp.isReady()) {
@@ -555,7 +587,7 @@ export class Camera extends Node {
     }
 
     /** @internal */
-    public _initCache() {
+    public override _initCache() {
         super._initCache();
 
         this._cache.position = new Vector3(Number.MAX_VALUE, Number.MAX_VALUE, Number.MAX_VALUE);
@@ -573,6 +605,9 @@ export class Camera extends Node {
         this._cache.orthoRight = undefined;
         this._cache.orthoBottom = undefined;
         this._cache.orthoTop = undefined;
+        this._cache.obliqueAngle = undefined;
+        this._cache.obliqueLength = undefined;
+        this._cache.obliqueOffset = undefined;
         this._cache.renderWidth = undefined;
         this._cache.renderHeight = undefined;
     }
@@ -580,7 +615,7 @@ export class Camera extends Node {
     /**
      * @internal
      */
-    public _updateCache(ignoreParentClass?: boolean): void {
+    public override _updateCache(ignoreParentClass?: boolean): void {
         if (!ignoreParentClass) {
             super._updateCache();
         }
@@ -590,7 +625,7 @@ export class Camera extends Node {
     }
 
     /** @internal */
-    public _isSynchronized(): boolean {
+    public override _isSynchronized(): boolean {
         return this._isSynchronizedViewMatrix() && this._isSynchronizedProjectionMatrix();
     }
 
@@ -605,31 +640,39 @@ export class Camera extends Node {
 
     /** @internal */
     public _isSynchronizedProjectionMatrix(): boolean {
-        let check = this._cache.mode === this.mode && this._cache.minZ === this.minZ && this._cache.maxZ === this.maxZ;
+        let isSynchronized = this._cache.mode === this.mode && this._cache.minZ === this.minZ && this._cache.maxZ === this.maxZ;
 
-        if (!check) {
+        if (!isSynchronized) {
             return false;
         }
 
         const engine = this.getEngine();
 
         if (this.mode === Camera.PERSPECTIVE_CAMERA) {
-            check =
+            isSynchronized =
                 this._cache.fov === this.fov &&
                 this._cache.fovMode === this.fovMode &&
                 this._cache.aspectRatio === engine.getAspectRatio(this) &&
                 this._cache.projectionPlaneTilt === this.projectionPlaneTilt;
         } else {
-            check =
+            isSynchronized =
                 this._cache.orthoLeft === this.orthoLeft &&
                 this._cache.orthoRight === this.orthoRight &&
                 this._cache.orthoBottom === this.orthoBottom &&
                 this._cache.orthoTop === this.orthoTop &&
                 this._cache.renderWidth === engine.getRenderWidth() &&
                 this._cache.renderHeight === engine.getRenderHeight();
+
+            if (this.oblique) {
+                isSynchronized =
+                    isSynchronized &&
+                    this._cache.obliqueAngle === this.oblique.angle &&
+                    this._cache.obliqueLength === this.oblique.length &&
+                    this._cache.obliqueOffset === this.oblique.offset;
+            }
         }
 
-        return check;
+        return isSynchronized;
     }
 
     /**
@@ -672,6 +715,7 @@ export class Camera extends Node {
      * Update the camera state according to the different inputs gathered during the frame.
      */
     public update(): void {
+        this._hasMoved = false;
         this._checkInputs();
         if (this.cameraRigMode !== Camera.RIG_MODE_NONE) {
             this._updateRigCameras();
@@ -792,13 +836,14 @@ export class Camera extends Node {
 
     /**
      * Gets the current world matrix of the camera
+     * @returns the world matrix
      */
-    public getWorldMatrix(): Matrix {
+    public override getWorldMatrix(): Matrix {
         if (this._isSynchronizedViewMatrix()) {
             return this._worldMatrix;
         }
 
-        // Getting the the view matrix will also compute the world matrix.
+        // Getting the view matrix will also compute the world matrix.
         this.getViewMatrix();
 
         return this._worldMatrix;
@@ -819,8 +864,11 @@ export class Camera extends Node {
             return this._computedViewMatrix;
         }
 
+        this._hasMoved = true;
+
         this.updateCache();
         this._computedViewMatrix = this._getViewMatrix();
+
         this._currentRenderId = this.getScene().getRenderId();
         this._childUpdateId++;
 
@@ -925,33 +973,68 @@ export class Camera extends Node {
             const halfWidth = engine.getRenderWidth() / 2.0;
             const halfHeight = engine.getRenderHeight() / 2.0;
             if (scene.useRightHandedSystem) {
-                Matrix.OrthoOffCenterRHToRef(
-                    this.orthoLeft ?? -halfWidth,
-                    this.orthoRight ?? halfWidth,
-                    this.orthoBottom ?? -halfHeight,
-                    this.orthoTop ?? halfHeight,
-                    reverseDepth ? this.maxZ : this.minZ,
-                    reverseDepth ? this.minZ : this.maxZ,
-                    this._projectionMatrix,
-                    engine.isNDCHalfZRange
-                );
+                if (this.oblique) {
+                    Matrix.ObliqueOffCenterRHToRef(
+                        this.orthoLeft ?? -halfWidth,
+                        this.orthoRight ?? halfWidth,
+                        this.orthoBottom ?? -halfHeight,
+                        this.orthoTop ?? halfHeight,
+                        reverseDepth ? this.maxZ : this.minZ,
+                        reverseDepth ? this.minZ : this.maxZ,
+                        this.oblique.length,
+                        this.oblique.angle,
+                        this._computeObliqueDistance(this.oblique.offset),
+                        this._projectionMatrix,
+                        engine.isNDCHalfZRange
+                    );
+                } else {
+                    Matrix.OrthoOffCenterRHToRef(
+                        this.orthoLeft ?? -halfWidth,
+                        this.orthoRight ?? halfWidth,
+                        this.orthoBottom ?? -halfHeight,
+                        this.orthoTop ?? halfHeight,
+                        reverseDepth ? this.maxZ : this.minZ,
+                        reverseDepth ? this.minZ : this.maxZ,
+                        this._projectionMatrix,
+                        engine.isNDCHalfZRange
+                    );
+                }
             } else {
-                Matrix.OrthoOffCenterLHToRef(
-                    this.orthoLeft ?? -halfWidth,
-                    this.orthoRight ?? halfWidth,
-                    this.orthoBottom ?? -halfHeight,
-                    this.orthoTop ?? halfHeight,
-                    reverseDepth ? this.maxZ : this.minZ,
-                    reverseDepth ? this.minZ : this.maxZ,
-                    this._projectionMatrix,
-                    engine.isNDCHalfZRange
-                );
+                if (this.oblique) {
+                    Matrix.ObliqueOffCenterLHToRef(
+                        this.orthoLeft ?? -halfWidth,
+                        this.orthoRight ?? halfWidth,
+                        this.orthoBottom ?? -halfHeight,
+                        this.orthoTop ?? halfHeight,
+                        reverseDepth ? this.maxZ : this.minZ,
+                        reverseDepth ? this.minZ : this.maxZ,
+                        this.oblique.length,
+                        this.oblique.angle,
+                        this._computeObliqueDistance(this.oblique.offset),
+                        this._projectionMatrix,
+                        engine.isNDCHalfZRange
+                    );
+                } else {
+                    Matrix.OrthoOffCenterLHToRef(
+                        this.orthoLeft ?? -halfWidth,
+                        this.orthoRight ?? halfWidth,
+                        this.orthoBottom ?? -halfHeight,
+                        this.orthoTop ?? halfHeight,
+                        reverseDepth ? this.maxZ : this.minZ,
+                        reverseDepth ? this.minZ : this.maxZ,
+                        this._projectionMatrix,
+                        engine.isNDCHalfZRange
+                    );
+                }
             }
 
             this._cache.orthoLeft = this.orthoLeft;
             this._cache.orthoRight = this.orthoRight;
             this._cache.orthoBottom = this.orthoBottom;
             this._cache.orthoTop = this.orthoTop;
+            this._cache.obliqueAngle = this.oblique?.angle;
+            this._cache.obliqueLength = this.oblique?.length;
+            this._cache.obliqueOffset = this.oblique?.offset;
             this._cache.renderWidth = engine.getRenderWidth();
             this._cache.renderHeight = engine.getRenderHeight();
         }
@@ -968,6 +1051,12 @@ export class Camera extends Node {
     public getTransformationMatrix(): Matrix {
         this._computedViewMatrix.multiplyToRef(this._projectionMatrix, this._transformMatrix);
         return this._transformMatrix;
+    }
+
+    private _computeObliqueDistance(offset: number): number {
+        const arcRotateCamera = this as Camera as ArcRotateCamera;
+        const targetCamera = this as Camera as TargetCamera;
+        return (arcRotateCamera.radius || (targetCamera.target ? Vector3.Distance(this.position, targetCamera.target) : this.position.length())) + offset;
     }
 
     private _updateFrustumPlanes(): void {
@@ -990,7 +1079,7 @@ export class Camera extends Node {
      * Checks if a cullable object (mesh...) is in the camera frustum
      * This checks the bounding box center. See isCompletelyInFrustum for a full bounding check
      * @param target The object to check
-     * @param checkRigCameras If the rig cameras should be checked (eg. with webVR camera both eyes should be checked) (Default: false)
+     * @param checkRigCameras If the rig cameras should be checked (eg. with VR camera both eyes should be checked) (Default: false)
      * @returns true if the object is in frustum otherwise false
      */
     public isInFrustum(target: ICullable, checkRigCameras = false): boolean {
@@ -1020,6 +1109,7 @@ export class Camera extends Node {
         return target.isCompletelyInFrustum(this._frustumPlanes);
     }
 
+    // eslint-disable-next-line jsdoc/require-returns-check
     /**
      * Gets a ray in the forward direction from the camera.
      * @param length Defines the length of the ray to create
@@ -1032,6 +1122,7 @@ export class Camera extends Node {
         throw _WarnImport("Ray");
     }
 
+    // eslint-disable-next-line jsdoc/require-returns-check
     /**
      * Gets a ray in the forward direction from the camera.
      * @param refRay the ray to (re)use when setting the values
@@ -1050,7 +1141,7 @@ export class Camera extends Node {
      * @param doNotRecurse Set to true to not recurse into each children (recurse into each children by default)
      * @param disposeMaterialAndTextures Set to true to also dispose referenced materials and textures (false by default)
      */
-    public dispose(doNotRecurse?: boolean, disposeMaterialAndTextures = false): void {
+    public override dispose(doNotRecurse?: boolean, disposeMaterialAndTextures = false): void {
         // Observables
         this.onViewMatrixChangedObservable.clear();
         this.onProjectionMatrixChangedObservable.clear();
@@ -1239,32 +1330,6 @@ export class Camera extends Node {
         return this._projectionMatrix;
     }
 
-    protected _updateCameraRotationMatrix() {
-        //Here for WebVR
-    }
-
-    protected _updateWebVRCameraRotationMatrix() {
-        //Here for WebVR
-    }
-
-    /**
-     * This function MUST be overwritten by the different WebVR cameras available.
-     * The context in which it is running is the RIG camera. So 'this' is the TargetCamera, left or right.
-     * @internal
-     */
-    public _getWebVRProjectionMatrix(): Matrix {
-        return Matrix.Identity();
-    }
-
-    /**
-     * This function MUST be overwritten by the different WebVR cameras available.
-     * The context in which it is running is the RIG camera. So 'this' is the TargetCamera, left or right.
-     * @internal
-     */
-    public _getWebVRViewMatrix(): Matrix {
-        return Matrix.Identity();
-    }
-
     /**
      * @internal
      */
@@ -1343,7 +1408,7 @@ export class Camera extends Node {
      * @param newParent The cloned camera's new parent (none by default)
      * @returns the cloned camera
      */
-    public clone(name: string, newParent: Nullable<Node> = null): Camera {
+    public override clone(name: string, newParent: Nullable<Node> = null): Camera {
         const camera = SerializationHelper.Clone(
             Camera.GetConstructorFromName(this.getClassName(), name, this.getScene(), this.interaxialDistance, this.isStereoscopicSideBySide),
             this
@@ -1361,7 +1426,7 @@ export class Camera extends Node {
      * @param localAxis Defines the reference axis to provide a relative direction.
      * @returns the direction
      */
-    public getDirection(localAxis: Vector3): Vector3 {
+    public getDirection(localAxis: DeepImmutable<Vector3>): Vector3 {
         const result = Vector3.Zero();
 
         this.getDirectionToRef(localAxis, result);
@@ -1383,7 +1448,7 @@ export class Camera extends Node {
      * @param localAxis Defines the reference axis to provide a relative direction.
      * @param result Defines the vector to store the result in
      */
-    public getDirectionToRef(localAxis: Vector3, result: Vector3): void {
+    public getDirectionToRef(localAxis: DeepImmutable<Vector3>, result: Vector3): void {
         Vector3.TransformNormalToRef(localAxis, this.getWorldMatrix(), result);
     }
 
@@ -1416,7 +1481,7 @@ export class Camera extends Node {
      * Compute the world  matrix of the camera.
      * @returns the camera world matrix
      */
-    public computeWorldMatrix(): Matrix {
+    public override computeWorldMatrix(): Matrix {
         return this.getWorldMatrix();
     }
 
@@ -1494,5 +1559,15 @@ export class Camera extends Node {
         }
 
         return camera;
+    }
+
+    /** @internal */
+    public _calculateHandednessMultiplier(): number {
+        let handednessMultiplier = this.getScene().useRightHandedSystem ? -1 : 1;
+        if (this.parent && this.parent._getWorldMatrixDeterminant() < 0) {
+            handednessMultiplier *= -1;
+        }
+
+        return handednessMultiplier;
     }
 }

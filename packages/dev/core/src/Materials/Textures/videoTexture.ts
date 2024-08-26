@@ -6,9 +6,12 @@ import type { Scene } from "../../scene";
 import { Texture } from "../../Materials/Textures/texture";
 import { Constants } from "../../Engines/constants";
 import type { ExternalTexture } from "./externalTexture";
+import type { WebGPUEngine } from "core/Engines";
 
 import "../../Engines/Extensions/engine.videoTexture";
 import "../../Engines/Extensions/engine.dynamicTexture";
+import { serialize } from "core/Misc/decorators";
+import { RegisterClass } from "core/Misc/typeStore";
 
 function removeSource(video: HTMLVideoElement): void {
     // Remove any <source> elements, etc.
@@ -83,7 +86,7 @@ export class VideoTexture extends Texture {
      */
     public readonly video: HTMLVideoElement;
 
-    private _externalTexture: Nullable<ExternalTexture>;
+    private _externalTexture: Nullable<ExternalTexture> = null;
     private _onUserActionRequestedObservable: Nullable<Observable<Texture>> = null;
 
     /**
@@ -100,12 +103,20 @@ export class VideoTexture extends Texture {
     private _generateMipMaps: boolean;
     private _stillImageCaptured = false;
     private _displayingPosterTexture = false;
+    @serialize("settings")
     private _settings: VideoTextureSettings;
     private _createInternalTextureOnEvent: string;
     private _frameId = -1;
+    @serialize("src")
     private _currentSrc: Nullable<string | string[] | HTMLVideoElement> = null;
     private _onError?: Nullable<(message?: string, exception?: any) => void>;
     private _errorFound = false;
+
+    /**
+     * Serialize the flag to define this texture as a video texture
+     */
+    @serialize()
+    public readonly isVideo = true;
 
     private _processError(reason: any) {
         this._errorFound = true;
@@ -182,7 +193,12 @@ export class VideoTexture extends Texture {
         this._currentSrc = src;
         this.name = name || this._getName(src);
         this.video = this._getVideo(src);
-        this._externalTexture = this._engine?.createExternalTexture(this.video) ?? null;
+        const engineWebGPU = this._engine as Nullable<WebGPUEngine>;
+        const createExternalTexture = engineWebGPU?.createExternalTexture;
+        if (createExternalTexture) {
+            this._externalTexture = createExternalTexture.call(engineWebGPU, this.video);
+        }
+
         if (!this._settings.independentVideoSource) {
             if (this._settings.poster) {
                 this.video.poster = this._settings.poster;
@@ -200,6 +216,7 @@ export class VideoTexture extends Texture {
             this.video.setAttribute("playsinline", "");
             this.video.addEventListener("paused", this._updateInternalTexture);
             this.video.addEventListener("seeked", this._updateInternalTexture);
+            this.video.addEventListener("loadeddata", this._updateInternalTexture);
             this.video.addEventListener("emptied", this._reset);
 
             if (this._settings.autoPlay) {
@@ -224,7 +241,7 @@ export class VideoTexture extends Texture {
      * Get the current class name of the video texture useful for serialization or dynamic coding.
      * @returns "VideoTexture"
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "VideoTexture";
     }
 
@@ -308,21 +325,14 @@ export class VideoTexture extends Texture {
             const oldMuted = this.video.muted;
             this.video.muted = true;
             this.video.onplaying = () => {
-                const uploadAndPause = () => {
-                    this.video.onplaying = oldHandler;
-                    this._updateInternalTexture();
-                    if (!this._errorFound) {
-                        this.video.pause();
-                    }
-                    this.video.muted = oldMuted;
-                    if (this.onLoadObservable.hasObservers()) {
-                        this.onLoadObservable.notifyObservers(this);
-                    }
-                };
-                if (this.video.requestVideoFrameCallback) {
-                    this.video.requestVideoFrameCallback(uploadAndPause);
-                } else {
-                    uploadAndPause();
+                this.video.muted = oldMuted;
+                this.video.onplaying = oldHandler;
+                this._updateInternalTexture();
+                if (!this._errorFound) {
+                    this.video.pause();
+                }
+                if (this.onLoadObservable.hasObservers()) {
+                    this.onLoadObservable.notifyObservers(this);
                 }
             };
             this._handlePlay();
@@ -348,7 +358,7 @@ export class VideoTexture extends Texture {
     /**
      * @internal Internal method to initiate `update`.
      */
-    public _rebuild(): void {
+    public override _rebuild(): void {
         this.update();
     }
 
@@ -383,7 +393,7 @@ export class VideoTexture extends Texture {
         if (this._texture == null) {
             return;
         }
-        if (this.video.readyState < this.video.HAVE_ENOUGH_DATA) {
+        if (this.video.readyState < this.video.HAVE_CURRENT_DATA) {
             return;
         }
         if (this._displayingPosterTexture) {
@@ -401,10 +411,17 @@ export class VideoTexture extends Texture {
     };
 
     /**
+     * Get the underlying external texture (if supported by the current engine, else null)
+     */
+    public get externalTexture(): Nullable<ExternalTexture> {
+        return this._externalTexture;
+    }
+
+    /**
      * Change video content. Changing video instance or setting multiple urls (as in constructor) is not supported.
      * @param url New url.
      */
-    public updateURL(url: string): void {
+    public override updateURL(url: string): void {
         this.video.src = url;
         this._currentSrc = url;
     }
@@ -413,14 +430,14 @@ export class VideoTexture extends Texture {
      * Clones the texture.
      * @returns the cloned texture
      */
-    public clone(): VideoTexture {
+    public override clone(): VideoTexture {
         return new VideoTexture(this.name, this._currentSrc!, this.getScene(), this._generateMipMaps, this.invertY, this.samplingMode, this._settings);
     }
 
     /**
      * Dispose the texture and release its associated resources.
      */
-    public dispose(): void {
+    public override dispose(): void {
         super.dispose();
 
         this._currentSrc = null;
@@ -434,6 +451,7 @@ export class VideoTexture extends Texture {
         if (!this._settings.independentVideoSource) {
             this.video.removeEventListener("paused", this._updateInternalTexture);
             this.video.removeEventListener("seeked", this._updateInternalTexture);
+            this.video.removeEventListener("loadeddata", this._updateInternalTexture);
             this.video.removeEventListener("emptied", this._reset);
             this.video.removeEventListener("resize", this._resizeInternalTexture);
             this.video.pause();
@@ -574,3 +592,19 @@ export class VideoTexture extends Texture {
             });
     }
 }
+
+Texture._CreateVideoTexture = (
+    name: Nullable<string>,
+    src: string | string[] | HTMLVideoElement,
+    scene: Nullable<Scene>,
+    generateMipMaps = false,
+    invertY = false,
+    samplingMode: number = Texture.TRILINEAR_SAMPLINGMODE,
+    settings: Partial<VideoTextureSettings> = {},
+    onError?: Nullable<(message?: string, exception?: any) => void>,
+    format: number = Constants.TEXTUREFORMAT_RGBA
+) => {
+    return new VideoTexture(name, src, scene, generateMipMaps, invertY, samplingMode, settings, onError, format);
+};
+// Some exporters relies on Tools.Instantiate
+RegisterClass("BABYLON.VideoTexture", VideoTexture);

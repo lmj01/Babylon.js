@@ -1,10 +1,10 @@
 import { Tools } from "../Misc/tools";
 import { Observable } from "../Misc/observable";
 import { Scene } from "../scene";
-import { Engine } from "../Engines/engine";
 import { EngineStore } from "../Engines/engineStore";
 import type { IInspectable } from "../Misc/iInspectable";
 import type { Camera } from "../Cameras/camera";
+import { AbstractEngine } from "core/Engines/abstractEngine";
 
 // declare INSPECTOR namespace for compilation issue
 declare let INSPECTOR: any;
@@ -157,6 +157,11 @@ export interface IInspectorOptions {
      * List of context menu items that should be completely overridden by custom items from the contextMenu property.
      */
     contextMenuOverride?: IInspectorContextMenuType[];
+
+    /**
+     * Should the default font loading be skipped
+     */
+    skipDefaultFontLoading?: boolean;
 }
 
 declare module "../scene" {
@@ -188,7 +193,7 @@ Object.defineProperty(Scene.prototype, "debugLayer", {
 /**
  * Enum of inspector action tab
  */
-export enum DebugLayerTab {
+export const enum DebugLayerTab {
     /**
      * Properties tag (default)
      */
@@ -222,7 +227,19 @@ export class DebugLayer {
      * By default it uses the babylonjs CDN.
      * @ignoreNaming
      */
-    public static InspectorURL = `https://unpkg.com/babylonjs-inspector@${Engine.Version}/babylon.inspector.bundle.js`;
+    public static InspectorURL = `${Tools._DefaultCdnUrl}/v${AbstractEngine.Version}/inspector/babylon.inspector.bundle.js`;
+
+    /**
+     * The default configuration of the inspector
+     */
+    public static Config: IInspectorOptions = {
+        overlay: false,
+        showExplorer: true,
+        showInspector: true,
+        embedMode: false,
+        handleResize: true,
+        enablePopup: true,
+    };
 
     private _scene: Scene;
 
@@ -307,12 +324,7 @@ export class DebugLayer {
         }
 
         const userOptions: IInspectorOptions = {
-            overlay: false,
-            showExplorer: true,
-            showInspector: true,
-            embedMode: false,
-            handleResize: true,
-            enablePopup: true,
+            ...DebugLayer.Config,
             ...config,
         };
 
@@ -339,7 +351,10 @@ export class DebugLayer {
         }
     }
 
-    /** Get the inspector from bundle or global */
+    /**
+     * Get the inspector from bundle or global
+     * @returns the inspector instance if found otherwise, null
+     */
     private _getGlobalInspector(): any {
         // UMD Global name detection from Webpack Bundle UMD Name.
         if (typeof INSPECTOR !== "undefined") {
@@ -380,6 +395,24 @@ export class DebugLayer {
         }
     }
 
+    public popupSceneExplorer() {
+        if (this.BJSINSPECTOR) {
+            this.BJSINSPECTOR.Inspector.PopupSceneExplorer();
+        }
+    }
+
+    public popupInspector() {
+        if (this.BJSINSPECTOR) {
+            this.BJSINSPECTOR.Inspector.PopupInspector();
+        }
+    }
+
+    public popupEmbed() {
+        if (this.BJSINSPECTOR) {
+            this.BJSINSPECTOR.Inspector.PopupEmbed();
+        }
+    }
+
     /**
      * Launch the debugLayer.
      * @param config Define the configuration of the inspector
@@ -391,7 +424,7 @@ export class DebugLayer {
                 const inspectorUrl = config && config.inspectorURL ? config.inspectorURL : DebugLayer.InspectorURL;
 
                 // Load inspector and add it to the DOM
-                Tools.LoadScript(inspectorUrl, () => {
+                Tools.LoadBabylonScript(inspectorUrl, () => {
                     this._createInspector(config);
                     resolve(this);
                 });

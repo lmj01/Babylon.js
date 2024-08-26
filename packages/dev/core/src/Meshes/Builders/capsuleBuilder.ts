@@ -3,7 +3,7 @@ import { Vector2, Vector3, Matrix } from "../../Maths/math.vector";
 import { Mesh } from "../mesh";
 import type { Nullable } from "../../types";
 import type { Scene } from "../../scene";
-import { CompatibilityOptions } from "../../Compat/compatibilityOptions";
+import { useOpenGLOrientationForUV } from "../../Compat/compatibilityOptions";
 /**
  * Scripts based off of https://github.com/maximeq/three-js-capsule-geometry/blob/master/src/CapsuleBufferGeometry.js
  * @param options the constructors options used to shape the mesh.
@@ -20,11 +20,11 @@ export function CreateCapsuleVertexData(
         capSubdivisions: 6,
     }
 ): VertexData {
-    const subdivisions = Math.max(options.subdivisions ? options.subdivisions : 2, 1);
-    const tessellation = Math.max(options.tessellation ? options.tessellation : 16, 3);
+    const subdivisions = Math.max(options.subdivisions ? options.subdivisions : 2, 1) | 0;
+    const tessellation = Math.max(options.tessellation ? options.tessellation : 16, 3) | 0;
     const height = Math.max(options.height ? options.height : 1, 0);
     const radius = Math.max(options.radius ? options.radius : 0.25, 0);
-    const capDetail = Math.max(options.capSubdivisions ? options.capSubdivisions : 6, 1);
+    const capDetail = Math.max(options.capSubdivisions ? options.capSubdivisions : 6, 1) | 0;
 
     const radialSegments = tessellation;
     const heightSegments = subdivisions;
@@ -94,7 +94,7 @@ export function CreateCapsuleVertexData(
             normal.set(cosA * sinTheta, sinA, cosA * cosTheta);
             normals.push(normal.x, normal.y, normal.z);
             // uv
-            uvs.push(u, CompatibilityOptions.UseOpenGLOrientationForUV ? v / vl : 1 - v / vl);
+            uvs.push(u, useOpenGLOrientationForUV ? v / vl : 1 - v / vl);
             // save index of vertex in respective row
             indexRow.push(index);
             // increase index
@@ -126,7 +126,7 @@ export function CreateCapsuleVertexData(
             normal.set(sinTheta, slope, cosTheta).normalize();
             normals.push(normal.x, normal.y, normal.z);
             // uv
-            uvs.push(u, CompatibilityOptions.UseOpenGLOrientationForUV ? v / vl : 1 - v / vl);
+            uvs.push(u, useOpenGLOrientationForUV ? v / vl : 1 - v / vl);
             // save index of vertex in respective row
             indexRow.push(index);
             // increase index
@@ -158,7 +158,7 @@ export function CreateCapsuleVertexData(
             normal.set(cosA * sinTheta, sinA, cosA * cosTheta);
             normals.push(normal.x, normal.y, normal.z);
             // uv
-            uvs.push(u, CompatibilityOptions.UseOpenGLOrientationForUV ? v / vl : 1 - v / vl);
+            uvs.push(u, useOpenGLOrientationForUV ? v / vl : 1 - v / vl);
             // save index of vertex in respective row
             indexRow.push(index);
             // increase index
@@ -298,7 +298,7 @@ export const CapsuleBuilder = {
  * @returns the capsule mesh
  * @see https://doc.babylonjs.com/how_to/capsule_shape
  */
-(Mesh as any).CreateCapsule = (name: string, options: ICreateCapsuleOptions, scene?: Nullable<Scene>): Mesh => {
+Mesh.CreateCapsule = (name: string, options: ICreateCapsuleOptions, scene?: Nullable<Scene>): Mesh => {
     return CreateCapsule(name, options, scene);
 };
 

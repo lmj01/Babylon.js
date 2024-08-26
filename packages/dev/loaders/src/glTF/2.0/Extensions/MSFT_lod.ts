@@ -12,6 +12,22 @@ import type { IProperty, IMSFTLOD } from "babylonjs-gltf2interface";
 
 const NAME = "MSFT_lod";
 
+declare module "../../glTFFileLoader" {
+    // eslint-disable-next-line jsdoc/require-jsdoc
+    export interface GLTFLoaderExtensionOptions {
+        /**
+         * Defines options for the MSFT_lod extension.
+         */
+        // NOTE: Don't use NAME here as it will break the UMD type declarations.
+        ["MSFT_lod"]: Partial<{
+            /**
+             * Maximum number of LODs to load, starting from the lowest LOD.
+             */
+            maxLODsToLoad: number;
+        }>;
+    }
+}
+
 interface IBufferInfo {
     start: number;
     end: number;
@@ -76,6 +92,9 @@ export class MSFT_lod implements IGLTFLoaderExtension {
      */
     constructor(loader: GLTFLoader) {
         this._loader = loader;
+        // Options takes precedence. The maxLODsToLoad extension property is retained for back compat.
+        // For new extensions, they should only use options.
+        this.maxLODsToLoad = this._loader.parent.extensionOptions[NAME]?.maxLODsToLoad ?? this.maxLODsToLoad;
         this.enabled = this._loader.isExtensionUsed(NAME);
     }
 
@@ -347,7 +366,7 @@ export class MSFT_lod implements IGLTFLoaderExtension {
     }
 
     /**
-     * Gets an array of LOD properties from lowest to highest.
+     * @returns an array of LOD properties from lowest to highest.
      * @param context
      * @param property
      * @param array
@@ -358,7 +377,7 @@ export class MSFT_lod implements IGLTFLoaderExtension {
             throw new Error("maxLODsToLoad must be greater than zero");
         }
 
-        const properties = new Array<T>();
+        const properties: T[] = [];
 
         for (let i = ids.length - 1; i >= 0; i--) {
             properties.push(ArrayItem.Get(`${context}/ids/${ids[i]}`, array, ids[i]));
@@ -372,7 +391,7 @@ export class MSFT_lod implements IGLTFLoaderExtension {
     }
 
     private _disposeTransformNode(babylonTransformNode: TransformNode): void {
-        const babylonMaterials = new Array<Material>();
+        const babylonMaterials: Material[] = [];
         const babylonMaterial = (babylonTransformNode as Mesh).material;
         if (babylonMaterial) {
             babylonMaterials.push(babylonMaterial);

@@ -152,6 +152,10 @@ export class AddAnimationComponent extends React.Component<IAddAnimationComponen
                 loopMode = Animation.ANIMATIONLOOPMODE_RELATIVE;
                 break;
             }
+            case "Relative from current": {
+                loopMode = Animation.ANIMATIONLOOPMODE_RELATIVE_FROM_CURRENT;
+                break;
+            }
             case "Constant": {
                 loopMode = Animation.ANIMATIONLOOPMODE_CONSTANT;
                 break;
@@ -208,9 +212,9 @@ export class AddAnimationComponent extends React.Component<IAddAnimationComponen
         return value.getClassName();
     }
 
-    public render() {
+    public override render() {
         const types = ["Float", "Vector2", "Vector3", "Quaternion", "Color3", "Color4"];
-        const loopModes = ["Cycle", "Relative", "Constant"];
+        const loopModes = ["Cycle", "Relative", "Relative from current", "Constant"];
         const modes = ["Custom", "List"];
         const properties: string[] = [];
         let inferredType = "";

@@ -4,8 +4,10 @@ import type { NodeMaterialBuildState } from "../../nodeMaterialBuildState";
 import type { NodeMaterialConnectionPoint } from "../../nodeMaterialBlockConnectionPoint";
 import { NodeMaterialBlockTargets } from "../../Enums/nodeMaterialBlockTargets";
 import { RegisterClass } from "../../../../Misc/typeStore";
-import { editableInPropertyPage, PropertyTypeForEdition } from "../../nodeMaterialDecorator";
+import { editableInPropertyPage, PropertyTypeForEdition } from "../../../../Decorators/nodeDecorator";
 import type { Scene } from "../../../../scene";
+import { Logger } from "../../../../Misc/logger";
+import { ShaderLanguage } from "../../../../Materials/shaderLanguage";
 
 /**
  * Block used to convert a height vector to a normal
@@ -53,7 +55,7 @@ export class HeightToNormalBlock extends NodeMaterialBlock {
      * Gets the current class name
      * @returns the class name
      */
-    public getClassName() {
+    public override getClassName() {
         return "HeightToNormalBlock";
     }
 
@@ -99,20 +101,22 @@ export class HeightToNormalBlock extends NodeMaterialBlock {
         return this._outputs[1];
     }
 
-    protected _buildBlock(state: NodeMaterialBuildState) {
+    protected override _buildBlock(state: NodeMaterialBuildState) {
         super._buildBlock(state);
 
         const output = this._outputs[0];
+        const isWebGPU = state.shaderLanguage === ShaderLanguage.WGSL;
+        const fPrefix = state.fSuffix;
 
         if (!this.generateInWorldSpace && !this.worldTangent.isConnected) {
-            console.error(`You must connect the 'worldTangent' input of the ${this.name} block!`);
+            Logger.Error(`You must connect the 'worldTangent' input of the ${this.name} block!`);
         }
 
         const startCode = this.generateInWorldSpace
             ? ""
             : `
-            vec3 biTangent = cross(normal, tangent);
-            mat3 TBN = mat3(tangent, biTangent, normal);
+            vec3 biTangent = cross(norm, tgt);
+            mat3 TBN = mat3(tgt, biTangent, norm);
             `;
 
         const endCode = this.generateInWorldSpace
@@ -122,48 +126,52 @@ export class HeightToNormalBlock extends NodeMaterialBlock {
             result = result * vec3(0.5) + vec3(0.5);
             `;
 
-        const heightToNormal = `
-            vec4 heightToNormal(in float height, in vec3 position, in vec3 tangent, in vec3 normal) {
+        let heightToNormal = `
+            vec4 heightToNormal(float height, vec3 position, vec3 tangent, vec3 normal) {
+                vec3 tgt = ${this.automaticNormalizationTangent ? "normalize(tangent);" : "tangent;"}
+                vec3 norm = ${this.automaticNormalizationNormal ? "normalize(normal);" : "normal;"}
                 ${startCode}
-                ${this.automaticNormalizationTangent ? "tangent = normalize(tangent);" : ""}
-                ${this.automaticNormalizationNormal ? "normal = normalize(normal);" : ""}
                 vec3 worlddX = dFdx(position);
                 vec3 worlddY = dFdy(position);
-                vec3 crossX = cross(normal, worlddX);
-                vec3 crossY = cross(normal, worlddY);
+                vec3 crossX = cross(norm, worlddX);
+                vec3 crossY = cross(norm, worlddY);
                 float d = abs(dot(crossY, worlddX));
                 vec3 inToNormal = vec3(((((height + dFdx(height)) - height) * crossY) + (((height + dFdy(height)) - height) * crossX)) * sign(d));
                 inToNormal.y *= -1.0;
-                vec3 result = normalize((d * normal) - inToNormal);
+                vec3 result = normalize((d * norm) - inToNormal);
                 ${endCode}
                 return vec4(result, 0.);
             }`;
 
-        state._emitExtension("derivatives", "#extension GL_OES_standard_derivatives : enable");
+        if (isWebGPU) {
+            heightToNormal = state._babylonSLtoWGSL(heightToNormal);
+        } else {
+            state._emitExtension("derivatives", "#extension GL_OES_standard_derivatives : enable");
+        }
         state._emitFunction("heightToNormal", heightToNormal, "// heightToNormal");
         state.compilationString +=
-            this._declareOutput(output, state) +
+            state._declareOutput(output) +
             ` = heightToNormal(${this.input.associatedVariableName}, ${this.worldPosition.associatedVariableName}, ${
-                this.worldTangent.isConnected ? this.worldTangent.associatedVariableName : "vec3(0.)"
-            }.xyz, ${this.worldNormal.associatedVariableName});\r\n`;
+                this.worldTangent.isConnected ? this.worldTangent.associatedVariableName : `vec3${fPrefix}(0.)`
+            }.xyz, ${this.worldNormal.associatedVariableName});\n`;
 
         if (this.xyz.hasEndpoints) {
-            state.compilationString += this._declareOutput(this.xyz, state) + ` = ${this.output.associatedVariableName}.xyz;\r\n`;
+            state.compilationString += state._declareOutput(this.xyz) + ` = ${this.output.associatedVariableName}.xyz;\n`;
         }
 
         return this;
     }
 
-    protected _dumpPropertiesCode() {
+    protected override _dumpPropertiesCode() {
         let codeString = super._dumpPropertiesCode();
-        codeString += `${this._codeVariableName}.generateInWorldSpace = ${this.generateInWorldSpace};\r\n`;
-        codeString += `${this._codeVariableName}.automaticNormalizationNormal = ${this.automaticNormalizationNormal};\r\n`;
-        codeString += `${this._codeVariableName}.automaticNormalizationTangent = ${this.automaticNormalizationTangent};\r\n`;
+        codeString += `${this._codeVariableName}.generateInWorldSpace = ${this.generateInWorldSpace};\n`;
+        codeString += `${this._codeVariableName}.automaticNormalizationNormal = ${this.automaticNormalizationNormal};\n`;
+        codeString += `${this._codeVariableName}.automaticNormalizationTangent = ${this.automaticNormalizationTangent};\n`;
 
         return codeString;
     }
 
-    public serialize(): any {
+    public override serialize(): any {
         const serializationObject = super.serialize();
 
         serializationObject.generateInWorldSpace = this.generateInWorldSpace;
@@ -173,7 +181,7 @@ export class HeightToNormalBlock extends NodeMaterialBlock {
         return serializationObject;
     }
 
-    public _deserialize(serializationObject: any, scene: Scene, rootUrl: string) {
+    public override _deserialize(serializationObject: any, scene: Scene, rootUrl: string) {
         super._deserialize(serializationObject, scene, rootUrl);
 
         this.generateInWorldSpace = serializationObject.generateInWorldSpace;

@@ -3,10 +3,9 @@ import type { GlobalState } from "../globalState";
 import { RuntimeMode } from "../globalState";
 import { Utilities } from "../tools/utilities";
 import { DownloadManager } from "../tools/downloadManager";
-import { Engine, WebGPUEngine } from "@dev/core";
+import { Engine, EngineStore, WebGPUEngine } from "@dev/core";
 
-declare type Nullable<T> = import("@dev/core").Nullable<T>;
-declare type Scene = import("@dev/core").Scene;
+import type { Nullable, Scene } from "@dev/core";
 
 import "../scss/rendering.scss";
 
@@ -24,7 +23,7 @@ export class RenderingComponent extends React.Component<IRenderingComponentProps
     private _scene: Nullable<Scene>;
     private _canvasRef: React.RefObject<HTMLCanvasElement>;
     private _downloadManager: DownloadManager;
-    private _unityToolkitWasLoaded = false;
+    private _babylonToolkitWasLoaded = false;
     private _tmpErrorEvent?: ErrorEvent;
 
     public constructor(props: IRenderingComponentProps) {
@@ -34,6 +33,7 @@ export class RenderingComponent extends React.Component<IRenderingComponentProps
 
         // Create the global handleException
         (window as any).handleException = (e: Error) => {
+            // eslint-disable-next-line no-console
             console.error(e);
             this.props.globalState.onErrorObservable.notifyObservers(e);
         };
@@ -87,7 +87,8 @@ export class RenderingComponent extends React.Component<IRenderingComponentProps
     private async _loadScriptAsync(url: string): Promise<void> {
         return new Promise((resolve) => {
             const script = document.createElement("script");
-            script.src = url;
+            script.setAttribute("type", "text/javascript");
+            script.setAttribute("src", url);
             script.onload = () => {
                 resolve();
             };
@@ -117,14 +118,15 @@ export class RenderingComponent extends React.Component<IRenderingComponentProps
                 break;
         }
 
-        if (this._engine) {
-            try {
-                this._engine.dispose();
-            } catch (ex) {
-                // just ignore
+        try {
+            while (EngineStore.Instances.length) {
+                EngineStore.Instances[0].dispose();
             }
-            this._engine = null;
+        } catch (ex) {
+            // just ignore
         }
+
+        this._engine = null;
 
         try {
             // Set up the global object ("window" and "this" for user code).
@@ -139,12 +141,20 @@ export class RenderingComponent extends React.Component<IRenderingComponentProps
 
             if (useWebGPU) {
                 globalObject.createDefaultEngine = async function () {
-                    const engine = new WebGPUEngine(canvas, {
-                        enableAllFeatures: true,
-                        setMaximumLimits: true,
-                    });
-                    await engine.initAsync();
-                    return engine;
+                    try {
+                        const engine = new WebGPUEngine(canvas, {
+                            enableAllFeatures: true,
+                            setMaximumLimits: true,
+                        });
+                        await engine.initAsync();
+                        return engine;
+                    } catch (e) {
+                        // eslint-disable-next-line no-console
+                        console.error("The Playground could not create a WebGPU engine instance. Make sure WebGPU is supported by your browser.");
+                        // eslint-disable-next-line no-console
+                        console.error(e);
+                        return null;
+                    }
                 };
             } else {
                 globalObject.createDefaultEngine = function () {
@@ -190,11 +200,18 @@ export class RenderingComponent extends React.Component<IRenderingComponentProps
                 havokInit = "globalThis.HK = await HavokPhysics();";
             }
 
-            // Check for Unity Toolkit
-            if ((location.href.indexOf("UnityToolkit") !== -1 || Utilities.ReadBoolFromStore("unity-toolkit", false)) && !this._unityToolkitWasLoaded) {
-                await this._loadScriptAsync("/libs/babylon.manager.js");
-                this._unityToolkitWasLoaded = true;
+            const babylonToolkit =
+                !this._babylonToolkitWasLoaded &&
+                (code.includes("BABYLON.Toolkit.SceneManager.InitializePlayground") ||
+                    code.includes("SM.InitializePlayground") ||
+                    location.href.indexOf("BabylonToolkit") !== -1 ||
+                    Utilities.ReadBoolFromStore("babylon-toolkit", false));
+            // Check for Babylon Toolkit
+            if (babylonToolkit) {
+                await this._loadScriptAsync("https://cdn.jsdelivr.net/gh/BabylonJS/BabylonToolkit@master/Runtime/babylon.toolkit.js");
+                this._babylonToolkitWasLoaded = true;
             }
+            Utilities.StoreBoolToStore("babylon-toolkit-used", babylonToolkit);
 
             let createEngineFunction = "createDefaultEngine";
             let createSceneFunction = "";
@@ -361,12 +378,13 @@ export class RenderingComponent extends React.Component<IRenderingComponentProps
                 });
             }
         } catch (err) {
+            // eslint-disable-next-line no-console
             console.error(err, "Retrying if possible. If this error persists please notify the team.");
             this.props.globalState.onErrorObservable.notifyObservers(this._tmpErrorEvent || err);
         }
     }
 
-    public render() {
+    public override render() {
         return <canvas id="renderCanvas" ref={this._canvasRef}></canvas>;
     }
 }

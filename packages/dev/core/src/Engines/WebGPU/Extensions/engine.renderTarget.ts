@@ -4,7 +4,48 @@ import type { Nullable } from "../../../types";
 import { Constants } from "../../constants";
 import type { RenderTargetWrapper } from "../../renderTargetWrapper";
 import { WebGPUEngine } from "../../webgpuEngine";
+import type { WebGPUHardwareTexture } from "../webgpuHardwareTexture";
 import { WebGPURenderTargetWrapper } from "../webgpuRenderTargetWrapper";
+import { WebGPUTextureHelper } from "../webgpuTextureHelper";
+
+import "../../AbstractEngine/abstractEngine.texture";
+
+declare module "../../abstractEngine" {
+    export interface AbstractEngine {
+        /**
+         * Creates a new render target texture
+         * @param size defines the size of the texture
+         * @param options defines the options used to create the texture
+         * @returns a new render target wrapper ready to render texture
+         */
+        createRenderTargetTexture(size: TextureSize, options: boolean | RenderTargetCreationOptions): RenderTargetWrapper;
+
+        /**
+         * Updates the sample count of a render target texture
+         * @see https://doc.babylonjs.com/setup/support/webGL2#multisample-render-targets
+         * @param rtWrapper defines the render target wrapper to update
+         * @param samples defines the sample count to set
+         * @returns the effective sample count (could be 0 if multisample render targets are not supported)
+         */
+        updateRenderTargetTextureSampleCount(rtWrapper: Nullable<RenderTargetWrapper>, samples: number): number;
+
+        /** @internal */
+        _createDepthStencilTexture(size: TextureSize, options: DepthTextureCreationOptions, rtWrapper: RenderTargetWrapper): InternalTexture;
+
+        /** @internal */
+        _createHardwareRenderTargetWrapper(isMulti: boolean, isCube: boolean, size: TextureSize): RenderTargetWrapper;
+
+        /** @internal */
+        _setupDepthStencilTexture(
+            internalTexture: InternalTexture,
+            size: TextureSize,
+            generateStencil: boolean,
+            bilinearFiltering: boolean,
+            comparisonFunction: number,
+            samples?: number
+        ): void;
+    }
+}
 
 WebGPUEngine.prototype._createHardwareRenderTargetWrapper = function (isMulti: boolean, isCube: boolean, size: TextureSize): WebGPURenderTargetWrapper {
     const rtWrapper = new WebGPURenderTargetWrapper(isMulti, isCube, size, this);
@@ -37,6 +78,7 @@ WebGPUEngine.prototype.createRenderTargetTexture = function (size: TextureSize, 
 
     const texture = fullOptions.noColorAttachment ? null : this._createInternalTexture(size, options, true, InternalTextureSource.RenderTarget);
 
+    rtWrapper.label = fullOptions.label ?? "RenderTargetWrapper";
     rtWrapper._samples = fullOptions.samples ?? 1;
     rtWrapper._generateDepthBuffer = fullOptions.generateDepthBuffer;
     rtWrapper._generateStencilBuffer = fullOptions.generateStencilBuffer ? true : false;
@@ -46,16 +88,7 @@ WebGPUEngine.prototype.createRenderTargetTexture = function (size: TextureSize, 
     if (rtWrapper._generateDepthBuffer || rtWrapper._generateStencilBuffer) {
         rtWrapper.createDepthStencilTexture(
             0,
-            this._caps.textureFloatLinearFiltering &&
-                (fullOptions.samplingMode === undefined ||
-                    fullOptions.samplingMode === Constants.TEXTURE_BILINEAR_SAMPLINGMODE ||
-                    fullOptions.samplingMode === Constants.TEXTURE_LINEAR_LINEAR ||
-                    fullOptions.samplingMode === Constants.TEXTURE_TRILINEAR_SAMPLINGMODE ||
-                    fullOptions.samplingMode === Constants.TEXTURE_LINEAR_LINEAR_MIPLINEAR ||
-                    fullOptions.samplingMode === Constants.TEXTURE_NEAREST_LINEAR_MIPNEAREST ||
-                    fullOptions.samplingMode === Constants.TEXTURE_NEAREST_LINEAR_MIPLINEAR ||
-                    fullOptions.samplingMode === Constants.TEXTURE_NEAREST_LINEAR ||
-                    fullOptions.samplingMode === Constants.TEXTURE_LINEAR_LINEAR_MIPNEAREST),
+            false, // force false as filtering is not supported for depth textures
             rtWrapper._generateStencilBuffer,
             rtWrapper.samples,
             fullOptions.generateStencilBuffer ? Constants.TEXTUREFORMAT_DEPTH24_STENCIL8 : Constants.TEXTUREFORMAT_DEPTH32_FLOAT,
@@ -79,7 +112,7 @@ WebGPUEngine.prototype.createRenderTargetTexture = function (size: TextureSize, 
 };
 
 WebGPUEngine.prototype._createDepthStencilTexture = function (size: TextureSize, options: DepthTextureCreationOptions): InternalTexture {
-    const internalTexture = new InternalTexture(this, InternalTextureSource.DepthStencil);
+    const internalTexture = new InternalTexture(this, options.generateStencil ? InternalTextureSource.DepthStencil : InternalTextureSource.Depth);
 
     internalTexture.label = options.label;
 
@@ -105,6 +138,11 @@ WebGPUEngine.prototype._createDepthStencilTexture = function (size: TextureSize,
 
     this._textureHelper.createGPUTextureForInternalTexture(internalTexture);
 
+    // Now that the hardware texture is created, we can retrieve the GPU format and set the right type to the internal texture
+    const gpuTextureWrapper = internalTexture._hardwareTexture as WebGPUHardwareTexture;
+
+    internalTexture.type = WebGPUTextureHelper.GetTextureTypeFromFormat(gpuTextureWrapper.format);
+
     this._internalTexturesCache.push(internalTexture);
 
     return internalTexture;
@@ -120,14 +158,16 @@ WebGPUEngine.prototype._setupDepthStencilTexture = function (
 ): void {
     const width = (<{ width: number; height: number; layers?: number }>size).width || <number>size;
     const height = (<{ width: number; height: number; layers?: number }>size).height || <number>size;
-    const layers = (<{ width: number; height: number; layers?: number }>size).layers || 0;
+    const layers = (<{ width: number; height: number; depth?: number; layers?: number }>size).layers || 0;
+    const depth = (<{ width: number; height: number; depth?: number; layers?: number }>size).depth || 0;
 
     internalTexture.baseWidth = width;
     internalTexture.baseHeight = height;
     internalTexture.width = width;
     internalTexture.height = height;
     internalTexture.is2DArray = layers > 0;
-    internalTexture.depth = layers;
+    internalTexture.is3D = depth > 0;
+    internalTexture.depth = layers || depth;
     internalTexture.isReady = true;
     internalTexture.samples = samples;
     internalTexture.generateMipMaps = false;

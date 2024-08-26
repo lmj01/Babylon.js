@@ -1,4 +1,5 @@
-import { serialize, SerializationHelper } from "core/Misc/decorators";
+import { serialize } from "core/Misc/decorators";
+import { SerializationHelper } from "core/Misc/decorators.serialization";
 import { Color3 } from "core/Maths/math.color";
 import type { Texture } from "core/Materials/Textures/texture";
 import { ProceduralTexture } from "core/Materials/Textures/Procedurals/proceduralTexture";
@@ -70,7 +71,7 @@ export class MarbleProceduralTexture extends ProceduralTexture {
      * Serializes this marble procedural texture
      * @returns a serialized marble procedural texture object
      */
-    public serialize(): any {
+    public override serialize(): any {
         const serializationObject = SerializationHelper.Serialize(this, super.serialize());
         serializationObject.customType = "BABYLON.MarbleProceduralTexture";
 
@@ -84,7 +85,7 @@ export class MarbleProceduralTexture extends ProceduralTexture {
      * @param rootUrl defines the root URL containing marble procedural texture information
      * @returns a parsed Marble Procedural Texture
      */
-    public static Parse(parsedTexture: any, scene: Scene, rootUrl: string): MarbleProceduralTexture {
+    public static override Parse(parsedTexture: any, scene: Scene, rootUrl: string): MarbleProceduralTexture {
         const texture = SerializationHelper.Parse(
             () => new MarbleProceduralTexture(parsedTexture.name, parsedTexture._size, scene, undefined, parsedTexture._generateMipMaps),
             parsedTexture,

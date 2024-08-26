@@ -1,3 +1,4 @@
+import type { AbstractEngine } from "./abstractEngine";
 import { Engine } from "./engine";
 import { NullEngine } from "./nullEngine";
 import { WebGPUEngine } from "./webgpuEngine";
@@ -12,18 +13,14 @@ export class EngineFactory {
      * @param options Defines the options passed to the engine to create the context dependencies
      * @returns a promise that resolves with the created engine
      */
-    public static CreateAsync(canvas: HTMLCanvasElement, options: any): Promise<Engine> {
-        return WebGPUEngine.IsSupportedAsync.then((supported) => {
-            if (supported) {
-                return WebGPUEngine.CreateAsync(canvas, options);
-            } else if (Engine.IsSupported) {
-                return new Promise((resolve) => {
-                    resolve(new Engine(canvas, undefined, options));
-                });
-            }
-            return new Promise((resolve) => {
-                resolve(new NullEngine(options));
-            });
-        });
+    public static async CreateAsync(canvas: HTMLCanvasElement, options: any): Promise<AbstractEngine> {
+        const supported = await WebGPUEngine.IsSupportedAsync;
+        if (supported) {
+            return WebGPUEngine.CreateAsync(canvas, options);
+        }
+        if (Engine.IsSupported) {
+            return new Engine(canvas, undefined, options);
+        }
+        return new NullEngine(options);
     }
 }

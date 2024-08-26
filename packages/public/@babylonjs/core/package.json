@@ -1,6 +1,6 @@
 {
     "name": "@babylonjs/core",
-    "version": "6.7.0",
+    "version": "7.22.3",
     "main": "index.js",
     "module": "index.js",
     "types": "index.d.ts",
@@ -8,20 +8,21 @@
         "**/*.js",
         "**/*.d.ts",
         "**/*.map",
+        "**/*.wasm",
         "readme.md",
-        "license.md"
+        "license.md",
+        "NOTICE.md"
     ],
     "scripts": {
         "build": "npm run clean && npm run compile",
-        "clean": "rimraf dist && rimraf *.tsbuildinfo && rimraf \"./**/*.!(cmd|md|json|build.json)\"",
-        "compile": "tsc -b tsconfig.build.json --verbose",
-        "postcompile": "build-tools -c declarations-es6 -r ../../../lts/core/generated/LibDeclarations -atf ./Engines/engine.d.ts && build-tools -c add-js-to-es6 && build-tools -c prepare-es6-build -cf Engines/constants.js"
+        "clean": "rimraf dist && rimraf *.tsbuildinfo && rimraf \"./**/*.!(cmd|md|json|build.json|lts.json|tasks.json|cjs)\"",
+        "compile": "tsc -b tsconfig.build.json && tsc -b tsconfig.lts.json",
+        "postcompile": "build-tools -c run-tasks",
+        "watch": "node ./watcher.cjs"
     },
     "devDependencies": {
         "@dev/build-tools": "^1.0.0",
-        "@lts/core": "^1.0.0",
-        "rimraf": "^3.0.2",
-        "typescript": "^4.4.4"
+        "@lts/core": "^1.0.0"
     },
     "keywords": [
         "3D",

@@ -73,7 +73,7 @@ export interface ITimerData<T> {
 /**
  * The current state of the timer
  */
-export enum TimerState {
+export const enum TimerState {
     /**
      * Timer initialized, not yet started
      */
@@ -92,8 +92,9 @@ export enum TimerState {
  * A simple version of the timer. Will take options and start the timer immediately after calling it
  *
  * @param options options with which to initialize this timer
+ * @returns an observer that can be used to stop the timer
  */
-export function setAndStartTimer(options: ITimerOptions<any>): Nullable<Observer<any>> {
+export function setAndStartTimer<T = any>(options: ITimerOptions<T>): Nullable<Observer<T>> {
     let timer = 0;
     const startTime = Date.now();
     options.observableParameters = options.observableParameters ?? {};

@@ -10,6 +10,17 @@ import type { IKHRMaterialsVolume } from "babylonjs-gltf2interface";
 
 const NAME = "KHR_materials_volume";
 
+declare module "../../glTFFileLoader" {
+    // eslint-disable-next-line jsdoc/require-jsdoc
+    export interface GLTFLoaderExtensionOptions {
+        /**
+         * Defines options for the KHR_materials_volume extension.
+         */
+        // NOTE: Don't use NAME here as it will break the UMD type declarations.
+        ["KHR_materials_volume"]: {};
+    }
+}
+
 /**
  * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_volume/README.md)
  * @since 5.0.0
@@ -72,7 +83,7 @@ export class KHR_materials_volume implements IGLTFLoaderExtension {
         }
 
         // If transparency isn't enabled already, this extension shouldn't do anything.
-        // i.e. it requires either the KHR_materials_transmission or KHR_materials_translucency extensions.
+        // i.e. it requires either the KHR_materials_transmission or KHR_materials_diffuse_transmission extensions.
         if ((!babylonMaterial.subSurface.isRefractionEnabled && !babylonMaterial.subSurface.isTranslucencyEnabled) || !extension.thicknessFactor) {
             return Promise.resolve();
         }

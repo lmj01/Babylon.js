@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import type { Page } from "puppeteer";
 import type { StacktracedObject } from "./window";
 
@@ -62,36 +63,12 @@ export const evaluateInitEngine = async (engineName: string, baseUrl: string, pa
     window.gc && window.gc();
     engineName = engineName ? engineName.toLowerCase() : "webgl2";
 
-    if (BABYLON.DracoCompression) {
-        BABYLON.DracoCompression.Configuration.decoder = {
-            wasmUrl: baseUrl + "/draco_wasm_wrapper_gltf.js",
-            wasmBinaryUrl: baseUrl + "/draco_decoder_gltf.wasm",
-            fallbackUrl: baseUrl + "/draco_decoder_gltf.js",
-        };
-    }
-    if (BABYLON.MeshoptCompression) {
-        BABYLON.MeshoptCompression.Configuration.decoder = {
-            url: baseUrl + "/meshopt_decoder.js",
-        };
-    }
-
-    BABYLON.BasisToolsOptions.JSModuleURL = baseUrl + "/basisTranscoder/1/basis_transcoder.js";
-    BABYLON.BasisToolsOptions.WasmModuleURL = baseUrl + "/basisTranscoder/1/basis_transcoder.wasm";
+    BABYLON.Tools.ScriptBaseUrl = baseUrl;
 
     const canvas = document.getElementById("babylon-canvas") as HTMLCanvasElement;
     if (!canvas) return;
     window.canvas = canvas;
     if (engineName === "webgpu") {
-        const glslangOptions = {
-            jsPath: baseUrl + "/glslang/glslang.js",
-            wasmPath: baseUrl + "/glslang/glslang.wasm",
-        };
-
-        const twgslOptions = {
-            jsPath: baseUrl + "/twgsl/twgsl.js",
-            wasmPath: baseUrl + "/twgsl/twgsl.wasm",
-        };
-
         const options = {
             antialias: false,
         };
@@ -99,7 +76,7 @@ export const evaluateInitEngine = async (engineName: string, baseUrl: string, pa
         const engine = new BABYLON.WebGPUEngine(canvas, options);
         engine.enableOfflineSupport = false;
         window.engine = engine;
-        await engine.initAsync(glslangOptions, twgslOptions);
+        await engine.initAsync();
     } else {
         const engine = new BABYLON.Engine(canvas, true, {
             disableWebGL2Support: engineName === "webgl1" ? true : false,
@@ -378,7 +355,7 @@ export const checkPerformanceOfScene = async (
     page: Page,
     baseUrl: string,
     type: PerformanceTestType,
-    createSceneFunction: (metadata?: { playgroundId: string }, config?: any) => Promise<void>,
+    createSceneFunction: (metadata?: { playgroundId?: string }, config?: any) => Promise<void>,
     numberOfPasses: number = 5,
     framesToRender: number = 10000,
     metadata?: { playgroundId: string },
@@ -389,9 +366,10 @@ export const checkPerformanceOfScene = async (
     }
     const url = type === "dev" ? "/empty.html" : `/empty-${type}.html`;
     await page.goto(baseUrl + url, {
-        waitUntil: "load", // for chrome should be "networkidle0"
+        // waitUntil: "load", // for chrome should be "networkidle0"
         timeout: 0,
     });
+    await page.waitForSelector("#babylon-canvas", { timeout: 20000 });
 
     const time = [];
     for (let i = 0; i < numberOfPasses; i++) {
@@ -414,9 +392,9 @@ export const checkPerformanceOfScene = async (
 export const logPageErrors = async (page: Page, debug?: boolean) => {
     page.on("console", async (msg) => {
         // serialize my args the way I want
-        const args = await Promise.all(
-            msg.args().map((arg) =>
-                arg.executionContext().evaluate((argument: string | Error) => {
+        const args: any[] = await Promise.all(
+            msg.args().map((arg: any) =>
+                arg.evaluate((argument: string | Error) => {
                     // I'm in a page context now. If my arg is an error - get me its message.
                     if (argument instanceof Error) return `[ERR] ${argument.message}`;
                     //Return the argument if it is just a message
@@ -434,5 +412,5 @@ export const logPageErrors = async (page: Page, debug?: boolean) => {
             console.log(`${msg.type().substring(0, 3).toUpperCase()} ${msg.text()}`);
         }
     });
-    page.on("pageerror", ({ message }) => console.log(message)).on("requestfailed", (request) => console.log(`${request.failure().errorText} ${request.url()}`));
+    page.on("pageerror", ({ message }) => console.log(message)).on("requestfailed", (request) => console.log(`${request.failure()?.errorText} ${request.url()}`));
 };

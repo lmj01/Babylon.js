@@ -68,10 +68,6 @@ export abstract class BaseCameraPointersInput implements ICameraInput<Camera> {
             const evt = <IPointerEvent>p.event;
             const isTouch = evt.pointerType === "touch";
 
-            if (engine.isInVRExclusivePointerMode) {
-                return;
-            }
-
             if (p.type !== PointerEventTypes.POINTERMOVE && this.buttons.indexOf(evt.button) === -1) {
                 return;
             }
@@ -91,7 +87,13 @@ export abstract class BaseCameraPointersInput implements ICameraInput<Camera> {
                 this.onTouch(null, offsetX, offsetY);
                 this._pointA = null;
                 this._pointB = null;
-            } else if (p.type !== PointerEventTypes.POINTERDOWN && isTouch && this._pointA?.pointerId !== evt.pointerId && this._pointB?.pointerId !== evt.pointerId) {
+            } else if (
+                p.type !== PointerEventTypes.POINTERDOWN &&
+                p.type !== PointerEventTypes.POINTERDOUBLETAP &&
+                isTouch &&
+                this._pointA?.pointerId !== evt.pointerId &&
+                this._pointB?.pointerId !== evt.pointerId
+            ) {
                 return; // If we get a non-down event for a touch that we're not tracking, ignore it
             } else if (p.type === PointerEventTypes.POINTERDOWN && (this._currentActiveButton === -1 || isTouch)) {
                 try {
@@ -190,10 +192,9 @@ export abstract class BaseCameraPointersInput implements ICameraInput<Camera> {
                 if (this._pointA && this._pointB === null) {
                     const offsetX = evt.clientX - this._pointA.x;
                     const offsetY = evt.clientY - this._pointA.y;
-                    this.onTouch(this._pointA, offsetX, offsetY);
-
                     this._pointA.x = evt.clientX;
                     this._pointA.y = evt.clientY;
+                    this.onTouch(this._pointA, offsetX, offsetY);
                 }
                 // Two buttons down: pinch
                 else if (this._pointA && this._pointB) {
@@ -232,7 +233,7 @@ export abstract class BaseCameraPointersInput implements ICameraInput<Camera> {
             this.onLostFocus();
         };
 
-        this._contextMenuBind = this.onContextMenu.bind(this);
+        this._contextMenuBind = (evt: Event) => this.onContextMenu(evt as PointerEvent);
 
         element && element.addEventListener("contextmenu", this._contextMenuBind, false);
 
@@ -293,30 +294,30 @@ export abstract class BaseCameraPointersInput implements ICameraInput<Camera> {
     /**
      * Called on pointer POINTERDOUBLETAP event.
      * Override this method to provide functionality on POINTERDOUBLETAP event.
-     * @param type
+     * @param type type of event
      */
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     public onDoubleTap(type: string) {}
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     /**
      * Called on pointer POINTERMOVE event if only a single touch is active.
      * Override this method to provide functionality.
-     * @param point
-     * @param offsetX
-     * @param offsetY
+     * @param point The current position of the pointer
+     * @param offsetX The offsetX of the pointer when the event occurred
+     * @param offsetY The offsetY of the pointer when the event occurred
      */
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     public onTouch(point: Nullable<PointerTouch>, offsetX: number, offsetY: number): void {}
 
     /**
      * Called on pointer POINTERMOVE event if multiple touches are active.
      * Override this method to provide functionality.
-     * @param _pointA
-     * @param _pointB
-     * @param previousPinchSquaredDistance
-     * @param pinchSquaredDistance
-     * @param previousMultiTouchPanPosition
-     * @param multiTouchPanPosition
+     * @param _pointA First point in the pair
+     * @param _pointB Second point in the pair
+     * @param previousPinchSquaredDistance Sqr Distance between the points the last time this event was fired (by this input)
+     * @param pinchSquaredDistance Sqr Distance between the points this time
+     * @param previousMultiTouchPanPosition Previous center point between the points
+     * @param multiTouchPanPosition Current center point between the points
      */
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     public onMultiTouch(
@@ -331,7 +332,7 @@ export abstract class BaseCameraPointersInput implements ICameraInput<Camera> {
     /**
      * Called on JS contextmenu event.
      * Override this method to provide functionality.
-     * @param evt
+     * @param evt the event to be handled
      */
     public onContextMenu(evt: PointerEvent): void {
         evt.preventDefault();
@@ -341,19 +342,17 @@ export abstract class BaseCameraPointersInput implements ICameraInput<Camera> {
      * Called each time a new POINTERDOWN event occurs. Ie, for each button
      * press.
      * Override this method to provide functionality.
-     * @param evt
+     * @param _evt Defines the event to track
      */
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    public onButtonDown(evt: IPointerEvent): void {}
+    public onButtonDown(_evt: IPointerEvent): void {}
 
     /**
      * Called each time a new POINTERUP event occurs. Ie, for each button
      * release.
      * Override this method to provide functionality.
-     * @param evt
+     * @param _evt Defines the event to track
      */
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    public onButtonUp(evt: IPointerEvent): void {}
+    public onButtonUp(_evt: IPointerEvent): void {}
 
     /**
      * Called when window becomes inactive.

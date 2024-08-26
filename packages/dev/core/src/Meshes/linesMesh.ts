@@ -7,11 +7,10 @@ import type { SubMesh } from "../Meshes/subMesh";
 import { Mesh } from "../Meshes/mesh";
 import { InstancedMesh } from "../Meshes/instancedMesh";
 import { Material } from "../Materials/material";
+import type { IShaderMaterialOptions } from "../Materials/shaderMaterial";
 import { ShaderMaterial } from "../Materials/shaderMaterial";
 import type { Effect } from "../Materials/effect";
-
-import "../Shaders/color.fragment";
-import "../Shaders/color.vertex";
+import { ShaderLanguage } from "core/Materials/shaderLanguage";
 
 Mesh._LinesMeshParser = (parsedMesh: any, scene: Scene): Mesh => {
     return LinesMesh.Parse(parsedMesh, scene);
@@ -22,6 +21,12 @@ Mesh._LinesMeshParser = (parsedMesh: any, scene: Scene): Mesh => {
  * @see https://doc.babylonjs.com/features/featuresDeepDive/mesh/creation/param
  */
 export class LinesMesh extends Mesh {
+    /**
+     * Force all the LineMeshes to compile their default color material to glsl even on WebGPU engines.
+     * False by default. This is mostly meant for backward compatibility.
+     */
+    public static ForceGLSL = false;
+
     /**
      * Color of the line (Default: White)
      */
@@ -46,6 +51,9 @@ export class LinesMesh extends Mesh {
     }
 
     private _color4: Color4;
+
+    /** Shader language used by the material */
+    protected _shaderLanguage = ShaderLanguage.GLSL;
 
     /**
      * Creates a new LinesMesh
@@ -88,38 +96,54 @@ export class LinesMesh extends Mesh {
         this.intersectionThreshold = 0.1;
 
         const defines: string[] = [];
-        const options = {
+        const options: Partial<IShaderMaterialOptions> = {
             attributes: [VertexBuffer.PositionKind],
             uniforms: ["world", "viewProjection"],
             needAlphaBlending: true,
             defines: defines,
             useClipPlane: null,
+            shaderLanguage: ShaderLanguage.GLSL,
         };
 
         if (useVertexAlpha === false) {
             options.needAlphaBlending = false;
         } else {
-            options.defines.push("#define VERTEXALPHA");
+            options.defines!.push("#define VERTEXALPHA");
         }
 
         if (!useVertexColor) {
-            options.uniforms.push("color");
+            options.uniforms!.push("color");
             this._color4 = new Color4();
         } else {
-            options.defines.push("#define VERTEXCOLOR");
-            options.attributes.push(VertexBuffer.ColorKind);
+            options.defines!.push("#define VERTEXCOLOR");
+            options.attributes!.push(VertexBuffer.ColorKind);
         }
 
         if (material) {
             this.material = material;
         } else {
+            const engine = this.getScene().getEngine();
+
+            if (engine.isWebGPU && !LinesMesh.ForceGLSL) {
+                this._shaderLanguage = ShaderLanguage.WGSL;
+            }
+
+            options.shaderLanguage = this._shaderLanguage;
+            options.extraInitializationsAsync = async () => {
+                if (this._shaderLanguage === ShaderLanguage.WGSL) {
+                    await Promise.all([import("../ShadersWGSL/color.vertex"), import("../ShadersWGSL/color.fragment")]);
+                } else {
+                    await Promise.all([import("../Shaders/color.vertex"), import("../Shaders/color.fragment")]);
+                }
+            };
+
             this.material = new ShaderMaterial("colorShader", this.getScene(), "color", options, false);
             this.material.doNotSerialize = true;
         }
     }
 
-    public isReady() {
-        if (!this._lineMaterial.isReady(this, !!this._userInstancedBuffersStorage)) {
+    public override isReady() {
+        if (!this._lineMaterial.isReady(this, !!this._userInstancedBuffersStorage || this.hasThinInstances)) {
             return false;
         }
 
@@ -127,23 +151,23 @@ export class LinesMesh extends Mesh {
     }
 
     /**
-     * Returns the string "LineMesh"
+     * @returns the string "LineMesh"
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "LinesMesh";
     }
 
     /**
      * @internal
      */
-    public get material(): Material {
+    public override get material(): Material {
         return this._lineMaterial;
     }
 
     /**
      * @internal
      */
-    public set material(value: Material) {
+    public override set material(value: Material) {
         this._lineMaterial = value;
         this._lineMaterial.fillMode = Material.LineListDrawMode;
     }
@@ -151,25 +175,25 @@ export class LinesMesh extends Mesh {
     /**
      * @internal
      */
-    public get checkCollisions(): boolean {
+    public override get checkCollisions(): boolean {
         return false;
     }
 
-    public set checkCollisions(value: boolean) {
+    public override set checkCollisions(value: boolean) {
         // Just ignore it
     }
 
     /**
      * @internal
      */
-    public _bind(_subMesh: SubMesh, colorEffect: Effect): Mesh {
+    public override _bind(_subMesh: SubMesh, colorEffect: Effect): Mesh {
         if (!this._geometry) {
             return this;
         }
 
         // VBOs
         const indexToBind = this.isUnIndexed ? null : this._geometry.getIndexBuffer();
-        if (!this._userInstancedBuffersStorage) {
+        if (!this._userInstancedBuffersStorage || this.hasThinInstances) {
             this._geometry._bind(colorEffect, indexToBind);
         } else {
             this._geometry._bind(colorEffect, indexToBind, this._userInstancedBuffersStorage.vertexBuffers, this._userInstancedBuffersStorage.vertexArrayObjects);
@@ -188,7 +212,7 @@ export class LinesMesh extends Mesh {
     /**
      * @internal
      */
-    public _draw(subMesh: SubMesh, fillMode: number, instancesCount?: number): Mesh {
+    public override _draw(subMesh: SubMesh, fillMode: number, instancesCount?: number): Mesh {
         if (!this._geometry || !this._geometry.getVertexBuffers() || (!this._unIndexed && !this._geometry.getIndexBuffer())) {
             return this;
         }
@@ -212,7 +236,7 @@ export class LinesMesh extends Mesh {
      * @param doNotDisposeMaterial If the material should not be disposed (default: false, meaning the material is disposed)
      */
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    public dispose(doNotRecurse?: boolean, disposeMaterialAndTextures = false, doNotDisposeMaterial?: boolean): void {
+    public override dispose(doNotRecurse?: boolean, disposeMaterialAndTextures = false, doNotDisposeMaterial?: boolean): void {
         if (!doNotDisposeMaterial) {
             this._lineMaterial.dispose(false, false, true);
         }
@@ -221,11 +245,12 @@ export class LinesMesh extends Mesh {
 
     /**
      * Returns a new LineMesh object cloned from the current one.
-     * @param name
-     * @param newParent
-     * @param doNotCloneChildren
+     * @param name defines the cloned mesh name
+     * @param newParent defines the new mesh parent
+     * @param doNotCloneChildren if set to true, none of the mesh children are cloned (false by default)
+     * @returns the new mesh
      */
-    public clone(name: string, newParent: Nullable<Node> = null, doNotCloneChildren?: boolean): LinesMesh {
+    public override clone(name: string, newParent: Nullable<Node> = null, doNotCloneChildren?: boolean): LinesMesh {
         return new LinesMesh(name, this.getScene(), newParent, this, doNotCloneChildren);
     }
 
@@ -235,7 +260,7 @@ export class LinesMesh extends Mesh {
      * @param name defines the name of the new instance
      * @returns a new InstancedLinesMesh
      */
-    public createInstance(name: string): InstancedLinesMesh {
+    public override createInstance(name: string): InstancedLinesMesh {
         const instance = new InstancedLinesMesh(name, this);
 
         if (this.instancedBuffers) {
@@ -253,7 +278,7 @@ export class LinesMesh extends Mesh {
      * Serializes this ground mesh
      * @param serializationObject object to write serialization to
      */
-    public serialize(serializationObject: any): void {
+    public override serialize(serializationObject: any): void {
         super.serialize(serializationObject);
         serializationObject.color = this.color.asArray();
         serializationObject.alpha = this.alpha;
@@ -265,7 +290,7 @@ export class LinesMesh extends Mesh {
      * @param scene the scene to create the ground mesh in
      * @returns the created ground mesh
      */
-    public static Parse(parsedMesh: any, scene: Scene): LinesMesh {
+    public static override Parse(parsedMesh: any, scene: Scene): LinesMesh {
         const result = new LinesMesh(parsedMesh.name, scene);
 
         result.color = Color3.FromArray(parsedMesh.color);
@@ -292,9 +317,9 @@ export class InstancedLinesMesh extends InstancedMesh {
     }
 
     /**
-     * Returns the string "InstancedLinesMesh".
+     * @returns the string "InstancedLinesMesh".
      */
-    public getClassName(): string {
+    public override getClassName(): string {
         return "InstancedLinesMesh";
     }
 }

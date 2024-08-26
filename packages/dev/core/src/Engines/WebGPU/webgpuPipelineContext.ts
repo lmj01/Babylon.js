@@ -1,3 +1,5 @@
+/* eslint-disable babylonjs/available */
+/* eslint-disable jsdoc/require-jsdoc */
 import type { IPipelineContext } from "../IPipelineContext";
 import type { Nullable } from "../../types";
 import type { WebGPUEngine } from "../webgpuEngine";
@@ -6,6 +8,7 @@ import type { WebGPUShaderProcessingContext } from "./webgpuShaderProcessingCont
 import { UniformBuffer } from "../../Materials/uniformBuffer";
 import type { IMatrixLike, IVector2Like, IVector3Like, IVector4Like, IColor3Like, IColor4Like, IQuaternionLike } from "../../Maths/math.like";
 import { WebGPUShaderProcessor } from "./webgpuShaderProcessor";
+import type { AbstractEngine } from "../abstractEngine";
 
 /** @internal */
 export interface IWebGPURenderPipelineStageDescriptor {
@@ -20,6 +23,9 @@ export class WebGPUPipelineContext implements IPipelineContext {
     public shaderProcessingContext: WebGPUShaderProcessingContext;
 
     protected _leftOverUniformsByName: { [name: string]: string };
+
+    // Property used to handle vertex buffers with int values when the shader code expect float values.
+    public vertexBufferKindToType: { [kind: string]: number };
 
     public sources: {
         vertex: string;
@@ -61,6 +67,7 @@ export class WebGPUPipelineContext implements IPipelineContext {
         this.shaderProcessingContext = shaderProcessingContext;
         this._leftOverUniformsByName = {};
         this.engine = engine;
+        this.vertexBufferKindToType = {};
     }
 
     public _handlesSpectorRebuildCallback(): void {
@@ -79,11 +86,10 @@ export class WebGPUPipelineContext implements IPipelineContext {
     ) {
         const engine = this.engine;
 
-        // Prevent Memory Leak by reducing the number of string, refer to the string instead of copy.
-        effect._fragmentSourceCode = "";
-        effect._vertexSourceCode = "";
-        // this._fragmentSourceCodeOverride = "";
-        // this._vertexSourceCodeOverride = "";
+        if (engine._doNotHandleContextLost) {
+            effect._fragmentSourceCode = "";
+            effect._vertexSourceCode = "";
+        }
 
         const foundSamplers = this.shaderProcessingContext.availableTextures;
         let index: number;
@@ -138,6 +144,10 @@ export class WebGPUPipelineContext implements IPipelineContext {
         }
 
         this.uniformBuffer.create();
+    }
+
+    public setEngine(engine: AbstractEngine): void {
+        this.engine = engine as WebGPUEngine;
     }
 
     /**
@@ -360,7 +370,6 @@ export class WebGPUPipelineContext implements IPipelineContext {
      * Sets an array 3 on a uniform variable. (Array is specified as single array eg. [1,2,3,4,5,6] will result in [[1,2,3],[4,5,6]] in the shader)
      * @param uniformName Name of the variable.
      * @param array array to be set.
-     * @returns this effect.
      */
     public setArray3(uniformName: string, array: number[]): void {
         this.setArray(uniformName, array);
@@ -427,7 +436,6 @@ export class WebGPUPipelineContext implements IPipelineContext {
      * Sets a float on a uniform variable.
      * @param uniformName Name of the variable.
      * @param value value to be set.
-     * @returns this effect.
      */
     public setFloat(uniformName: string, value: number): void {
         if (!this.uniformBuffer || !this._leftOverUniformsByName[uniformName]) {
@@ -506,7 +514,6 @@ export class WebGPUPipelineContext implements IPipelineContext {
      * @param y Second float in float4.
      * @param z Third float in float4.
      * @param w Fourth float in float4.
-     * @returns this effect.
      */
     public setFloat4(uniformName: string, x: number, y: number, z: number, w: number): void {
         if (!this.uniformBuffer || !this._leftOverUniformsByName[uniformName]) {

@@ -1,5 +1,5 @@
 import type { Nullable } from "../types";
-import { Engine } from "../Engines/engine";
+import { AbstractEngine } from "../Engines/abstractEngine";
 /**
  * Interface used to present a loading screen while loading a scene
  * @see https://doc.babylonjs.com/features/featuresDeepDive/scene/customLoadingScreen
@@ -44,7 +44,11 @@ export class DefaultLoadingScreen implements ILoadingScreen {
      * @param _loadingText defines the default text to display
      * @param _loadingDivBackgroundColor defines the default background color
      */
-    constructor(private _renderingCanvas: HTMLCanvasElement, private _loadingText = "", private _loadingDivBackgroundColor = "black") {}
+    constructor(
+        private _renderingCanvas: HTMLCanvasElement,
+        private _loadingText = "",
+        private _loadingDivBackgroundColor = "black"
+    ) {}
 
     /**
      * Function called to display the loading screen
@@ -252,6 +256,6 @@ export class DefaultLoadingScreen implements ILoadingScreen {
     };
 }
 
-Engine.DefaultLoadingScreenFactory = (canvas: HTMLCanvasElement) => {
+AbstractEngine.DefaultLoadingScreenFactory = (canvas: HTMLCanvasElement) => {
     return new DefaultLoadingScreen(canvas);
 };

@@ -3,7 +3,7 @@ import { Vector2 } from "core/Maths/math.vector";
 import { Tools } from "core/Misc/tools";
 import type { AbstractMesh } from "core/Meshes/abstractMesh";
 import type { ISceneLoaderPluginAsync, ISceneLoaderPluginFactory, ISceneLoaderPlugin, ISceneLoaderAsyncResult } from "core/Loading/sceneLoader";
-import { SceneLoader } from "core/Loading/sceneLoader";
+import { registerSceneLoaderPlugin } from "core/Loading/sceneLoader";
 import { AssetContainer } from "core/assetContainer";
 import type { Scene } from "core/scene";
 import type { WebRequest } from "core/Misc/webRequest";
@@ -11,6 +11,20 @@ import { MTLFileLoader } from "./mtlFileLoader";
 import type { OBJLoadingOptions } from "./objLoadingOptions";
 import { SolidParser } from "./solidParser";
 import type { Mesh } from "core/Meshes/mesh";
+import { StandardMaterial } from "core/Materials/standardMaterial";
+
+// eslint-disable-next-line @typescript-eslint/naming-convention
+const PLUGIN_OBJ = "obj";
+
+declare module "core/Loading/sceneLoader" {
+    // eslint-disable-next-line jsdoc/require-jsdoc
+    export interface SceneLoaderPluginOptions {
+        /**
+         * Defines options for the obj loader.
+         */
+        [PLUGIN_OBJ]: {};
+    }
+}
 
 /**
  * OBJ file type loader.
@@ -64,14 +78,20 @@ export class OBJFileLoader implements ISceneLoaderPluginAsync, ISceneLoaderPlugi
      * Defaults to true for backwards compatibility.
      */
     public static MATERIAL_LOADING_FAILS_SILENTLY = true;
+
+    /**
+     * Loads assets without handedness conversions. This flag is for compatibility. Use it only if absolutely required. Defaults to false.
+     */
+    public static USE_LEGACY_BEHAVIOR = false;
+
     /**
      * Defines the name of the plugin.
      */
-    public name = "obj";
+    public readonly name = PLUGIN_OBJ;
     /**
      * Defines the extension the plugin is able to load.
      */
-    public extensions = ".obj";
+    public readonly extensions = ".obj";
 
     private _assetContainer: Nullable<AssetContainer> = null;
 
@@ -98,6 +118,7 @@ export class OBJFileLoader implements ISceneLoaderPluginAsync, ISceneLoaderPlugi
             materialLoadingFailsSilently: OBJFileLoader.MATERIAL_LOADING_FAILS_SILENTLY,
             optimizeWithUV: OBJFileLoader.OPTIMIZE_WITH_UV,
             skipMaterials: OBJFileLoader.SKIP_MATERIALS,
+            useLegacyBehavior: OBJFileLoader.USE_LEGACY_BEHAVIOR,
         };
     }
 
@@ -162,6 +183,7 @@ export class OBJFileLoader implements ISceneLoaderPluginAsync, ISceneLoaderPlugi
                 transformNodes: [],
                 geometries: [],
                 lights: [],
+                spriteManagers: [],
             };
         });
     }
@@ -233,8 +255,11 @@ export class OBJFileLoader implements ISceneLoaderPluginAsync, ISceneLoaderPlugi
     private _parseSolid(meshesNames: any, scene: Scene, data: string, rootUrl: string): Promise<Array<AbstractMesh>> {
         let fileToLoad: string = ""; //The name of the mtlFile to load
         const materialsFromMTLFile: MTLFileLoader = new MTLFileLoader();
-        const materialToUse = new Array<string>();
+        const materialToUse: string[] = [];
         const babylonMeshesArray: Array<Mesh> = []; //The mesh for babylon
+
+        // Sanitize data
+        data = data.replace(/#.*$/gm, "").trim();
 
         // Main function
         const solidParser = new SolidParser(materialToUse, babylonMeshesArray, this._loadingOptions);
@@ -313,12 +338,29 @@ export class OBJFileLoader implements ISceneLoaderPluginAsync, ISceneLoaderPlugi
         }
         //Return an array with all Mesh
         return Promise.all(mtlPromises).then(() => {
+            const isLine = (mesh: AbstractMesh) => Boolean(mesh._internalMetadata?.["_isLine"] ?? false);
+
+            // Iterate over the mesh, determine if it is a line mesh, clone or modify the material to line rendering.
+            babylonMeshesArray.forEach((mesh) => {
+                if (isLine(mesh)) {
+                    let mat = mesh.material ?? new StandardMaterial(mesh.name + "_line", scene);
+                    // If another mesh is using this material and it is not a line then we need to clone it.
+                    const needClone = mat.getBindedMeshes().filter((e) => !isLine(e)).length > 0;
+                    if (needClone) {
+                        mat = mat.clone(mat.name + "_line") ?? mat;
+                    }
+                    mat.wireframe = true;
+                    mesh.material = mat;
+                    if (mesh._internalMetadata) {
+                        mesh._internalMetadata["_isLine"] = undefined;
+                    }
+                }
+            });
+
             return babylonMeshesArray;
         });
     }
 }
 
-if (SceneLoader) {
-    //Add this loader into the register plugin
-    SceneLoader.RegisterPlugin(new OBJFileLoader());
-}
+//Add this loader into the register plugin
+registerSceneLoaderPlugin(new OBJFileLoader());

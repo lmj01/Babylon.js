@@ -3,7 +3,6 @@ import type { Nullable } from "../types";
 import { Material } from "./material";
 import { serialize, expandToProperty, serializeAsTexture } from "../Misc/decorators";
 import { MaterialFlags } from "./materialFlags";
-import { MaterialHelper } from "./materialHelper";
 import type { BaseTexture } from "./Textures/baseTexture";
 import type { UniformBuffer } from "./uniformBuffer";
 import type { IAnimatable } from "../Animations/animatable.interface";
@@ -11,10 +10,11 @@ import { MaterialDefines } from "./materialDefines";
 import { MaterialPluginBase } from "./materialPluginBase";
 import { Constants } from "../Engines/constants";
 
-declare type Engine = import("../Engines/engine").Engine;
-declare type Scene = import("../scene").Scene;
-declare type StandardMaterial = import("./standardMaterial").StandardMaterial;
-declare type PBRBaseMaterial = import("./PBR/pbrBaseMaterial").PBRBaseMaterial;
+import type { Engine } from "../Engines/engine";
+import type { Scene } from "../scene";
+import type { StandardMaterial } from "./standardMaterial";
+import type { PBRBaseMaterial } from "./PBR/pbrBaseMaterial";
+import { BindTextureMatrix, PrepareDefinesForMergedUV } from "./materialHelper.functions";
 
 /**
  * @internal
@@ -88,13 +88,21 @@ export class DetailMapConfiguration extends MaterialPluginBase {
         this._internalMarkAllSubMeshesAsTexturesDirty();
     }
 
+    /**
+     * Gets a boolean indicating that the plugin is compatible with a given shader language.
+     * @returns true if the plugin is compatible with the shader language
+     */
+    public override isCompatible(): boolean {
+        return true;
+    }
+
     constructor(material: PBRBaseMaterial | StandardMaterial, addToPluginList = true) {
         super(material, "DetailMap", 140, new MaterialDetailMapDefines(), addToPluginList);
 
         this._internalMarkAllSubMeshesAsTexturesDirty = material._dirtyCallbacks[Constants.MATERIAL_TextureDirtyFlag];
     }
 
-    public isReadyForSubMesh(defines: MaterialDetailMapDefines, scene: Scene, engine: Engine): boolean {
+    public override isReadyForSubMesh(defines: MaterialDetailMapDefines, scene: Scene, engine: Engine): boolean {
         if (!this._isEnabled) {
             return true;
         }
@@ -111,7 +119,7 @@ export class DetailMapConfiguration extends MaterialPluginBase {
         return true;
     }
 
-    public prepareDefines(defines: MaterialDetailMapDefines, scene: Scene): void {
+    public override prepareDefines(defines: MaterialDetailMapDefines, scene: Scene): void {
         if (this._isEnabled) {
             defines.DETAIL_NORMALBLENDMETHOD = this._normalBlendMethod;
 
@@ -119,7 +127,7 @@ export class DetailMapConfiguration extends MaterialPluginBase {
 
             if (defines._areTexturesDirty) {
                 if (engine.getCaps().standardDerivatives && this._texture && MaterialFlags.DetailTextureEnabled && this._isEnabled) {
-                    MaterialHelper.PrepareDefinesForMergedUV(this._texture, defines, "DETAIL");
+                    PrepareDefinesForMergedUV(this._texture, defines, "DETAIL");
                     defines.DETAIL_NORMALBLENDMETHOD = this._normalBlendMethod;
                 } else {
                     defines.DETAIL = false;
@@ -130,7 +138,7 @@ export class DetailMapConfiguration extends MaterialPluginBase {
         }
     }
 
-    public bindForSubMesh(uniformBuffer: UniformBuffer, scene: Scene): void {
+    public override bindForSubMesh(uniformBuffer: UniformBuffer, scene: Scene): void {
         if (!this._isEnabled) {
             return;
         }
@@ -140,7 +148,7 @@ export class DetailMapConfiguration extends MaterialPluginBase {
         if (!uniformBuffer.useUbo || !isFrozen || !uniformBuffer.isSync) {
             if (this._texture && MaterialFlags.DetailTextureEnabled) {
                 uniformBuffer.updateFloat4("vDetailInfos", this._texture.coordinatesIndex, this.diffuseBlendLevel, this.bumpLevel, this.roughnessBlendLevel);
-                MaterialHelper.BindTextureMatrix(this._texture, uniformBuffer, "detail");
+                BindTextureMatrix(this._texture, uniformBuffer, "detail");
             }
         }
 
@@ -152,7 +160,7 @@ export class DetailMapConfiguration extends MaterialPluginBase {
         }
     }
 
-    public hasTexture(texture: BaseTexture): boolean {
+    public override hasTexture(texture: BaseTexture): boolean {
         if (this._texture === texture) {
             return true;
         }
@@ -160,33 +168,33 @@ export class DetailMapConfiguration extends MaterialPluginBase {
         return false;
     }
 
-    public getActiveTextures(activeTextures: BaseTexture[]): void {
+    public override getActiveTextures(activeTextures: BaseTexture[]): void {
         if (this._texture) {
             activeTextures.push(this._texture);
         }
     }
 
-    public getAnimatables(animatables: IAnimatable[]): void {
+    public override getAnimatables(animatables: IAnimatable[]): void {
         if (this._texture && this._texture.animations && this._texture.animations.length > 0) {
             animatables.push(this._texture);
         }
     }
 
-    public dispose(forceDisposeTextures?: boolean): void {
+    public override dispose(forceDisposeTextures?: boolean): void {
         if (forceDisposeTextures) {
             this._texture?.dispose();
         }
     }
 
-    public getClassName(): string {
+    public override getClassName(): string {
         return "DetailMapConfiguration";
     }
 
-    public getSamplers(samplers: string[]): void {
+    public override getSamplers(samplers: string[]): void {
         samplers.push("detailSampler");
     }
 
-    public getUniforms(): { ubo?: Array<{ name: string; size: number; type: string }>; vertex?: string; fragment?: string } {
+    public override getUniforms(): { ubo?: Array<{ name: string; size: number; type: string }>; vertex?: string; fragment?: string } {
         return {
             ubo: [
                 { name: "vDetailInfos", size: 4, type: "vec4" },

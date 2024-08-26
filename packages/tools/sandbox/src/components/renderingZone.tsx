@@ -21,6 +21,7 @@ import "../scss/renderingZone.scss";
 import { PBRBaseMaterial } from "core/Materials/PBR/pbrBaseMaterial";
 import { Texture } from "core/Materials/Textures/texture";
 import { PBRMaterial } from "core/Materials/PBR/pbrMaterial";
+import type { AbstractEngine } from "core/Engines/abstractEngine";
 
 function isTextureAsset(name: string): boolean {
     const queryStringIndex = name.indexOf("?");
@@ -28,7 +29,7 @@ function isTextureAsset(name: string): boolean {
         name = name.substring(0, queryStringIndex);
     }
 
-    return name.endsWith(".ktx") || name.endsWith(".ktx2") || name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg");
+    return name.endsWith(".ktx") || name.endsWith(".ktx2") || name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".webp");
 }
 
 interface IRenderingZoneProps {
@@ -41,7 +42,7 @@ interface IRenderingZoneProps {
 
 export class RenderingZone extends React.Component<IRenderingZoneProps> {
     private _currentPluginName?: string;
-    private _engine: Engine;
+    private _engine: AbstractEngine;
     private _scene: Scene;
     private _canvas: HTMLCanvasElement;
 
@@ -51,8 +52,7 @@ export class RenderingZone extends React.Component<IRenderingZoneProps> {
 
     async initEngine() {
         const useWebGPU = location.href.indexOf("webgpu") !== -1 && !!(navigator as any).gpu;
-        // TODO - remove this once not needed anymore. Spoofing Safari 15.4.X
-        const antialias = this.props.globalState.commerceMode ? false : undefined;
+        const antialias = !this.props.globalState.commerceMode;
 
         this._canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
         if (useWebGPU) {
@@ -117,6 +117,7 @@ export class RenderingZone extends React.Component<IRenderingZoneProps> {
                     case "hdr": {
                         FilesInput.FilesToLoad[name] = file;
                         EnvironmentTools.SkyboxPath = "file:" + (file as any).correctName;
+                        EnvironmentTools.ResetEnvironmentTexture();
                         return false;
                     }
                     default: {
@@ -169,8 +170,9 @@ export class RenderingZone extends React.Component<IRenderingZoneProps> {
 
             const camera = this._scene.activeCamera! as ArcRotateCamera;
 
-            if (this._currentPluginName === "gltf") {
+            if (this._currentPluginName === "gltf" || this._currentPluginName === "obj") {
                 // glTF assets use a +Z forward convention while the default camera faces +Z. Rotate the camera to look at the front of the asset.
+                // We do this same for obj as it matches other viewers, but obj does not specify a forward convention.
                 camera.alpha += Math.PI;
             }
 
@@ -352,7 +354,7 @@ export class RenderingZone extends React.Component<IRenderingZoneProps> {
         }
     }
 
-    componentDidMount() {
+    override componentDidMount() {
         if (!Engine.isSupported()) {
             return;
         }
@@ -387,7 +389,7 @@ export class RenderingZone extends React.Component<IRenderingZoneProps> {
         this.initEngine();
     }
 
-    shouldComponentUpdate(nextProps: IRenderingZoneProps) {
+    override shouldComponentUpdate(nextProps: IRenderingZoneProps) {
         if (nextProps.expanded !== this.props.expanded) {
             setTimeout(() => this._engine.resize());
             return true;
@@ -395,7 +397,7 @@ export class RenderingZone extends React.Component<IRenderingZoneProps> {
         return false;
     }
 
-    public render() {
+    public override render() {
         return (
             <div id="canvasZone" className={this.props.expanded ? "expanded" : ""}>
                 <canvas id="renderCanvas" touch-action="none" onContextMenu={(evt) => evt.preventDefault()}></canvas>

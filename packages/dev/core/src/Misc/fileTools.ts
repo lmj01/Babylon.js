@@ -9,13 +9,16 @@ import { FilesInputStore } from "./filesInputStore";
 import { RetryStrategy } from "./retryStrategy";
 import { BaseError, ErrorCodes, RuntimeError } from "./error";
 import { DecodeBase64ToBinary, DecodeBase64ToString, EncodeArrayBufferToBase64 } from "./stringTools";
-import { ShaderProcessor } from "../Engines/Processors/shaderProcessor";
-import { ThinEngine } from "../Engines/thinEngine";
+import { _functionContainer } from "../Engines/Processors/shaderProcessor";
 import { EngineStore } from "../Engines/engineStore";
 import { Logger } from "./logger";
 import { TimingTools } from "./timingTools";
+import type { INative } from "../Engines/Native/nativeInterfaces";
+import { EngineFunctionContext } from "core/Engines/abstractEngine.functions";
+import { AbstractEngine } from "../Engines/abstractEngine";
 
 const Base64DataUrlRegEx = new RegExp(/^data:([^,]+\/[^,]+)?;base64,/i);
+declare const _native: INative;
 
 /** @ignore */
 export class LoadFileError extends RuntimeError {
@@ -48,7 +51,10 @@ export class RequestFileError extends RuntimeError {
      * @param message defines the message of the error
      * @param request defines the optional web request
      */
-    constructor(message: string, public request: WebRequest) {
+    constructor(
+        message: string,
+        public request: WebRequest
+    ) {
         super(message, ErrorCodes.RequestFileError);
         this.name = "RequestFileError";
         BaseError._setPrototypeOf(this, RequestFileError.prototype);
@@ -62,12 +68,26 @@ export class ReadFileError extends RuntimeError {
      * @param message defines the message of the error
      * @param file defines the optional file
      */
-    constructor(message: string, public file: File) {
+    constructor(
+        message: string,
+        public file: File
+    ) {
         super(message, ErrorCodes.ReadFileError);
         this.name = "ReadFileError";
         BaseError._setPrototypeOf(this, ReadFileError.prototype);
     }
 }
+
+/**
+ * Removes unwanted characters from an url
+ * @param url defines the url to clean
+ * @returns the cleaned url
+ */
+const CleanUrl = (url: string): string => {
+    url = url.replace(/#/gm, "%23");
+    return url;
+};
+
 /**
  * @internal
  */
@@ -76,6 +96,9 @@ export const FileToolsOptions: {
     BaseUrl: string;
     CorsBehavior: string | ((url: string | string[]) => string);
     PreprocessUrl: (url: string) => string;
+    ScriptBaseUrl: string;
+    ScriptPreprocessUrl: (url: string) => string;
+    CleanUrl: (url: string) => string;
 } = {
     /**
      * Gets or sets the retry strategy to apply when an error happens while loading an asset.
@@ -99,20 +122,29 @@ export const FileToolsOptions: {
     /**
      * Gets or sets a function used to pre-process url before using them to load assets
      * @param url
+     * @returns the processed url
      */
-    PreprocessUrl: (url: string) => {
-        return url;
-    },
-};
+    PreprocessUrl: (url: string) => url,
 
-/**
- * Removes unwanted characters from an url
- * @param url defines the url to clean
- * @returns the cleaned url
- */
-const _CleanUrl = (url: string): string => {
-    url = url.replace(/#/gm, "%23");
-    return url;
+    /**
+     * Gets or sets the base URL to use to load scripts
+     * Used for both JS and WASM
+     */
+    ScriptBaseUrl: "",
+    /**
+     * Gets or sets a function used to pre-process script url before using them to load.
+     * Used for both JS and WASM
+     * @param url defines the url to process
+     * @returns the processed url
+     */
+    ScriptPreprocessUrl: (url: string) => url,
+
+    /**
+     * Gets or sets a function used to clean the url before using it to load assets
+     * @param url defines the url to clean
+     * @returns the cleaned url
+     */
+    CleanUrl,
 };
 
 /**
@@ -139,6 +171,24 @@ export const SetCorsBehavior = (url: string | string[], element: { crossOrigin: 
 };
 
 /**
+ * Configuration used to load images
+ * @see #DKMEZK#2
+ */
+export const LoadImageConfiguration: {
+    /**
+     * Use this callback if you want to provide the required size of an image before loading it.
+     */
+    getRequiredSize: Nullable<
+        (input: string | ArrayBuffer | ArrayBufferView | Blob) => {
+            width: number;
+            height: number;
+        }
+    >;
+} = {
+    getRequiredSize: null,
+};
+
+/**
  * Loads an image as an HTMLImageElement.
  * @param input url string, ArrayBuffer, or Blob to load
  * @param onLoad callback called when the image successfully loads
@@ -157,6 +207,12 @@ export const LoadImage = (
     mimeType: string = "",
     imageBitmapOptions?: ImageBitmapOptions
 ): Nullable<HTMLImageElement> => {
+    const engine = EngineStore.LastCreatedEngine;
+    if (typeof HTMLImageElement === "undefined" && !engine?._features.forceBitmapOverHTMLImageElement) {
+        onError("LoadImage is only supported in web or BabylonNative environments.");
+        return null;
+    }
+
     let url: string;
     let usingObjectURL = false;
 
@@ -171,11 +227,9 @@ export const LoadImage = (
         url = URL.createObjectURL(input);
         usingObjectURL = true;
     } else {
-        url = _CleanUrl(input);
-        url = FileToolsOptions.PreprocessUrl(input);
+        url = FileToolsOptions.CleanUrl(input);
+        url = FileToolsOptions.PreprocessUrl(url);
     }
-
-    const engine = EngineStore.LastCreatedEngine;
 
     const onErrorHandler = (exception: any) => {
         if (onError) {
@@ -184,7 +238,7 @@ export const LoadImage = (
         }
     };
 
-    if (typeof Image === "undefined" || (engine?._features.forceBitmapOverHTMLImageElement ?? false)) {
+    if (engine?._features.forceBitmapOverHTMLImageElement) {
         LoadFile(
             url,
             (data) => {
@@ -214,6 +268,15 @@ export const LoadImage = (
     }
 
     const img = new Image();
+    if (LoadImageConfiguration.getRequiredSize) {
+        const size = LoadImageConfiguration.getRequiredSize(input);
+        if (size.width) {
+            img.width = size.width;
+        }
+        if (size.height) {
+            img.height = size.height;
+        }
+    }
     SetCorsBehavior(url, img);
 
     const handlersList: { target: any; name: string; handler: any }[] = [];
@@ -254,7 +317,7 @@ export const LoadImage = (
     };
 
     const cspHandler = (err: any) => {
-        if (err.blockedURI !== img.src) {
+        if (err.blockedURI !== img.src || err.disposition === "report") {
             return;
         }
 
@@ -278,7 +341,7 @@ export const LoadImage = (
     const fromBlob = url.substring(0, 5) === "blob:";
     const fromData = url.substring(0, 5) === "data:";
     const noOfflineSupport = () => {
-        if (fromBlob || fromData) {
+        if (fromBlob || fromData || !WebRequest.IsCustomRequestAvailable) {
             img.src = url;
         } else {
             LoadFile(
@@ -293,7 +356,7 @@ export const LoadImage = (
                 undefined,
                 offlineProvider || undefined,
                 true,
-                (request, exception) => {
+                (_request, exception) => {
                     onErrorHandler(exception);
                 }
             );
@@ -495,7 +558,7 @@ export const RequestFile = (
     onError?: (error: RequestFileError) => void,
     onOpened?: (request: WebRequest) => void
 ): IFileRequest => {
-    url = _CleanUrl(url);
+    url = FileToolsOptions.CleanUrl(url);
     url = FileToolsOptions.PreprocessUrl(url);
 
     const loadUrl = FileToolsOptions.BaseUrl + url;
@@ -747,9 +810,165 @@ export const DecodeBase64UrlToString = (uri: string): string => {
  * @internal
  */
 const initSideEffects = () => {
-    ThinEngine._FileToolsLoadImage = LoadImage;
-    ThinEngine._FileToolsLoadFile = LoadFile;
-    ShaderProcessor._FileToolsLoadFile = LoadFile;
+    AbstractEngine._FileToolsLoadImage = LoadImage;
+    EngineFunctionContext.loadFile = LoadFile;
+    _functionContainer.loadFile = LoadFile;
 };
 
 initSideEffects();
+
+// deprecated
+
+/**
+ * FileTools defined as any.
+ * This should not be imported or used in future releases or in any module in the framework
+ * @internal
+ * @deprecated import the needed function from fileTools.ts
+ */
+export let FileTools: {
+    DecodeBase64UrlToBinary: (uri: string) => ArrayBuffer;
+    DecodeBase64UrlToString: (uri: string) => string;
+    DefaultRetryStrategy: any;
+    BaseUrl: any;
+    CorsBehavior: any;
+    PreprocessUrl: any;
+    IsBase64DataUrl: (uri: string) => boolean;
+    IsFileURL: () => boolean;
+    LoadFile: (
+        fileOrUrl: string | File,
+        onSuccess: (data: string | ArrayBuffer, responseURL?: string | undefined) => void,
+        onProgress?: ((ev: ProgressEvent<EventTarget>) => void) | undefined,
+        offlineProvider?: IOfflineProvider | undefined,
+        useArrayBuffer?: boolean | undefined,
+        onError?: ((request?: WebRequest | undefined, exception?: LoadFileError | undefined) => void) | undefined,
+        onOpened?: ((request: WebRequest) => void) | undefined
+    ) => IFileRequest;
+    LoadImage: (
+        input: string | ArrayBuffer | Blob | ArrayBufferView,
+        onLoad: (img: HTMLImageElement | ImageBitmap) => void,
+        onError: (message?: string | undefined, exception?: any) => void,
+        offlineProvider: Nullable<IOfflineProvider>,
+        mimeType?: string | undefined,
+        imageBitmapOptions?: ImageBitmapOptions | undefined
+    ) => Nullable<HTMLImageElement>;
+    ReadFile: (
+        file: File,
+        onSuccess: (data: any) => void,
+        onProgress?: ((ev: ProgressEvent<EventTarget>) => any) | undefined,
+        useArrayBuffer?: boolean | undefined,
+        onError?: ((error: ReadFileError) => void) | undefined
+    ) => IFileRequest;
+    RequestFile: (
+        url: string,
+        onSuccess: (data: string | ArrayBuffer, request?: WebRequest | undefined) => void,
+        onProgress?: ((event: ProgressEvent<EventTarget>) => void) | undefined,
+        offlineProvider?: IOfflineProvider | undefined,
+        useArrayBuffer?: boolean | undefined,
+        onError?: ((error: RequestFileError) => void) | undefined,
+        onOpened?: ((request: WebRequest) => void) | undefined
+    ) => IFileRequest;
+    SetCorsBehavior: (url: string | string[], element: { crossOrigin: string | null }) => void;
+};
+/**
+ * @internal
+ */
+export const _injectLTSFileTools = (
+    DecodeBase64UrlToBinary: (uri: string) => ArrayBuffer,
+    DecodeBase64UrlToString: (uri: string) => string,
+    FileToolsOptions: { DefaultRetryStrategy: any; BaseUrl: any; CorsBehavior: any; PreprocessUrl: any; CleanUrl: any },
+    IsBase64DataUrl: (uri: string) => boolean,
+    IsFileURL: () => boolean,
+    LoadFile: (
+        fileOrUrl: string | File,
+        onSuccess: (data: string | ArrayBuffer, responseURL?: string | undefined) => void,
+        onProgress?: ((ev: ProgressEvent<EventTarget>) => void) | undefined,
+        offlineProvider?: IOfflineProvider | undefined,
+        useArrayBuffer?: boolean | undefined,
+        onError?: ((request?: WebRequest | undefined, exception?: LoadFileError | undefined) => void) | undefined,
+        onOpened?: ((request: WebRequest) => void) | undefined
+    ) => IFileRequest,
+    LoadImage: (
+        input: string | ArrayBuffer | ArrayBufferView | Blob,
+        onLoad: (img: HTMLImageElement | ImageBitmap) => void,
+        onError: (message?: string | undefined, exception?: any) => void,
+        offlineProvider: Nullable<IOfflineProvider>,
+        mimeType?: string,
+        imageBitmapOptions?: ImageBitmapOptions | undefined
+    ) => Nullable<HTMLImageElement>,
+    ReadFile: (
+        file: File,
+        onSuccess: (data: any) => void,
+        onProgress?: ((ev: ProgressEvent<EventTarget>) => any) | undefined,
+        useArrayBuffer?: boolean | undefined,
+        onError?: ((error: ReadFileError) => void) | undefined
+    ) => IFileRequest,
+    RequestFile: (
+        url: string,
+        onSuccess: (data: string | ArrayBuffer, request?: WebRequest | undefined) => void,
+        onProgress?: ((event: ProgressEvent<EventTarget>) => void) | undefined,
+        offlineProvider?: IOfflineProvider | undefined,
+        useArrayBuffer?: boolean | undefined,
+        onError?: ((error: RequestFileError) => void) | undefined,
+        onOpened?: ((request: WebRequest) => void) | undefined
+    ) => IFileRequest,
+    SetCorsBehavior: (url: string | string[], element: { crossOrigin: string | null }) => void
+) => {
+    /**
+     * Backwards compatibility.
+     * @internal
+     * @deprecated
+     */
+    FileTools = {
+        DecodeBase64UrlToBinary,
+        DecodeBase64UrlToString,
+        DefaultRetryStrategy: FileToolsOptions.DefaultRetryStrategy,
+        BaseUrl: FileToolsOptions.BaseUrl,
+        CorsBehavior: FileToolsOptions.CorsBehavior,
+        PreprocessUrl: FileToolsOptions.PreprocessUrl,
+        IsBase64DataUrl,
+        IsFileURL,
+        LoadFile,
+        LoadImage,
+        ReadFile,
+        RequestFile,
+        SetCorsBehavior,
+    };
+
+    Object.defineProperty(FileTools, "DefaultRetryStrategy", {
+        get: function (this: null) {
+            return FileToolsOptions.DefaultRetryStrategy;
+        },
+        set: function (this: null, value: (url: string, request: WebRequest, retryIndex: number) => number) {
+            FileToolsOptions.DefaultRetryStrategy = value;
+        },
+    });
+
+    Object.defineProperty(FileTools, "BaseUrl", {
+        get: function (this: null) {
+            return FileToolsOptions.BaseUrl;
+        },
+        set: function (this: null, value: string) {
+            FileToolsOptions.BaseUrl = value;
+        },
+    });
+
+    Object.defineProperty(FileTools, "PreprocessUrl", {
+        get: function (this: null) {
+            return FileToolsOptions.PreprocessUrl;
+        },
+        set: function (this: null, value: (url: string) => string) {
+            FileToolsOptions.PreprocessUrl = value;
+        },
+    });
+
+    Object.defineProperty(FileTools, "CorsBehavior", {
+        get: function (this: null) {
+            return FileToolsOptions.CorsBehavior;
+        },
+        set: function (this: null, value: string | ((url: string | string[]) => string)) {
+            FileToolsOptions.CorsBehavior = value;
+        },
+    });
+};
+
+_injectLTSFileTools(DecodeBase64UrlToBinary, DecodeBase64UrlToString, FileToolsOptions, IsBase64DataUrl, IsFileURL, LoadFile, LoadImage, ReadFile, RequestFile, SetCorsBehavior);

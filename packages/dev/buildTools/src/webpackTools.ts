@@ -1,9 +1,10 @@
+/* eslint-disable no-console */
 import type ts from "typescript";
-import transformer from "./pathTransform";
-import type { BuildType, DevPackageName, UMDPackageName } from "./packageMapping";
-import { getPackageMappingByDevName, getPublicPackageName, isValidDevPackageName, umdPackageMapping } from "./packageMapping";
+import transformer from "./pathTransform.js";
+import type { BuildType, DevPackageName, UMDPackageName } from "./packageMapping.js";
+import { getPackageMappingByDevName, getPublicPackageName, isValidDevPackageName, umdPackageMapping } from "./packageMapping.js";
 import * as path from "path";
-import { camelize } from "./utils";
+import { camelize } from "./utils.js";
 import type { RuleSetRule, Configuration } from "webpack";
 
 export const externalsFunction = (excludePackages: string[] = [], type: BuildType = "umd") => {
@@ -154,6 +155,61 @@ export const getRules = (
     return rules;
 };
 
+export const commonDevWebpackConfiguration = (
+    env: {
+        mode: "development" | "production";
+        outputFilename: string;
+        dirName: string;
+        enableHttps?: boolean;
+        enableHotReload?: boolean;
+        enableLiveReload?: boolean;
+    },
+    devServerConfig?: {
+        port: number;
+        static?: string[];
+        showBuildProgress?: boolean;
+    }
+) => {
+    const production = env.mode === "production" || process.env.NODE_ENV === "production";
+    return {
+        mode: production ? "production" : "development",
+        devtool: production ? "source-map" : "inline-cheap-module-source-map",
+        devServer: devServerConfig
+            ? {
+                  port: devServerConfig.port,
+                  static: devServerConfig.static ? devServerConfig.static.map((dir) => path.resolve(dir)) : undefined,
+                  webSocketServer: production ? false : "ws",
+                  compress: production,
+                  server: env.enableHttps !== undefined || process.env.ENABLE_HTTPS === "true" ? "https" : "http",
+                  hot: (env.enableHotReload !== undefined || process.env.ENABLE_HOT_RELOAD === "true") && !production ? true : false,
+                  liveReload: (env.enableLiveReload !== undefined || process.env.ENABLE_LIVE_RELOAD === "true") && !production ? true : false,
+                  headers: {
+                      // eslint-disable-next-line @typescript-eslint/naming-convention
+                      "Access-Control-Allow-Origin": "*",
+                  },
+                  client: {
+                      overlay: process.env.DISABLE_DEV_OVERLAY
+                          ? false
+                          : {
+                                warnings: false,
+                                errors: true,
+                            },
+                      logging: production ? "error" : "info",
+                      progress: devServerConfig.showBuildProgress,
+                  },
+                  allowedHosts: process.env.ALLOWED_HOSTS ? process.env.ALLOWED_HOSTS.split(",") : undefined,
+              }
+            : undefined,
+        output: env.outputFilename
+            ? {
+                  path: path.resolve(env.dirName, "dist"),
+                  filename: env.outputFilename,
+                  devtoolModuleFilenameTemplate: production ? "webpack://[namespace]/[resource-path]?[loaders]" : "file:///[absolute-resource-path]",
+              }
+            : undefined,
+    };
+};
+
 export const commonUMDWebpackConfiguration = (options: {
     entryPoints?: { [name: string]: string };
     overrideFilename?: string | ((chunk: any) => string);
@@ -179,7 +235,7 @@ export const commonUMDWebpackConfiguration = (options: {
     }.js`;
     return {
         entry: options.entryPoints ?? "./src/index.ts",
-        devtool: "source-map",
+        devtool: options.mode === "production" ? "source-map" : "inline-cheap-module-source-map",
         mode: options.mode || "development",
         output: {
             path: options.outputPath || path.resolve("./dist"),
@@ -211,12 +267,24 @@ export const commonUMDWebpackConfiguration = (options: {
                     getCustomTransformers: (_program: ts.Program) => {
                         // webpack program
                         console.log("generating transformers...");
-                        return transformer(_program, {
-                            basePackage: packageName,
-                            buildType: options.es6Mode ? "es6" : "umd",
-                            packageOnly: false,
-                            keepDev: true,
-                        });
+                        return {
+                            after: [
+                                transformer(_program, {
+                                    basePackage: packageName,
+                                    buildType: options.es6Mode ? "es6" : "umd",
+                                    packageOnly: false,
+                                    keepDev: true,
+                                }),
+                            ],
+                            afterDeclarations: [
+                                transformer(_program, {
+                                    basePackage: packageName,
+                                    buildType: options.es6Mode ? "es6" : "umd",
+                                    packageOnly: false,
+                                    keepDev: true,
+                                }),
+                            ],
+                        };
                     },
                 },
                 sideEffects: true,

@@ -51,6 +51,8 @@ export class NodeListComponent extends React.Component<INodeListComponentProps, 
         DeltaTimeBlock: "A float representing the time that has passed since the last frame was rendered",
         Float: "A floating point number representing a value with a fractional component",
         TextureBlock: "A node for reading a linked or embedded texture file",
+        PrePassTextureBlock: "A node for reading textures from the prepass",
+        MouseInfoBlock: "return a Vector4 that contains x, y, leftButton, rightButton",
         TimeBlock: "A float value that represents the time that has passed since the scene was loaded (it is incremented by 0.6 each second)",
         RealTimeBlock: "A float value that represents the number of seconds that have elapsed since the engine was initialized",
         Vector2: "a vector composed of X and Y channels",
@@ -85,6 +87,7 @@ export class NodeListComponent extends React.Component<INodeListComponentProps, 
         WorldPosition: "A Vector4 representing the position of each vertex of the attached mesh transformed into world space",
         DiscardBlock: "A final node that will not output a pixel below the cutoff value",
         FragmentOutputBlock: "A mandatory final node for outputing the color of each pixel",
+        PrePassOutputBlock: "An optional final node for outputing geometry data on prepass textures",
         VertexOutputBlock: "A mandatory final node for outputing the position of each vertex",
         ClampBlock: "Outputs values above the maximum or below minimum as maximum or minimum values respectively",
         NormalizeBlock: "Remaps the length of a vector or color to 1",
@@ -107,6 +110,7 @@ export class NodeListComponent extends React.Component<INodeListComponentProps, 
         ArcSinBlock: "Outputs the inverse of the sine value based on the input value",
         ArcTan2Block: "Outputs the inverse of the tangent value based on the input value",
         ArcTanBlock: "Outputs the inverse of the tangent value based on the input value",
+        SetBlock: "Outputs the alias based on the input value",
         CosBlock: "Outputs the cosine value based on the input value",
         DegreesToRadiansBlock: "Converts the input degrees value to radians",
         Exp2Block: "Outputs the input value multiplied by itself 1 time. (Exponent of 2)",
@@ -117,10 +121,10 @@ export class NodeListComponent extends React.Component<INodeListComponentProps, 
         RadiansToDegreesBlock: "Converts the input radians value to degrees",
         SawToothWaveBlock: "Outputs a sawtooth pattern value between -1 and 1 based on the input value",
         SignBlock: "returns 1 if the input is positive, 0 if input is equal to 0, or -1 if the input is negative",
-        SinBlock: "Outputs the the sine value based on the input value",
-        SqrtBlock: "Outputs the the square root of the input value",
+        SinBlock: "Outputs the sine value based on the input value",
+        SqrtBlock: "Outputs the square root of the input value",
         SquareWaveBlock: "Outputs a stepped pattern value between -1 and 1 based on the input value",
-        TanBlock: "Outputs the the tangent value based on the input value",
+        TanBlock: "Outputs the tangent value based on the input value",
         TriangleWaveBlock: "Outputs a sawtooth pattern value between 0 and 1 based on the input value",
         CrossBlock: "Outputs a vector that is perpendicular to two input vectors",
         DotBlock: "Outputs the cos of the angle between two vectors",
@@ -170,6 +174,8 @@ export class NodeListComponent extends React.Component<INodeListComponentProps, 
         ScreenSpaceBlock: "Convert a Vector3 or a Vector4 into screen space",
         TwirlBlock: "Apply a twirl rotation",
         ElbowBlock: "Passthrough block mostly used to organize your graph",
+        TeleportInBlock: "Passthrough block mostly used to organize your graph (but without visible lines). It works like a teleportation point for the graph.",
+        TeleportOutBlock: "Endpoint for a TeleportInBlock.",
         ClipPlanesBlock: "A node that add clip planes support",
         HeightToNormalBlock: "Convert a height map into a normal map",
         FragDepthBlock: "A final node that sets the fragment depth",
@@ -205,7 +211,7 @@ export class NodeListComponent extends React.Component<INodeListComponentProps, 
         });
     }
 
-    componentWillUnmount() {
+    override componentWillUnmount() {
         this.props.globalState.onResetRequiredObservable.remove(this._onResetRequiredObserver);
     }
 
@@ -248,6 +254,10 @@ export class NodeListComponent extends React.Component<INodeListComponentProps, 
     removeItem(value: string): void {
         const frameJson = localStorage.getItem("Custom-Frame-List");
         if (frameJson) {
+            const registeredIdx = NodeLedger.RegisteredNodeNames.indexOf(value);
+            if (registeredIdx !== -1) {
+                NodeLedger.RegisteredNodeNames.splice(registeredIdx, 1);
+            }
             const frameList = JSON.parse(frameJson);
             delete frameList[value];
             localStorage.removeItem(value);
@@ -301,7 +311,7 @@ export class NodeListComponent extends React.Component<INodeListComponentProps, 
         }
     }
 
-    render() {
+    override render() {
         const customFrameNames: string[] = [];
         for (const frame in this._customFrameList) {
             customFrameNames.push(frame);
@@ -328,6 +338,7 @@ export class NodeListComponent extends React.Component<INodeListComponentProps, 
                 "Color4",
                 "TextureBlock",
                 "ReflectionTextureBlock",
+                "MouseInfoBlock",
                 "TimeBlock",
                 "RealTimeBlock",
                 "DeltaTimeBlock",
@@ -375,6 +386,7 @@ export class NodeListComponent extends React.Component<INodeListComponentProps, 
                 "SquareWaveBlock",
                 "TanBlock",
                 "TriangleWaveBlock",
+                "SetBlock",
             ],
             Math__Vector: [
                 "CrossBlock",
@@ -402,7 +414,7 @@ export class NodeListComponent extends React.Component<INodeListComponentProps, 
                 "MatrixDeterminantBlock",
                 "MatrixTransposeBlock",
             ],
-            Misc: ["ElbowBlock", "ShadowMapBlock"],
+            Misc: ["ElbowBlock", "ShadowMapBlock", "TeleportInBlock", "TeleportOutBlock"],
             Mesh: [
                 "InstancesBlock",
                 "PositionBlock",
@@ -426,7 +438,7 @@ export class NodeListComponent extends React.Component<INodeListComponentProps, 
                 "MeshAttributeExistsBlock",
             ],
             Noises: ["RandomNumberBlock", "SimplexPerlin3DBlock", "WorleyNoise3DBlock", "CloudBlock", "VoronoiNoiseBlock"],
-            Output_Nodes: ["VertexOutputBlock", "FragmentOutputBlock", "DiscardBlock", "ClipPlanesBlock", "FragDepthBlock"],
+            Output_Nodes: ["VertexOutputBlock", "FragmentOutputBlock", "PrePassOutputBlock", "DiscardBlock", "ClipPlanesBlock", "FragDepthBlock"],
             Particle: [
                 "ParticleBlendMultiplyBlock",
                 "ParticleColorBlock",
@@ -437,7 +449,7 @@ export class NodeListComponent extends React.Component<INodeListComponentProps, 
                 "ParticleUVBlock",
             ],
             PBR: ["PBRMetallicRoughnessBlock", "AnisotropyBlock", "ClearCoatBlock", "ReflectionBlock", "RefractionBlock", "SheenBlock", "SubSurfaceBlock"],
-            PostProcess: ["ScreenPositionBlock", "CurrentScreenBlock"],
+            PostProcess: ["ScreenPositionBlock", "CurrentScreenBlock", "PrePassTextureBlock"],
             Procedural__Texture: ["ScreenPositionBlock"],
             Range: ["ClampBlock", "RemapBlock", "NormalizeBlock"],
             Round: ["RoundBlock", "CeilingBlock", "FloorBlock"],
@@ -466,6 +478,7 @@ export class NodeListComponent extends React.Component<INodeListComponentProps, 
                 delete allBlocks["Particle"];
                 delete allBlocks["Procedural__Texture"];
                 delete allBlocks["PBR"];
+                allBlocks.Output_Nodes.splice(allBlocks.Output_Nodes.indexOf("PrePassOutputBlock"), 1);
                 break;
             case NodeMaterialModes.ProceduralTexture:
                 delete allBlocks["Animation"];
@@ -473,6 +486,7 @@ export class NodeListComponent extends React.Component<INodeListComponentProps, 
                 delete allBlocks["Particle"];
                 delete allBlocks["PostProcess"];
                 delete allBlocks["PBR"];
+                allBlocks.Output_Nodes.splice(allBlocks.Output_Nodes.indexOf("PrePassOutputBlock"), 1);
                 break;
             case NodeMaterialModes.Particle:
                 delete allBlocks["Animation"];
@@ -483,6 +497,7 @@ export class NodeListComponent extends React.Component<INodeListComponentProps, 
                 allBlocks.Output_Nodes.splice(allBlocks.Output_Nodes.indexOf("VertexOutputBlock"), 1);
                 allBlocks.Scene.splice(allBlocks.Scene.indexOf("FogBlock"), 1);
                 allBlocks.Scene.splice(allBlocks.Scene.indexOf("FogColorBlock"), 1);
+                allBlocks.Output_Nodes.splice(allBlocks.Output_Nodes.indexOf("PrePassOutputBlock"), 1);
                 break;
         }
 
@@ -526,6 +541,7 @@ export class NodeListComponent extends React.Component<INodeListComponentProps, 
                         key="add..."
                         title={"Add Custom Frame"}
                         closed={false}
+                        multiple={true}
                         label="Add..."
                         uploadName={"custom-frame-upload"}
                         iconImage={addButton}
@@ -542,6 +558,7 @@ export class NodeListComponent extends React.Component<INodeListComponentProps, 
                         key="add..."
                         title={"Add Custom Block"}
                         closed={false}
+                        multiple={true}
                         label="Add..."
                         uploadName={"custom-block-upload"}
                         iconImage={addButton}
@@ -566,16 +583,29 @@ export class NodeListComponent extends React.Component<INodeListComponentProps, 
             for (const key in allBlocks) {
                 const blocks = allBlocks[key] as string[];
                 if (blocks.length) {
-                    ledger.push(...blocks);
+                    for (const block of blocks) {
+                        if (!ledger.includes(block)) {
+                            ledger.push(block);
+                        }
+                    }
                 }
             }
             NodeLedger.NameFormatter = (name) => {
-                return name.replace("Block", "");
+                let finalName = name;
+                // custom frame
+                if (name.endsWith("Custom")) {
+                    const nameIndex = name.lastIndexOf("Custom");
+                    finalName = name.substring(0, nameIndex);
+                    finalName += " [custom]";
+                } else {
+                    finalName = name.replace("Block", "");
+                }
+                return finalName;
             };
         }
 
         return (
-            <div id="nodeList">
+            <div id="nmeNodeList">
                 <div className="panes">
                     <div className="pane">
                         <div className="filter">

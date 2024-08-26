@@ -3,14 +3,13 @@ import type { IParticleSystem } from "./IParticleSystem";
 import { GPUParticleSystem } from "./gpuParticleSystem";
 import { AbstractScene } from "../abstractScene";
 import type { Effect } from "../Materials/effect";
-import { Engine } from "../Engines/engine";
 import { ParticleSystem } from "./particleSystem";
 import type { Scene } from "../scene";
 import { SceneComponentConstants } from "../sceneComponent";
 import type { AssetContainer } from "../assetContainer";
-
-import "../Shaders/particles.vertex";
 import type { EffectFallbacks } from "../Materials/effectFallbacks";
+import { AbstractEngine } from "../Engines/abstractEngine";
+import { ShaderLanguage } from "core/Materials/shaderLanguage";
 
 // Adds the parsers to the scene parsers.
 AbstractScene.AddParser(SceneComponentConstants.NAME_PARTICLESYSTEM, (parsedData: any, scene: Scene, container: AssetContainer, rootUrl: string) => {
@@ -39,8 +38,8 @@ AbstractScene.AddIndividualParser(SceneComponentConstants.NAME_PARTICLESYSTEM, (
     }
 });
 
-declare module "../Engines/engine" {
-    export interface Engine {
+declare module "../Engines/abstractEngine" {
+    export interface AbstractEngine {
         /**
          * Create an effect to use with particle systems.
          * Please note that some parameters like animation sheets or not being billboard are not supported in this configuration, except if you pass
@@ -53,6 +52,7 @@ declare module "../Engines/engine" {
          * @param onCompiled defines a function to call when the effect creation is successful
          * @param onError defines a function to call when the effect creation has failed
          * @param particleSystem the particle system you want to create the effect for
+         * @param shaderLanguage defines the shader language to use
          * @returns the new Effect
          */
         createEffectForParticles(
@@ -63,12 +63,13 @@ declare module "../Engines/engine" {
             fallbacks?: EffectFallbacks,
             onCompiled?: (effect: Effect) => void,
             onError?: (effect: Effect, errors: string) => void,
-            particleSystem?: IParticleSystem
+            particleSystem?: IParticleSystem,
+            shaderLanguage?: ShaderLanguage
         ): Effect;
     }
 }
 
-Engine.prototype.createEffectForParticles = function (
+AbstractEngine.prototype.createEffectForParticles = function (
     fragmentName: string,
     uniformsNames: string[] = [],
     samplers: string[] = [],
@@ -76,7 +77,8 @@ Engine.prototype.createEffectForParticles = function (
     fallbacks?: EffectFallbacks,
     onCompiled?: (effect: Effect) => void,
     onError?: (effect: Effect, errors: string) => void,
-    particleSystem?: IParticleSystem
+    particleSystem?: IParticleSystem,
+    shaderLanguage = ShaderLanguage.GLSL
 ): Effect {
     let attributesNamesOrOptions: Array<string> = [];
     let effectCreationOption: Array<string> = [];
@@ -114,7 +116,16 @@ Engine.prototype.createEffectForParticles = function (
         defines,
         fallbacks,
         onCompiled,
-        onError
+        onError,
+        undefined,
+        shaderLanguage,
+        async () => {
+            if (shaderLanguage === ShaderLanguage.GLSL) {
+                await import("../Shaders/particles.vertex");
+            } else {
+                await import("../ShadersWGSL/particles.vertex");
+            }
+        }
     );
 };
 
@@ -135,7 +146,7 @@ declare module "../Meshes/mesh" {
 }
 
 Mesh.prototype.getEmittedParticleSystems = function (): IParticleSystem[] {
-    const results = new Array<IParticleSystem>();
+    const results: IParticleSystem[] = [];
     for (let index = 0; index < this.getScene().particleSystems.length; index++) {
         const particleSystem = this.getScene().particleSystems[index];
         if (particleSystem.emitter === this) {
@@ -146,7 +157,7 @@ Mesh.prototype.getEmittedParticleSystems = function (): IParticleSystem[] {
 };
 
 Mesh.prototype.getHierarchyEmittedParticleSystems = function (): IParticleSystem[] {
-    const results = new Array<IParticleSystem>();
+    const results: IParticleSystem[] = [];
     const descendants = this.getDescendants();
     descendants.push(this);
 

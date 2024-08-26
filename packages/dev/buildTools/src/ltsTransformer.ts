@@ -1,12 +1,13 @@
+/* eslint-disable no-console */
 import * as path from "path";
 import * as ts from "typescript";
 import * as fs from "fs";
-import * as glob from "glob";
+import { globSync } from "glob";
 import * as chokidar from "chokidar";
 
-import { removeDir, checkDirectorySync, checkArgs, copyFile } from "./utils";
-import { transformPackageLocation } from "./pathTransform";
-import { getPackageMappingByDevName, getPublicPackageName, isValidDevPackageName } from "./packageMapping";
+import { removeDir, checkDirectorySync, checkArgs, copyFile } from "./utils.js";
+import { transformPackageLocation } from "./pathTransform.js";
+import { getPackageMappingByDevName, getPublicPackageName, isValidDevPackageName } from "./packageMapping.js";
 
 const printer = ts.createPrinter();
 
@@ -30,7 +31,7 @@ const processSourceFile = (packageName: string, relativeLTSFile: any, program: {
             node = ts.visitEachChild(node, visit, context);
             if (!inLTS) {
                 // get all exported elements
-                const exported = node.modifiers && node.modifiers.find((m: { kind: any }) => m.kind === ts.SyntaxKind.ExportKeyword);
+                const exported = ts.canHaveModifiers(node) && ts.getModifiers(node)?.find((m: { kind: any }) => m.kind === ts.SyntaxKind.ExportKeyword);
                 // const exported2 = node.modifiers && node.modifiers.find((m) => m.kind === ts.SyntaxKind.ExportKeyword);
                 if (exported) {
                     // find the first identifier (name of class/function/enum)
@@ -87,16 +88,9 @@ const processSourceFile = (packageName: string, relativeLTSFile: any, program: {
                     if (clause && clause.namedBindings && clause.namedBindings.kind === ts.SyntaxKind.NamedImports) {
                         // update the import declaration
                         const newClause = ts.factory.updateImportClause(clause, clause.isTypeOnly, clause.name, ts.factory.createNamedImports(leftImports));
-                        return ts.factory.updateImportDeclaration(node, node.decorators, node.modifiers, newClause, ts.factory.createStringLiteral(transformed), node.assertClause); // TODO what is the assert clause?
+                        return ts.factory.updateImportDeclaration(node, node.modifiers, newClause, ts.factory.createStringLiteral(transformed), node.assertClause);
                     } else {
-                        return ts.factory.updateImportDeclaration(
-                            node,
-                            node.decorators,
-                            node.modifiers,
-                            node.importClause,
-                            ts.factory.createStringLiteral(transformed),
-                            node.assertClause
-                        ); // TODO what is the assert clause?
+                        return ts.factory.updateImportDeclaration(node, node.modifiers, node.importClause, ts.factory.createStringLiteral(transformed), node.assertClause); // TODO what is the assert clause?
                     }
                 } else if (ts.isExportDeclaration(node)) {
                     // check import clause
@@ -111,7 +105,7 @@ const processSourceFile = (packageName: string, relativeLTSFile: any, program: {
                     }
                     // update the import declaration
                     // const newClause = ts.factory.updateExport(clause, clause.isTypeOnly, clause.name, ts.factory.createNamedImports(leftImports));
-                    return ts.factory.updateExportDeclaration(node, node.decorators, node.modifiers, false, clause, ts.factory.createStringLiteral(transformed), undefined); // TODO what is the assert clause?
+                    return ts.factory.updateExportDeclaration(node, node.modifiers, false, clause, ts.factory.createStringLiteral(transformed), undefined); // TODO what is the assert clause?
                 } else if (ts.isModuleDeclaration(node)) {
                     const symbol = checker.getSymbolAtLocation(node.name);
                     // is it a module declaration of a file and not an actual module (i.e. 'declare module "./scene"')
@@ -123,7 +117,7 @@ const processSourceFile = (packageName: string, relativeLTSFile: any, program: {
                         const transformed = transformLocation(packageName, node.name.text, true);
                         if (transformed) {
                             const literal = ts.factory.createStringLiteral(transformed);
-                            return ts.factory.updateModuleDeclaration(node, node.decorators, node.modifiers, literal, node.body);
+                            return ts.factory.updateModuleDeclaration(node, node.modifiers, literal, node.body);
                         }
                     }
                 } else if (ts.isImportTypeNode(node)) {
@@ -131,7 +125,7 @@ const processSourceFile = (packageName: string, relativeLTSFile: any, program: {
                     if (transformedText) {
                         // if it is an import type (for type aliases) apply the new transformed location
                         const newArgument = ts.factory.updateLiteralTypeNode(node.argument as ts.LiteralTypeNode, ts.factory.createStringLiteral(transformedText, true));
-                        return ts.factory.updateImportTypeNode(node, newArgument, node.qualifier, node.typeArguments, node.isTypeOf);
+                        return ts.factory.updateImportTypeNode(node, newArgument, node.assertions, node.qualifier, node.typeArguments, node.isTypeOf);
                     }
                 } else if (ts.isTypeAliasDeclaration(node)) {
                     // check if the type alias is already declared in the original source file
@@ -206,9 +200,9 @@ export const transformLtsCommand = () => {
     const sourceBaseDir = `./../../dev/${baseDir}/src`;
 
     // all LTS source files
-    const sourceFiles = glob.sync("./src/**/*.ts");
+    const sourceFiles = globSync("./src/**/*.ts");
     // all original sources
-    const baseSources = glob.sync(`${sourceBaseDir}/**/*.ts`);
+    const baseSources = globSync(`${sourceBaseDir}/**/*.ts`);
     const sourceToGenerated = (filePath: any, silent?: boolean) => {
         // check if not in base sources
         const relative = path.relative(sourceBaseDir, filePath);

@@ -1,4 +1,4 @@
-import type { ShaderCustomProcessingFunction } from "../Engines/Processors/shaderProcessingOptions";
+import type { ProcessingOptions, ShaderCustomProcessingFunction } from "../Engines/Processors/shaderProcessingOptions";
 import type { Nullable } from "../types";
 import { Material } from "./material";
 import type {
@@ -20,9 +20,12 @@ import { MaterialPluginEvent } from "./materialPluginEvent";
 import type { Observer } from "core/Misc/observable";
 import { EngineStore } from "../Engines/engineStore";
 
-declare type Scene = import("../scene").Scene;
-declare type Engine = import("../Engines/engine").Engine;
-declare type MaterialPluginBase = import("./materialPluginBase").MaterialPluginBase;
+import type { Scene } from "../scene";
+import type { AbstractEngine } from "../Engines/abstractEngine";
+import type { MaterialPluginBase } from "./materialPluginBase";
+import { _ProcessIncludes } from "../Engines/Processors/shaderProcessor";
+import { ShaderLanguage } from "./shaderLanguage";
+import { ShaderStore } from "../Engines/shaderStore";
 
 declare module "./material" {
     export interface Material {
@@ -46,8 +49,9 @@ export class MaterialPluginManager {
 
     protected _material: Material;
     protected _scene: Scene;
-    protected _engine: Engine;
-    protected _plugins: MaterialPluginBase[] = [];
+    protected _engine: AbstractEngine;
+    /** @internal */
+    public _plugins: MaterialPluginBase[] = [];
     protected _activePlugins: MaterialPluginBase[] = [];
     protected _activePluginsForExtraEvents: MaterialPluginBase[] = [];
     protected _codeInjectionPoints: { [shaderType: string]: { [codeName: string]: boolean } };
@@ -78,15 +82,21 @@ export class MaterialPluginManager {
     /**
      * @internal
      */
-    public _addPlugin(plugin: MaterialPluginBase): void {
+    public _addPlugin(plugin: MaterialPluginBase): boolean {
         for (let i = 0; i < this._plugins.length; ++i) {
             if (this._plugins[i].name === plugin.name) {
-                throw `Plugin "${plugin.name}" already added to the material "${this._material.name}"!`;
+                return false;
             }
         }
 
         if (this._material._uniformBufferLayoutBuilt) {
+            // eslint-disable-next-line no-throw-literal
             throw `The plugin "${plugin.name}" can't be added to the material "${this._material.name}" because this material has already been used for rendering! Please add plugins to materials before any rendering with this material occurs.`;
+        }
+
+        if (!plugin.isCompatible(this._material.shaderLanguage)) {
+            // eslint-disable-next-line no-throw-literal
+            throw `The plugin "${plugin.name}" can't be added to the material "${this._material.name}" because the plugin is not compatible with the shader language of the material.`;
         }
 
         const pluginClassName = plugin.getClassName();
@@ -94,7 +104,7 @@ export class MaterialPluginManager {
             MaterialPluginManager._MaterialPluginClassToMainDefine[pluginClassName] = "MATERIALPLUGIN_" + ++MaterialPluginManager._MaterialPluginCounter;
         }
 
-        this._material._callbackPluginEventGeneric = this._handlePluginEvent.bind(this);
+        this._material._callbackPluginEventGeneric = (id, info) => this._handlePluginEvent(id, info);
 
         this._plugins.push(plugin);
         this._plugins.sort((a, b) => a.priority - b.priority);
@@ -109,11 +119,13 @@ export class MaterialPluginManager {
 
         for (const plugin of this._plugins) {
             plugin.collectDefines(defineNamesFromPlugins);
-            this._collectPointNames("vertex", plugin.getCustomCode("vertex"));
-            this._collectPointNames("fragment", plugin.getCustomCode("fragment"));
+            this._collectPointNames("vertex", plugin.getCustomCode("vertex", this._material.shaderLanguage));
+            this._collectPointNames("fragment", plugin.getCustomCode("fragment", this._material.shaderLanguage));
         }
 
         this._defineNamesFromPlugins = defineNamesFromPlugins;
+
+        return true;
     }
 
     /**
@@ -144,10 +156,10 @@ export class MaterialPluginManager {
      * @param name name of the plugin
      * @returns the plugin if found, else null
      */
-    public getPlugin(name: string): Nullable<MaterialPluginBase> {
+    public getPlugin<T = MaterialPluginBase>(name: string): Nullable<T> {
         for (let i = 0; i < this._plugins.length; ++i) {
             if (this._plugins[i].name === name) {
-                return this._plugins[i];
+                return this._plugins[i] as T;
             }
         }
         return null;
@@ -272,7 +284,7 @@ export class MaterialPluginManager {
                 if (this._uboList.length > 0) {
                     eventData.uniformBuffersNames.push(...this._uboList);
                 }
-                eventData.customCode = this._injectCustomCode(eventData.customCode);
+                eventData.customCode = this._injectCustomCode(eventData, eventData.customCode);
                 break;
             }
 
@@ -284,24 +296,42 @@ export class MaterialPluginManager {
                 this._uniformList = [];
                 this._samplerList = [];
                 this._uboList = [];
+                const isWebGPU = this._material.shaderLanguage === ShaderLanguage.WGSL;
                 for (const plugin of this._plugins) {
-                    const uniforms = plugin.getUniforms();
+                    const uniforms = plugin.getUniforms(this._material.shaderLanguage);
                     if (uniforms) {
                         if (uniforms.ubo) {
                             for (const uniform of uniforms.ubo) {
                                 if (uniform.size && uniform.type) {
                                     const arraySize = uniform.arraySize ?? 0;
                                     eventData.ubo.addUniform(uniform.name, uniform.size, arraySize);
-                                    this._uboDeclaration += `${uniform.type} ${uniform.name}${arraySize > 0 ? `[${arraySize}]` : ""};\r\n`;
+                                    if (isWebGPU) {
+                                        let type: string;
+                                        switch (uniform.type) {
+                                            case "mat4":
+                                                type = "mat4x4f";
+                                                break;
+                                            case "float":
+                                                type = "f32";
+                                                break;
+                                            default:
+                                                type = `${uniform.type}f`;
+                                                break;
+                                        }
+
+                                        this._uboDeclaration += `uniform ${uniform.name}: ${type}${arraySize > 0 ? `[${arraySize}]` : ""};\n`;
+                                    } else {
+                                        this._uboDeclaration += `${uniform.type} ${uniform.name}${arraySize > 0 ? `[${arraySize}]` : ""};\n`;
+                                    }
                                 }
                                 this._uniformList.push(uniform.name);
                             }
                         }
                         if (uniforms.vertex) {
-                            this._vertexDeclaration += uniforms.vertex + "\r\n";
+                            this._vertexDeclaration += uniforms.vertex + "\n";
                         }
                         if (uniforms.fragment) {
-                            this._fragmentDeclaration += uniforms.fragment + "\r\n";
+                            this._fragmentDeclaration += uniforms.fragment + "\n";
                         }
                     }
                     plugin.getSamplers(this._samplerList);
@@ -324,7 +354,7 @@ export class MaterialPluginManager {
         }
     }
 
-    protected _injectCustomCode(existingCallback?: (shaderType: string, code: string) => string): ShaderCustomProcessingFunction {
+    protected _injectCustomCode(eventData: MaterialPluginPrepareEffect, existingCallback?: (shaderType: string, code: string) => string): ShaderCustomProcessingFunction {
         return (shaderType: string, code: string) => {
             if (existingCallback) {
                 code = existingCallback(shaderType, code);
@@ -342,13 +372,38 @@ export class MaterialPluginManager {
             if (!points) {
                 return code;
             }
+            let processorOptions: Nullable<ProcessingOptions> = null;
             for (let pointName in points) {
                 let injectedCode = "";
                 for (const plugin of this._activePlugins) {
-                    const customCode = plugin.getCustomCode(shaderType);
-                    if (customCode?.[pointName]) {
-                        injectedCode += customCode[pointName] + "\r\n";
+                    let customCode = plugin.getCustomCode(shaderType, this._material.shaderLanguage)?.[pointName];
+                    if (!customCode) {
+                        continue;
                     }
+                    if (plugin.resolveIncludes) {
+                        if (processorOptions === null) {
+                            const shaderLanguage = ShaderLanguage.GLSL;
+                            processorOptions = {
+                                defines: [], // not used by _ProcessIncludes
+                                indexParameters: eventData.indexParameters,
+                                isFragment: false,
+                                shouldUseHighPrecisionShader: this._engine._shouldUseHighPrecisionShader,
+                                processor: undefined as any, // not used by _ProcessIncludes
+                                supportsUniformBuffers: this._engine.supportsUniformBuffers,
+                                shadersRepository: ShaderStore.GetShadersRepository(shaderLanguage),
+                                includesShadersStore: ShaderStore.GetIncludesShadersStore(shaderLanguage),
+                                version: undefined as any, // not used by _ProcessIncludes
+                                platformName: this._engine.shaderPlatformName,
+                                processingContext: undefined as any, // not used by _ProcessIncludes
+                                isNDCHalfZRange: this._engine.isNDCHalfZRange,
+                                useReverseDepthBuffer: this._engine.useReverseDepthBuffer,
+                                processCodeAfterIncludes: undefined as any, // not used by _ProcessIncludes
+                            };
+                        }
+                        processorOptions.isFragment = shaderType === "fragment";
+                        _ProcessIncludes(customCode, processorOptions, (code) => (customCode = code));
+                    }
+                    injectedCode += customCode + "\n";
                 }
                 if (injectedCode.length > 0) {
                     if (pointName.charAt(0) === "!") {
@@ -387,7 +442,7 @@ export class MaterialPluginManager {
                         }
                     } else {
                         const fullPointName = "#define " + pointName;
-                        code = code.replace(fullPointName, "\r\n" + injectedCode + "\r\n" + fullPointName);
+                        code = code.replace(fullPointName, "\n" + injectedCode + "\n" + fullPointName);
                     }
                 }
             }

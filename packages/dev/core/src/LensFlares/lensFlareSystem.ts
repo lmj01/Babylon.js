@@ -11,12 +11,12 @@ import { Material } from "../Materials/material";
 import { LensFlare } from "./lensFlare";
 import { Constants } from "../Engines/constants";
 
-import "../Shaders/lensFlare.fragment";
-import "../Shaders/lensFlare.vertex";
 import { _WarnImport } from "../Misc/devTools";
 import type { DataBuffer } from "../Buffers/dataBuffer";
 import { Color3 } from "../Maths/math.color";
 import type { Viewport } from "../Maths/math.viewport";
+import { ShaderLanguage } from "core/Materials/shaderLanguage";
+import { Observable } from "core/Misc/observable";
 
 /**
  * This represents a Lens Flare System or the shiny effect created by the light reflection on the  camera lenses.
@@ -25,9 +25,15 @@ import type { Viewport } from "../Maths/math.viewport";
  */
 export class LensFlareSystem {
     /**
+     * Force all the lens flare systems to compile to glsl even on WebGPU engines.
+     * False by default. This is mostly meant for backward compatibility.
+     */
+    public static ForceGLSL = false;
+
+    /**
      * List of lens flares used in this system.
      */
-    public lensFlares = new Array<LensFlare>();
+    public lensFlares: LensFlare[] = [];
 
     /**
      * Define a limit from the border the lens flare can be visible.
@@ -52,6 +58,16 @@ export class LensFlareSystem {
     /** Gets the scene */
     public get scene() {
         return this._scene;
+    }
+
+    /** Shader language used by the system */
+    protected _shaderLanguage = ShaderLanguage.GLSL;
+
+    /**
+     * Gets the shader language used in this system.
+     */
+    public get shaderLanguage(): ShaderLanguage {
+        return this._shaderLanguage;
     }
 
     /**
@@ -115,6 +131,28 @@ export class LensFlareSystem {
 
         // Indices
         this._createIndexBuffer();
+
+        this._initShaderSourceAsync();
+    }
+
+    /** @internal */
+    public _onShadersLoaded = new Observable<void>(undefined, true);
+
+    private _shadersLoaded = false;
+
+    protected async _initShaderSourceAsync() {
+        const engine = this._scene.getEngine();
+
+        if (engine.isWebGPU && !LensFlareSystem.ForceGLSL) {
+            this._shaderLanguage = ShaderLanguage.WGSL;
+
+            await Promise.all([import("../ShadersWGSL/lensFlare.fragment"), import("../ShadersWGSL/lensFlare.vertex")]);
+        } else {
+            await Promise.all([import("../Shaders/lensFlare.fragment"), import("../Shaders/lensFlare.vertex")]);
+        }
+
+        this._shadersLoaded = true;
+        this._onShadersLoaded.notifyObservers();
     }
 
     private _createIndexBuffer(): void {
@@ -236,7 +274,7 @@ export class LensFlareSystem {
      * @internal
      */
     public render(): boolean {
-        if (!this._scene.activeCamera) {
+        if (!this._scene.activeCamera || !this._shadersLoaded) {
             return false;
         }
 
@@ -328,8 +366,8 @@ export class LensFlareSystem {
 
             const cw = flare.size;
             const ch = flare.size * engine.getAspectRatio(this._scene.activeCamera, true);
-            const cx = 2 * (x / (globalViewport.width + globalViewport.x * 2)) - 1.0;
-            const cy = 1.0 - 2 * (y / (globalViewport.height + globalViewport.y * 2));
+            const cx = 2 * ((x - globalViewport.x) / globalViewport.width) - 1.0;
+            const cy = 1.0 - 2 * ((y - globalViewport.y) / globalViewport.height);
 
             const viewportMatrix = Matrix.FromValues(cw / 2, 0, 0, 0, 0, ch / 2, 0, 0, 0, 0, 1, 0, cx, cy, 0, 1);
 
@@ -365,6 +403,7 @@ export class LensFlareSystem {
      * Dispose and release the lens flare with its associated resources.
      */
     public dispose(): void {
+        this._onShadersLoaded.clear();
         const vertexBuffer = this._vertexBuffers[VertexBuffer.PositionKind];
         if (vertexBuffer) {
             vertexBuffer.dispose();

@@ -27,7 +27,7 @@ export class SoundPropertyGridComponent extends React.Component<ISoundPropertyGr
         super(props);
     }
 
-    render() {
+    override render() {
         const sound = this.props.sound;
 
         return (
@@ -84,7 +84,7 @@ export class SoundPropertyGridComponent extends React.Component<ISoundPropertyGr
                     )}
                     <SliderLineComponent
                         lockObject={this.props.lockObject}
-                        label="Samples"
+                        label="Volume"
                         target={sound}
                         directValue={sound.getVolume()}
                         onChange={(value) => {

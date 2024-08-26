@@ -24,7 +24,7 @@ import { StandardMaterial } from "core/Materials/standardMaterial";
 import { Color3LineComponent } from "shared-ui-components/lines/color3LineComponent";
 import { Color4LineComponent } from "shared-ui-components/lines/color4LineComponent";
 import type { MorphTarget } from "core/Morph/morphTarget";
-import { OptionsLineComponent } from "shared-ui-components/lines/optionsLineComponent";
+import { OptionsLine } from "shared-ui-components/lines/optionsLineComponent";
 import { AbstractMesh } from "core/Meshes/abstractMesh";
 import { ButtonLineComponent } from "shared-ui-components/lines/buttonLineComponent";
 import { TextInputLineComponent } from "shared-ui-components/lines/textInputLineComponent";
@@ -43,6 +43,8 @@ import "core/Physics/v1/physicsEngineComponent";
 
 import { ParentPropertyGridComponent } from "../parentPropertyGridComponent";
 import { Tools } from "core/Misc/tools";
+import { PhysicsBodyGridComponent } from "./physics/physicsBodyGridComponent";
+import { Constants } from "core/Engines/constants";
 
 interface IMeshPropertyGridComponentProps {
     globalState: GlobalState;
@@ -102,7 +104,6 @@ export class MeshPropertyGridComponent extends React.Component<
         const material = new StandardMaterial("wireframeOver", scene);
         material.reservedDataStore = { hidden: true };
         wireframeOver.material = material;
-        material.zOffset = 1;
         material.disableLighting = true;
         material.backFaceCulling = false;
         material.emissiveColor = Color3.White();
@@ -351,7 +352,7 @@ export class MeshPropertyGridComponent extends React.Component<
         return "[INVALID ID]";
     }
 
-    render() {
+    override render() {
         const mesh = this.props.mesh;
         const scene = mesh.getScene();
 
@@ -379,6 +380,11 @@ export class MeshPropertyGridComponent extends React.Component<
             { label: "None", value: AbstractMesh.OCCLUSION_TYPE_NONE },
             { label: "Optimistic", value: AbstractMesh.OCCLUSION_TYPE_OPTIMISTIC },
             { label: "Strict", value: AbstractMesh.OCCLUSION_TYPE_STRICT },
+        ];
+
+        const orientationOptions = [
+            { label: "Clockwise", value: Constants.MATERIAL_ClockWiseSideOrientation },
+            { label: "Counterclockwise", value: Constants.MATERIAL_CounterClockWiseSideOrientation },
         ];
 
         const sortedMaterials = scene.materials.slice(0).sort((a, b) => (a.name || "no name").localeCompare(b.name || "no name"));
@@ -455,14 +461,14 @@ export class MeshPropertyGridComponent extends React.Component<
                         <TextLineComponent label="Link to material" value={mesh.material.name} onLink={() => this.onMaterialLink()} />
                     )}
                     {!mesh.isAnInstance && (
-                        <OptionsLineComponent
+                        <OptionsLine
                             label="Active material"
                             options={materialOptions}
                             target={mesh}
                             propertyName="material"
                             noDirectUpdate={true}
                             onSelect={(value) => {
-                                if (value < 0) {
+                                if ((value as number) < 0) {
                                     mesh.material = null;
                                 } else {
                                     mesh.material = sortedMaterials[value as number];
@@ -522,6 +528,22 @@ export class MeshPropertyGridComponent extends React.Component<
                         onPropertyChangedObservable={this.props.onPropertyChangedObservable}
                     />
                 </LineContainerComponent>
+                {mesh._internalMetadata && mesh._internalMetadata.nodeGeometry && (
+                    <LineContainerComponent title="NODE GEOMETRY" selection={this.props.globalState}>
+                        <ButtonLineComponent
+                            label="Edit"
+                            onClick={() => {
+                                mesh._internalMetadata.nodeGeometry.edit({
+                                    nodeGeometryEditorConfig: {
+                                        backgroundColor: mesh.getScene().clearColor,
+                                        hostMesh: mesh,
+                                        hostScene: mesh.getScene(),
+                                    },
+                                });
+                            }}
+                        />
+                    </LineContainerComponent>
+                )}
                 <LineContainerComponent title="DISPLAY" closed={true} selection={this.props.globalState}>
                     {!mesh.isAnInstance && (
                         <SliderLineComponent
@@ -535,6 +557,13 @@ export class MeshPropertyGridComponent extends React.Component<
                             onPropertyChangedObservable={this.props.onPropertyChangedObservable}
                         />
                     )}
+                    <OptionsLine
+                        label="Orientation"
+                        options={orientationOptions}
+                        target={mesh}
+                        propertyName="sideOrientation"
+                        onPropertyChangedObservable={this.props.onPropertyChangedObservable}
+                    />
                     <FloatLineComponent
                         lockObject={this.props.lockObject}
                         label="Alpha index"
@@ -662,8 +691,16 @@ export class MeshPropertyGridComponent extends React.Component<
                         <TextLineComponent label="Type" value={this.convertPhysicsTypeToString()} />
                     </LineContainerComponent>
                 )}
+                {mesh.physicsBody && (
+                    <PhysicsBodyGridComponent
+                        lockObject={this.props.lockObject}
+                        globalState={this.props.globalState}
+                        body={mesh.physicsBody}
+                        onPropertyChangedObservable={this.props.onPropertyChangedObservable}
+                    />
+                )}
                 <LineContainerComponent title="OCCLUSIONS" closed={true} selection={this.props.globalState}>
-                    <OptionsLineComponent
+                    <OptionsLine
                         label="Type"
                         options={occlusionTypeOptions}
                         target={mesh}
@@ -681,7 +718,7 @@ export class MeshPropertyGridComponent extends React.Component<
                         propertyName="occlusionRetryCount"
                         onPropertyChangedObservable={this.props.onPropertyChangedObservable}
                     />
-                    <OptionsLineComponent
+                    <OptionsLine
                         label="Algorithm"
                         options={algorithmOptions}
                         target={mesh}
@@ -749,6 +786,13 @@ export class MeshPropertyGridComponent extends React.Component<
                             propertyName="outlineColor"
                             onPropertyChangedObservable={this.props.onPropertyChangedObservable}
                         />
+                        <FloatLineComponent
+                            lockObject={this.props.lockObject}
+                            label="Outline width"
+                            target={mesh}
+                            propertyName="outlineWidth"
+                            onPropertyChangedObservable={this.props.onPropertyChangedObservable}
+                        />
                     </LineContainerComponent>
                 )}
                 <LineContainerComponent title="DEBUG" closed={true} selection={this.props.globalState}>
@@ -766,7 +810,7 @@ export class MeshPropertyGridComponent extends React.Component<
                         <CheckBoxLineComponent label="Display BoneWeights" isSelected={() => displayBoneWeights} onSelect={() => this.displayBoneWeights()} />
                     )}
                     {!mesh.isAnInstance && this.state.displayBoneWeights && mesh.skeleton && (
-                        <OptionsLineComponent
+                        <OptionsLine
                             label="Target Bone Name"
                             options={targetBoneOptions}
                             target={mesh.reservedDataStore}

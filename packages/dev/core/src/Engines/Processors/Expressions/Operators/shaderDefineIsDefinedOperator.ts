@@ -2,11 +2,14 @@ import { ShaderDefineExpression } from "../shaderDefineExpression";
 
 /** @internal */
 export class ShaderDefineIsDefinedOperator extends ShaderDefineExpression {
-    public constructor(public define: string, public not: boolean = false) {
+    public constructor(
+        public define: string,
+        public not: boolean = false
+    ) {
         super();
     }
 
-    public isTrue(preprocessors: { [key: string]: string }) {
+    public override isTrue(preprocessors: { [key: string]: string }) {
         let condition = preprocessors[this.define] !== undefined;
 
         if (this.not) {

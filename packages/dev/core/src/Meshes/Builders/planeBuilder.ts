@@ -4,7 +4,7 @@ import { Mesh } from "../mesh";
 import { VertexData } from "../mesh.vertexData";
 import type { Nullable } from "../../types";
 import type { Plane } from "../../Maths/math.plane";
-import { CompatibilityOptions } from "../../Compat/compatibilityOptions";
+import { useOpenGLOrientationForUV } from "../../Compat/compatibilityOptions";
 
 /**
  * Creates the VertexData for a Plane
@@ -15,12 +15,6 @@ import { CompatibilityOptions } from "../../Compat/compatibilityOptions";
  * * sideOrientation optional and takes the values : Mesh.FRONTSIDE (default), Mesh.BACKSIDE or Mesh.DOUBLESIDE
  * * frontUvs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the front side, optional, default vector4 (0, 0, 1, 1)
  * * backUVs only usable when you create a double-sided mesh, used to choose what parts of the texture image to crop and apply on the back side, optional, default vector4 (0, 0, 1, 1)
- * @param options.size
- * @param options.width
- * @param options.height
- * @param options.sideOrientation
- * @param options.frontUVs
- * @param options.backUVs
  * @returns the VertexData of the box
  */
 export function CreatePlaneVertexData(options: { size?: number; width?: number; height?: number; sideOrientation?: number; frontUVs?: Vector4; backUVs?: Vector4 }): VertexData {
@@ -39,19 +33,19 @@ export function CreatePlaneVertexData(options: { size?: number; width?: number; 
 
     positions.push(-halfWidth, -halfHeight, 0);
     normals.push(0, 0, -1.0);
-    uvs.push(0.0, CompatibilityOptions.UseOpenGLOrientationForUV ? 1.0 : 0.0);
+    uvs.push(0.0, useOpenGLOrientationForUV ? 1.0 : 0.0);
 
     positions.push(halfWidth, -halfHeight, 0);
     normals.push(0, 0, -1.0);
-    uvs.push(1.0, CompatibilityOptions.UseOpenGLOrientationForUV ? 1.0 : 0.0);
+    uvs.push(1.0, useOpenGLOrientationForUV ? 1.0 : 0.0);
 
     positions.push(halfWidth, halfHeight, 0);
     normals.push(0, 0, -1.0);
-    uvs.push(1.0, CompatibilityOptions.UseOpenGLOrientationForUV ? 0.0 : 1.0);
+    uvs.push(1.0, useOpenGLOrientationForUV ? 0.0 : 1.0);
 
     positions.push(-halfWidth, halfHeight, 0);
     normals.push(0, 0, -1.0);
-    uvs.push(0.0, CompatibilityOptions.UseOpenGLOrientationForUV ? 0.0 : 1.0);
+    uvs.push(0.0, useOpenGLOrientationForUV ? 0.0 : 1.0);
 
     // Indices
     indices.push(0);
@@ -86,14 +80,6 @@ export function CreatePlaneVertexData(options: { size?: number; width?: number; 
  * * The mesh can be set to updatable with the boolean parameter `updatable` (default false) if its internal geometry is supposed to change once created
  * @param name defines the name of the mesh
  * @param options defines the options used to create the mesh
- * @param options.size
- * @param options.width
- * @param options.height
- * @param options.sideOrientation
- * @param options.frontUVs
- * @param options.backUVs
- * @param options.updatable
- * @param options.sourcePlane
  * @param scene defines the hosting scene
  * @returns the plane mesh
  * @see https://doc.babylonjs.com/features/featuresDeepDive/mesh/creation/set#plane
@@ -130,7 +116,7 @@ export const PlaneBuilder = {
 };
 
 VertexData.CreatePlane = CreatePlaneVertexData;
-(Mesh as any).CreatePlane = (name: string, size: number, scene: Scene, updatable?: boolean, sideOrientation?: number): Mesh => {
+Mesh.CreatePlane = (name: string, size: number, scene: Scene, updatable?: boolean, sideOrientation?: number): Mesh => {
     const options = {
         size,
         width: size,

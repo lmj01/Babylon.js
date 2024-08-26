@@ -49,8 +49,11 @@ export abstract class WebXRLayerRenderTargetTextureProvider implements IWebXRRen
 
     private _engine: Engine;
 
-    constructor(private readonly _scene: Scene, public readonly layerWrapper: WebXRLayerWrapper) {
-        this._engine = _scene.getEngine();
+    constructor(
+        private readonly _scene: Scene,
+        public readonly layerWrapper: WebXRLayerWrapper
+    ) {
+        this._engine = _scene.getEngine() as Engine;
     }
 
     private _createInternalTexture(textureSize: { width: number; height: number }, texture: WebGLTexture): InternalTexture {
@@ -105,11 +108,6 @@ export abstract class WebXRLayerRenderTargetTextureProvider implements IWebXRRen
         }
 
         renderTargetTexture.disableRescaling();
-        // Firefox reality fails if skipInitialClear is set to true, so make sure only modern XR implementations set it.
-        if (typeof XRWebGLBinding !== "undefined") {
-            // WebXR pre-clears textures
-            renderTargetTexture.skipInitialClear = true;
-        }
 
         this._renderTargetTextures.push(renderTargetTexture);
 

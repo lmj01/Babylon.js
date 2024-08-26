@@ -5,13 +5,14 @@ import type { NodeMaterialConnectionPoint } from "../../nodeMaterialBlockConnect
 import { NodeMaterialConnectionPointDirection } from "../../nodeMaterialBlockConnectionPoint";
 import { NodeMaterialBlockTargets } from "../../Enums/nodeMaterialBlockTargets";
 import { RegisterClass } from "../../../../Misc/typeStore";
-import { editableInPropertyPage, PropertyTypeForEdition } from "../../nodeMaterialDecorator";
+import { editableInPropertyPage, PropertyTypeForEdition } from "../../../../Decorators/nodeDecorator";
 import { NodeMaterialConnectionPointCustomObject } from "../../nodeMaterialConnectionPointCustomObject";
 import type { NodeMaterial, NodeMaterialDefines } from "../../nodeMaterial";
 import type { AbstractMesh } from "../../../../Meshes/abstractMesh";
 import type { ReflectionBlock } from "./reflectionBlock";
 import type { Scene } from "../../../../scene";
 import type { Nullable } from "../../../../types";
+import { ShaderLanguage } from "core/Materials/shaderLanguage";
 
 /**
  * Block used to implement the sheen module of the PBR material
@@ -56,7 +57,7 @@ export class SheenBlock extends NodeMaterialBlock {
      * Initialize the block and prepare the context for build
      * @param state defines the state that will be used for the build
      */
-    public initialize(state: NodeMaterialBuildState) {
+    public override initialize(state: NodeMaterialBuildState) {
         state._excludeVariableName("sheenOut");
         state._excludeVariableName("sheenMapData");
         state._excludeVariableName("vSheenColor");
@@ -67,7 +68,7 @@ export class SheenBlock extends NodeMaterialBlock {
      * Gets the current class name
      * @returns the class name
      */
-    public getClassName() {
+    public override getClassName() {
         return "SheenBlock";
     }
 
@@ -99,7 +100,7 @@ export class SheenBlock extends NodeMaterialBlock {
         return this._outputs[0];
     }
 
-    public prepareDefines(mesh: AbstractMesh, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines) {
+    public override prepareDefines(mesh: AbstractMesh, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines) {
         super.prepareDefines(mesh, nodeMaterial, defines);
 
         defines.setValue("SHEEN", true);
@@ -112,81 +113,89 @@ export class SheenBlock extends NodeMaterialBlock {
     /**
      * Gets the main code of the block (fragment side)
      * @param reflectionBlock instance of a ReflectionBlock null if the code must be generated without an active reflection module
+     * @param state define the build state
      * @returns the shader code
      */
-    public getCode(reflectionBlock: Nullable<ReflectionBlock>): string {
+    public getCode(reflectionBlock: Nullable<ReflectionBlock>, state: NodeMaterialBuildState): string {
         let code = "";
 
-        const color = this.color.isConnected ? this.color.associatedVariableName : "vec3(1.)";
+        const color = this.color.isConnected ? this.color.associatedVariableName : `vec3${state.fSuffix}(1.)`;
         const intensity = this.intensity.isConnected ? this.intensity.associatedVariableName : "1.";
         const roughness = this.roughness.isConnected ? this.roughness.associatedVariableName : "0.";
-        const texture = "vec4(0.)";
+        const texture = `vec4${state.fSuffix}(0.)`;
+        const isWebGPU = state.shaderLanguage === ShaderLanguage.WGSL;
 
         code = `#ifdef SHEEN
-            sheenOutParams sheenOut;
+            ${isWebGPU ? "var sheenOut: sheenOutParams" : "sheenOutParams sheenOut"};
 
-            vec4 vSheenColor = vec4(${color}, ${intensity});
+            ${state._declareLocalVar("vSheenColor", NodeMaterialBlockConnectionPointTypes.Vector4)} = vec4${state.fSuffix}(${color}, ${intensity});
 
-            sheenBlock(
-                vSheenColor,
+            sheenOut = sheenBlock(
+                vSheenColor
             #ifdef SHEEN_ROUGHNESS
-                ${roughness},
+                , ${roughness}
             #endif
-                roughness,
+                , roughness
             #ifdef SHEEN_TEXTURE
-                ${texture},
-                1.0,
+                , ${texture}
+                ${isWebGPU ? `, ${texture}Sampler` : ""}
+                , 1.0
             #endif
-                reflectance,
+                , reflectance
             #ifdef SHEEN_LINKWITHALBEDO
-                baseColor,
-                surfaceAlbedo,
+                , baseColor
+                , surfaceAlbedo
             #endif
             #ifdef ENVIRONMENTBRDF
-                NdotV,
-                environmentBrdf,
+                , NdotV
+                , environmentBrdf
             #endif
             #if defined(REFLECTION) && defined(ENVIRONMENTBRDF)
-                AARoughnessFactors,
-                ${reflectionBlock?._vReflectionMicrosurfaceInfosName},
-                ${reflectionBlock?._vReflectionInfosName},
-                ${reflectionBlock?.reflectionColor},
-                vLightingIntensity,
+                , AARoughnessFactors
+                , ${isWebGPU ? "uniforms." : ""}${reflectionBlock?._vReflectionMicrosurfaceInfosName}
+                , ${reflectionBlock?._vReflectionInfosName}
+                , ${reflectionBlock?.reflectionColor}
+                , ${isWebGPU ? "uniforms." : ""}vLightingIntensity
                 #ifdef ${reflectionBlock?._define3DName}
-                    ${reflectionBlock?._cubeSamplerName},
+                    , ${reflectionBlock?._cubeSamplerName}                                      
+                    ${isWebGPU ? `, ${reflectionBlock?._cubeSamplerName}Sampler` : ""}
                 #else
-                    ${reflectionBlock?._2DSamplerName},
+                    , ${reflectionBlock?._2DSamplerName}
+                    ${isWebGPU ? `, ${reflectionBlock?._2DSamplerName}Sampler` : ""}
                 #endif
-                reflectionOut.reflectionCoords,
-                NdotVUnclamped,
+                , reflectionOut.reflectionCoords
+                , NdotVUnclamped
                 #ifndef LODBASEDMICROSFURACE
                     #ifdef ${reflectionBlock?._define3DName}
-                        ${reflectionBlock?._cubeSamplerName},
-                        ${reflectionBlock?._cubeSamplerName},
+                        , ${reflectionBlock?._cubeSamplerName}                        
+                        ${isWebGPU ? `, ${reflectionBlock?._cubeSamplerName}Sampler` : ""}
+                        , ${reflectionBlock?._cubeSamplerName}
+                        ${isWebGPU ? `, ${reflectionBlock?._cubeSamplerName}Sampler` : ""}
                     #else
-                        ${reflectionBlock?._2DSamplerName},
-                        ${reflectionBlock?._2DSamplerName},
+                        , ${reflectionBlock?._2DSamplerName}
+                        ${isWebGPU ? `, ${reflectionBlock?._2DSamplerName}Sampler` : ""}
+                        , ${reflectionBlock?._2DSamplerName}
+                        ${isWebGPU ? `, ${reflectionBlock?._2DSamplerName}Sampler` : ""}
                     #endif
                 #endif
                 #if !defined(${reflectionBlock?._defineSkyboxName}) && defined(RADIANCEOCCLUSION)
-                    seo,
+                    , seo
                 #endif
                 #if !defined(${reflectionBlock?._defineSkyboxName}) && defined(HORIZONOCCLUSION) && defined(BUMP) && defined(${reflectionBlock?._define3DName})
-                    eho,
+                    , eho
                 #endif
             #endif
-                sheenOut
             );
 
             #ifdef SHEEN_LINKWITHALBEDO
                 surfaceAlbedo = sheenOut.surfaceAlbedo;
             #endif
-        #endif\r\n`;
+        #endif\n`;
 
         return code;
     }
 
-    protected _buildBlock(state: NodeMaterialBuildState) {
+    protected override _buildBlock(state: NodeMaterialBuildState) {
         if (state.target === NodeMaterialBlockTargets.Fragment) {
             state.sharedData.blocksWithDefines.push(this);
         }
@@ -194,16 +203,16 @@ export class SheenBlock extends NodeMaterialBlock {
         return this;
     }
 
-    protected _dumpPropertiesCode() {
+    protected override _dumpPropertiesCode() {
         let codeString = super._dumpPropertiesCode();
 
-        codeString += `${this._codeVariableName}.albedoScaling = ${this.albedoScaling};\r\n`;
-        codeString += `${this._codeVariableName}.linkSheenWithAlbedo = ${this.linkSheenWithAlbedo};\r\n`;
+        codeString += `${this._codeVariableName}.albedoScaling = ${this.albedoScaling};\n`;
+        codeString += `${this._codeVariableName}.linkSheenWithAlbedo = ${this.linkSheenWithAlbedo};\n`;
 
         return codeString;
     }
 
-    public serialize(): any {
+    public override serialize(): any {
         const serializationObject = super.serialize();
 
         serializationObject.albedoScaling = this.albedoScaling;
@@ -212,7 +221,7 @@ export class SheenBlock extends NodeMaterialBlock {
         return serializationObject;
     }
 
-    public _deserialize(serializationObject: any, scene: Scene, rootUrl: string) {
+    public override _deserialize(serializationObject: any, scene: Scene, rootUrl: string) {
         super._deserialize(serializationObject, scene, rootUrl);
 
         this.albedoScaling = serializationObject.albedoScaling;

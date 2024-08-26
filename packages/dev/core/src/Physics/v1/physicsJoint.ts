@@ -70,10 +70,6 @@ export class PhysicsJoint {
      * Sets the physics joint
      */
     public set physicsJoint(newJoint: any) {
-        if (this._physicsJoint) {
-            //remove from the world
-        }
-
         this._physicsJoint = newJoint;
     }
 
@@ -224,7 +220,7 @@ export class HingeJoint extends MotorEnabledJoint {
      * @param {number} force the force to apply
      * @param {number} maxForce max force for this motor.
      */
-    public setMotor(force?: number, maxForce?: number) {
+    public override setMotor(force?: number, maxForce?: number) {
         this._physicsPlugin.setMotor(this, force || 0, maxForce);
     }
 
@@ -234,7 +230,7 @@ export class HingeJoint extends MotorEnabledJoint {
      * @param upperLimit The upper limit of the motor
      * @param lowerLimit The lower limit of the motor
      */
-    public setLimit(upperLimit: number, lowerLimit?: number) {
+    public override setLimit(upperLimit: number, lowerLimit?: number) {
         this._physicsPlugin.setLimit(this, upperLimit, lowerLimit);
     }
 }
@@ -259,7 +255,7 @@ export class Hinge2Joint extends MotorEnabledJoint {
      * @param maxForce max force for this motor.
      * @param motorIndex motor's index, 0 or 1.
      */
-    public setMotor(targetSpeed?: number, maxForce?: number, motorIndex: number = 0) {
+    public override setMotor(targetSpeed?: number, maxForce?: number, motorIndex: number = 0) {
         this._physicsPlugin.setMotor(this, targetSpeed || 0, maxForce, motorIndex);
     }
 
@@ -270,7 +266,7 @@ export class Hinge2Joint extends MotorEnabledJoint {
      * @param lowerLimit lower limit
      * @param motorIndex the motor's index, 0 or 1.
      */
-    public setLimit(upperLimit: number, lowerLimit?: number, motorIndex: number = 0) {
+    public override setLimit(upperLimit: number, lowerLimit?: number, motorIndex: number = 0) {
         this._physicsPlugin.setLimit(this, upperLimit, lowerLimit, motorIndex);
     }
 }

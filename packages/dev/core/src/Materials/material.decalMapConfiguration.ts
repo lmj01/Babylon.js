@@ -7,10 +7,11 @@ import type { Scene } from "core/scene";
 import type { Engine } from "core/Engines/engine";
 import type { SubMesh } from "core/Meshes/subMesh";
 import type { AbstractMesh } from "core/Meshes/abstractMesh";
-import { MaterialHelper } from "./materialHelper";
 import type { UniformBuffer } from "./uniformBuffer";
 import type { PBRBaseMaterial } from "./PBR/pbrBaseMaterial";
 import type { StandardMaterial } from "./standardMaterial";
+import { RegisterClass } from "core/Misc/typeStore";
+import { BindTextureMatrix, PrepareDefinesForMergedUV } from "./materialHelper.functions";
 
 /**
  * @internal
@@ -54,6 +55,14 @@ export class DecalMapConfiguration extends MaterialPluginBase {
     }
 
     /**
+     * Gets a boolean indicating that the plugin is compatible with a given shader language.
+     * @returns true if the plugin is compatible with the shader language
+     */
+    public override isCompatible(): boolean {
+        return true;
+    }
+
+    /**
      * Creates a new DecalMapConfiguration
      * @param material The material to attach the decal map plugin to
      * @param addToPluginList If the plugin should be added to the material plugin list
@@ -65,7 +74,7 @@ export class DecalMapConfiguration extends MaterialPluginBase {
         this._internalMarkAllSubMeshesAsTexturesDirty = material._dirtyCallbacks[Constants.MATERIAL_TextureDirtyFlag];
     }
 
-    public isReadyForSubMesh(defines: DecalMapDefines, scene: Scene, engine: Engine, subMesh: SubMesh): boolean {
+    public override isReadyForSubMesh(defines: DecalMapDefines, scene: Scene, engine: Engine, subMesh: SubMesh): boolean {
         const decalMap = subMesh.getMesh().decalMap;
 
         if (!this._isEnabled || !decalMap?.texture || !MaterialFlags.DecalMapEnabled || !scene.texturesEnabled) {
@@ -75,7 +84,7 @@ export class DecalMapConfiguration extends MaterialPluginBase {
         return decalMap.isReady();
     }
 
-    public prepareDefines(defines: DecalMapDefines, scene: Scene, mesh: AbstractMesh): void {
+    public override prepareDefines(defines: DecalMapDefines, scene: Scene, mesh: AbstractMesh): void {
         const decalMap = mesh.decalMap;
 
         if (!this._isEnabled || !decalMap?.texture || !MaterialFlags.DecalMapEnabled || !scene.texturesEnabled) {
@@ -92,16 +101,16 @@ export class DecalMapConfiguration extends MaterialPluginBase {
             defines.DECAL = true;
             defines.GAMMADECAL = decalMap.texture.gammaSpace;
             defines.DECAL_SMOOTHALPHA = this._smoothAlpha;
-            MaterialHelper.PrepareDefinesForMergedUV(decalMap.texture, defines, "DECAL");
+            PrepareDefinesForMergedUV(decalMap.texture, defines, "DECAL");
         }
     }
 
-    /**
-     * Note that we override hardBindForSubMesh and not bindForSubMesh because the material can be shared by multiple meshes,
-     * in which case mustRebind could return false even though the decal map is different for each mesh: that's because the decal map
-     * is not part of the material but hosted by the decalMap of the mesh instead.
-     */
-    public hardBindForSubMesh(uniformBuffer: UniformBuffer, scene: Scene, _engine: Engine, subMesh: SubMesh): void {
+    public override hardBindForSubMesh(uniformBuffer: UniformBuffer, scene: Scene, _engine: Engine, subMesh: SubMesh): void {
+        /**
+         * Note that we override hardBindForSubMesh and not bindForSubMesh because the material can be shared by multiple meshes,
+         * in which case mustRebind could return false even though the decal map is different for each mesh: that's because the decal map
+         * is not part of the material but hosted by the decalMap of the mesh instead.
+         */
         const decalMap = subMesh.getMesh().decalMap;
 
         if (!this._isEnabled || !decalMap?.texture || !MaterialFlags.DecalMapEnabled || !scene.texturesEnabled) {
@@ -113,21 +122,21 @@ export class DecalMapConfiguration extends MaterialPluginBase {
 
         if (!uniformBuffer.useUbo || !isFrozen || !uniformBuffer.isSync) {
             uniformBuffer.updateFloat4("vDecalInfos", texture.coordinatesIndex, 0, 0, 0);
-            MaterialHelper.BindTextureMatrix(texture, uniformBuffer, "decal");
+            BindTextureMatrix(texture, uniformBuffer, "decal");
         }
 
         uniformBuffer.setTexture("decalSampler", texture);
     }
 
-    public getClassName(): string {
+    public override getClassName(): string {
         return "DecalMapConfiguration";
     }
 
-    public getSamplers(samplers: string[]): void {
+    public override getSamplers(samplers: string[]): void {
         samplers.push("decalSampler");
     }
 
-    public getUniforms(): { ubo?: Array<{ name: string; size: number; type: string }>; vertex?: string; fragment?: string } {
+    public override getUniforms(): { ubo?: Array<{ name: string; size: number; type: string }>; vertex?: string; fragment?: string } {
         return {
             ubo: [
                 { name: "vDecalInfos", size: 4, type: "vec4" },
@@ -136,3 +145,5 @@ export class DecalMapConfiguration extends MaterialPluginBase {
         };
     }
 }
+
+RegisterClass("BABYLON.DecalMapConfiguration", DecalMapConfiguration);
