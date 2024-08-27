@@ -25,7 +25,7 @@ export class Image extends Control {
     private _imageHeight: number;
     private _loaded = false;
     private _stretch = Image.STRETCH_FILL;
-    private _source: Nullable<string>;
+    private _source: Nullable<string> = null;
     private _autoScale = false;
 
     private _sourceLeft = 0;
@@ -528,6 +528,13 @@ export class Image extends Control {
         const value = source && Image.SourceImgCache.get(source);
         if (value) {
             value.timesUsed -= 1;
+
+            // Remove from DOM
+            const htmlElement = value.img as HTMLImageElement;
+            if (htmlElement.parentNode) {
+                htmlElement.parentNode.removeChild(htmlElement);
+            }
+
             // Since the image isn't being used anymore, we can clean it from the cache
             if (value.timesUsed === 0) {
                 Image.SourceImgCache.delete(source);
@@ -574,6 +581,17 @@ export class Image extends Control {
             return;
         }
         this._domImage = engine.createCanvasImage();
+        // need to add to enforce rendering
+        const imgElement = this._domImage as HTMLImageElement;
+        let addedToDom = false;
+        if (imgElement.style && this._source?.endsWith(".svg")) {
+            imgElement.style.visibility = "hidden";
+            imgElement.style.position = "absolute";
+            imgElement.style.top = "0";
+            engine.getRenderingCanvas()?.parentNode?.appendChild(imgElement);
+            addedToDom = true;
+        }
+
         if (value) {
             Image.SourceImgCache.set(value, { img: this._domImage, timesUsed: 1, loaded: false, waitingForLoadCallback: [this._onImageLoaded.bind(this)] });
         }
@@ -587,10 +605,12 @@ export class Image extends Control {
                         waitingCallback();
                     }
                     cachedData.waitingForLoadCallback.length = 0;
+                    addedToDom && imgElement.remove();
                     return;
                 }
             }
             this._onImageLoaded();
+            addedToDom && imgElement.remove();
         };
         if (value) {
             Tools.SetCorsBehavior(value, this._domImage);
@@ -605,7 +625,7 @@ export class Image extends Control {
      * @returns the svg
      */
     private _svgCheck(value: string): string {
-        if (window.SVGSVGElement && value.search(/.svg#/gi) !== -1 && value.indexOf("#") === value.lastIndexOf("#")) {
+        if (window.SVGSVGElement && value.search(/(\.svg|\.svg?[?|#].*)$/gi) !== -1 && value.indexOf("#") === value.lastIndexOf("#")) {
             this._isSVG = true;
             const svgsrc = value.split("#")[0];
             const elemid = value.split("#")[1];

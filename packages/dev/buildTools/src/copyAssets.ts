@@ -1,5 +1,5 @@
 /* eslint-disable no-console */
-import * as glob from "glob";
+import { glob } from "glob";
 import * as path from "path";
 import { copyFile, checkArgs } from "./utils.js";
 import * as chokidar from "chokidar";
@@ -14,12 +14,11 @@ const processFile = (file: string, options: { isCore?: boolean; basePackageName?
         buildShader(file, options.basePackageName, options.isCore);
     } else {
         if (options.pathPrefix) {
-            const regex = new RegExp(`${options.pathPrefix.replace(/\//g, "\\/")}./src([/\\\\])`);
+            const regex = new RegExp(`${options.pathPrefix.replace(/\//g, "\\/")}src([/\\\\])`);
             copyFile(file, file.replace(regex, `${options.outputDir}$1`), true, true);
         } else {
             copyFile(file, file.replace(/src([/\\])/, `${options.outputDir}$1`), true, true);
         }
-        // support windows path with "\\" instead of "/"
     }
 };
 
@@ -28,9 +27,10 @@ export const processAssets = (options: { extensions: string[] } = { extensions: 
     const fileTypes = checkArgs(["--file-types", "-ft"], false, true);
     const extensions = fileTypes && typeof fileTypes === "string" ? fileTypes.split(",") : options.extensions;
     const pathPrefix = (checkArgs("--path-prefix", false, true) as string) || "";
-    const globDirectory = global ? `./packages/**/*/src/**/*.+(${extensions.join("|")})` : pathPrefix + `./src/**/*.+(${extensions.join("|")})`;
+    const globDirectory = global ? `./packages/**/*/src/**/*.+(${extensions.join("|")})` : pathPrefix + `src/**/*.+(${extensions.join("|")})`;
     const isCore = !!checkArgs("--isCore", true);
     const outputDir = checkArgs(["--output-dir"], false, true) as string;
+    const verbose = checkArgs("--verbose", true);
     let basePackageName: DevPackageName = "core";
     if (!isCore) {
         const cliPackage = checkArgs("--package", false, true);
@@ -49,25 +49,43 @@ export const processAssets = (options: { extensions: string[] } = { extensions: 
                 ignoreInitial: false,
                 awaitWriteFinish: {
                     stabilityThreshold: 1000,
-                    pollInterval: 200,
+                    pollInterval: 300,
                 },
                 alwaysStat: true,
                 interval: 300,
                 binaryInterval: 600,
             })
-            .on("all", (_event, file) => {
+            .on("all", (event, file) => {
+                // don't track directory changes
+                if (event === "addDir" || event === "unlinkDir") {
+                    return;
+                }
+                let verb: string;
+                switch (event) {
+                    case "add":
+                        verb = "Initializing";
+                        break;
+                    case "change":
+                        verb = "Changing";
+                        break;
+                    case "unlink":
+                        verb = "Removing";
+                        break;
+                }
+                verbose && console.log(`${verb} asset: ${file}`);
                 processFile(file, processOptions);
             });
         console.log("watching for asset changes...");
     } else {
-        glob(globDirectory, (err, files) => {
-            if (err) {
-                console.log(err);
-            } else {
+        glob(globDirectory).then(
+            (files) => {
                 files.forEach((file) => {
                     processFile(file, processOptions);
                 });
+            },
+            (err) => {
+                console.log(err);
             }
-        });
+        );
     }
 };

@@ -329,6 +329,30 @@
             */
             "type": "node",
             "request": "launch",
+            "name": "Run and Debug current unit test file (Dev)",
+            "runtimeArgs": [
+                "--inspect-brk",
+                "${workspaceRoot}/node_modules/jest/bin/jest.js",
+                "--runInBand",
+                "--selectProjects",
+                "unit",
+                "--test-path-pattern",
+                "${fileBasenameNoExtension}"
+            ],
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "port": 9229,
+            // "outFiles": ["${workspaceRoot}/**/dist/**/*"], // debugging sources
+            // "envFile": "${workspaceRoot}/.env",
+            "preLaunchTask": "Build (Dev)"
+        },
+        {
+            /*
+            Launch tests
+            https://jestjs.io/docs/troubleshooting#debugging-in-vs-code
+            */
+            "type": "node",
+            "request": "launch",
             "name": "Run validation tests - WebGL2 (Dev)",
             "runtimeArgs": ["--inspect-brk", "${workspaceRoot}/node_modules/jest/bin/jest.js", "--runInBand", "--selectProjects", "visualization", "-i", "webgl2"],
             "console": "integratedTerminal",
@@ -484,6 +508,20 @@
             // "outFiles": ["${workspaceRoot}/**/dist/**/*"], // debugging sources
             // "envFile": "${workspaceRoot}/.env",
             "preLaunchTask": "CDN Serve Prod (Dev)"
+        },
+        {
+            "type": "msedge",
+            "request": "launch",
+            "name": "Viewer (Alpha) (Web) (Edge)",
+            "url": "http://localhost:1342/packages/tools/viewer-alpha/test/apps/web/index.html",
+            "preLaunchTask": "Viewer (Alpha - Web)"
+        },
+        {
+            "type": "chrome",
+            "request": "launch",
+            "name": "Viewer (Alpha) (Web) (Chrome)",
+            "url": "http://localhost:1342/packages/tools/viewer-alpha/test/apps/web/index.html",
+            "preLaunchTask": "Viewer (Alpha - Web)"
         }
     ],
     "inputs": [

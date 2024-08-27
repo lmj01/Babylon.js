@@ -115,7 +115,7 @@ export interface IGreasedLineMaterial {
  * Material types for GreasedLine
  * {@link https://doc.babylonjs.com/features/featuresDeepDive/mesh/creation/param/greased_line#materialtype}
  */
-export enum GreasedLineMeshMaterialType {
+export const enum GreasedLineMeshMaterialType {
     /**
      * StandardMaterial
      */
@@ -125,7 +125,9 @@ export enum GreasedLineMeshMaterialType {
      */
     MATERIAL_TYPE_PBR = 1,
     /**
-     * Simple and fast shader material not supporting lightning nor textures
+     * Simple and fast shader material without texture, light, fog, instances, ... support.
+     * Just raw colored lines.
+     * Dashing and visibility is supported.
      */
     MATERIAL_TYPE_SIMPLE = 2,
 }
@@ -134,7 +136,7 @@ export enum GreasedLineMeshMaterialType {
  * Color blending mode of the @see GreasedLineMaterial and the base material
  * {@link https://doc.babylonjs.com/features/featuresDeepDive/mesh/creation/param/greased_line#colormode}
  */
-export enum GreasedLineMeshColorMode {
+export const enum GreasedLineMeshColorMode {
     /**
      * Color blending mode SET
      */
@@ -154,7 +156,7 @@ export enum GreasedLineMeshColorMode {
  * {@link https://doc.babylonjs.com/features/featuresDeepDive/mesh/creation/param/greased_line#colordistributiontype}
  *
  */
-export enum GreasedLineMeshColorDistributionType {
+export const enum GreasedLineMeshColorDistributionType {
     /**
      * Colors distributed between segments of the line
      */

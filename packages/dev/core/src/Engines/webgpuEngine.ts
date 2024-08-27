@@ -2,7 +2,6 @@
 import { Logger } from "../Misc/logger";
 import type { Nullable, DataArray, IndicesArray, Immutable, FloatArray } from "../types";
 import { Color4 } from "../Maths/math";
-import { Engine } from "../Engines/engine";
 import { InternalTexture, InternalTextureSource } from "../Materials/Textures/internalTexture";
 import type { IEffectCreationOptions, IShaderPath } from "../Materials/effect";
 import { Effect } from "../Materials/effect";
@@ -59,15 +58,12 @@ import type { WebGPURenderTargetWrapper } from "./WebGPU/webgpuRenderTargetWrapp
 
 import "../Buffers/buffer.align";
 
-import "../ShadersWGSL/postprocess.vertex";
-
 import type { VideoTexture } from "../Materials/Textures/videoTexture";
 import type { RenderTargetTexture } from "../Materials/Textures/renderTargetTexture";
 import type { RenderTargetWrapper } from "./renderTargetWrapper";
 import { WebGPUPerfCounter } from "./WebGPU/webgpuPerfCounter";
 import type { Scene } from "../scene";
 
-import type { PostProcess } from "../PostProcesses/postProcess";
 import { SphericalPolynomial } from "../Maths/sphericalPolynomial";
 import { PerformanceMonitor } from "../Misc/performanceMonitor";
 import {
@@ -200,15 +196,12 @@ export interface WebGPUEngineOptions extends AbstractEngineOptions, GPURequestAd
  */
 export class WebGPUEngine extends AbstractEngine {
     // Default glslang options.
-    private static readonly _GLSLslangDefaultOptions: GlslangOptions = {
+    private static readonly _GlslangDefaultOptions: GlslangOptions = {
         jsPath: `${Tools._DefaultCdnUrl}/glslang/glslang.js`,
         wasmPath: `${Tools._DefaultCdnUrl}/glslang/glslang.wasm`,
     };
 
     private static _InstanceId = 0;
-
-    /** true to enable using TintWASM to convert Spir-V to WGSL */
-    public static UseTWGSL = true;
 
     /** A unique id to identify this instance */
     public readonly uniqueId = -1;
@@ -229,6 +222,7 @@ export class WebGPUEngine extends AbstractEngine {
     public _options: WebGPUEngineOptions;
     private _glslang: any = null;
     private _tintWASM: Nullable<WebGPUTintWASM> = null;
+    private _glslangAndTintAreFullyLoaded = false;
     private _adapter: GPUAdapter;
     private _adapterSupportedExtensions: GPUFeatureName[];
     private _adapterInfo: GPUAdapterInfo = {
@@ -626,7 +620,7 @@ export class WebGPUEngine extends AbstractEngine {
         options.deviceDescriptor = options.deviceDescriptor || {};
         options.enableGPUDebugMarkers = options.enableGPUDebugMarkers ?? false;
 
-        Logger.Log(`Babylon.js v${Engine.Version} - ${this.description} engine`);
+        Logger.Log(`Babylon.js v${AbstractEngine.Version} - ${this.description} engine`);
         if (!navigator.gpu) {
             Logger.Error("WebGPU is not supported by your browser.");
             return;
@@ -655,6 +649,28 @@ export class WebGPUEngine extends AbstractEngine {
     //------------------------------------------------------------------------------
     //                              Initialization
     //------------------------------------------------------------------------------
+    private _workingGlslangAndTintPromise: Nullable<Promise<void>> = null;
+
+    /**
+     * Load the glslang and tintWASM libraries and prepare them for use.
+     * @returns a promise that resolves when the engine is ready to use the glslang and tintWASM
+     */
+    public prepareGlslangAndTintAsync(): Promise<void> {
+        if (!this._workingGlslangAndTintPromise) {
+            this._workingGlslangAndTintPromise = new Promise<void>((resolve) => {
+                this._initGlslang(this._glslangOptions ?? this._options?.glslangOptions).then((glslang: any) => {
+                    this._glslang = glslang;
+                    this._tintWASM = new WebGPUTintWASM();
+                    this._tintWASM.initTwgsl(this._twgslOptions ?? this._options?.twgslOptions).then(() => {
+                        this._glslangAndTintAreFullyLoaded = true;
+                        resolve();
+                    });
+                });
+            });
+        }
+
+        return this._workingGlslangAndTintPromise;
+    }
 
     /**
      * Initializes the WebGPU context and dependencies.
@@ -666,16 +682,8 @@ export class WebGPUEngine extends AbstractEngine {
         (this.uniqueId as number) = WebGPUEngine._InstanceId++;
         this._glslangOptions = glslangOptions;
         this._twgslOptions = twgslOptions;
-        return this._initGlslang(glslangOptions ?? this._options?.glslangOptions)
-            .then((glslang: any) => {
-                this._glslang = glslang;
-                this._tintWASM = WebGPUEngine.UseTWGSL ? new WebGPUTintWASM() : null;
-                return this._tintWASM
-                    ? this._tintWASM.initTwgsl(twgslOptions ?? this._options?.twgslOptions).then(() => {
-                          return navigator.gpu!.requestAdapter(this._options);
-                      })
-                    : navigator.gpu!.requestAdapter(this._options);
-            })
+        return navigator
+            .gpu!.requestAdapter(this._options)
             .then((adapter: GPUAdapter | undefined) => {
                 if (!adapter) {
                     // eslint-disable-next-line no-throw-literal
@@ -769,8 +777,10 @@ export class WebGPUEngine extends AbstractEngine {
                 }
             })
             .then(() => {
+                this._initializeLimits();
+
                 this._bufferManager = new WebGPUBufferManager(this, this._device);
-                this._textureHelper = new WebGPUTextureManager(this, this._device, this._glslang, this._tintWASM, this._bufferManager, this._deviceEnabledExtensions);
+                this._textureHelper = new WebGPUTextureManager(this, this._device, this._bufferManager, this._deviceEnabledExtensions);
                 this._cacheSampler = new WebGPUCacheSampler(this._device);
                 this._cacheBindGroups = new WebGPUCacheBindGroups(this._device, this._cacheSampler, this);
                 this._timestampQuery = new WebGPUTimestampQuery(this, this._device, this._bufferManager);
@@ -798,8 +808,6 @@ export class WebGPUEngine extends AbstractEngine {
 
                 this._uploadEncoder = this._device.createCommandEncoder(this._uploadEncoderDescriptor);
                 this._renderEncoder = this._device.createCommandEncoder(this._renderEncoderDescriptor);
-
-                this._initializeLimits();
 
                 this._emptyVertexBuffer = new VertexBuffer(this, [0], "", {
                     stride: 1,
@@ -839,7 +847,7 @@ export class WebGPUEngine extends AbstractEngine {
     private _initGlslang(glslangOptions?: GlslangOptions): Promise<any> {
         glslangOptions = glslangOptions || {};
         glslangOptions = {
-            ...WebGPUEngine._GLSLslangDefaultOptions,
+            ...WebGPUEngine._GlslangDefaultOptions,
             ...glslangOptions,
         };
 
@@ -935,6 +943,7 @@ export class WebGPUEngine extends AbstractEngine {
             needTypeSuffixInShaderConstants: true,
             supportMSAA: true,
             supportSSAO2: true,
+            supportIBLShadows: true,
             supportExtendedTextureFormats: true,
             supportSwitchCaseInShader: true,
             supportSyncTextureRead: false,
@@ -945,6 +954,7 @@ export class WebGPUEngine extends AbstractEngine {
             supportRenderPasses: true,
             supportSpriteInstancing: true,
             forceVertexBufferStrideAndOffsetMultiple4Bytes: true,
+            _checkNonFloatVertexBuffersDontRecreatePipelineContext: true,
             _collectUbosUpdatedInFrame: false,
         };
     }
@@ -1206,50 +1216,6 @@ export class WebGPUEngine extends AbstractEngine {
     }
 
     /**
-     * Sets a depth stencil texture from a render target to the according uniform.
-     * @param channel The texture channel
-     * @param uniform The uniform to set
-     * @param texture The render target texture containing the depth stencil texture to apply
-     * @param name The texture name
-     */
-    public setDepthStencilTexture(channel: number, uniform: Nullable<WebGLUniformLocation>, texture: Nullable<RenderTargetTexture>, name?: string): void {
-        if (!texture || !texture.depthStencilTexture) {
-            this._setTexture(channel, null, undefined, undefined, name);
-        } else {
-            this._setTexture(channel, texture, false, true, name);
-        }
-    }
-
-    /**
-     * Sets a texture to the context from a postprocess
-     * @param channel defines the channel to use
-     * @param postProcess defines the source postprocess
-     * @param name name of the channel
-     */
-    public setTextureFromPostProcess(channel: number, postProcess: Nullable<PostProcess>, name: string): void {
-        let postProcessInput = null;
-        if (postProcess) {
-            if (postProcess._forcedOutputTexture) {
-                postProcessInput = postProcess._forcedOutputTexture;
-            } else if (postProcess._textures.data[postProcess._currentRenderTextureInd]) {
-                postProcessInput = postProcess._textures.data[postProcess._currentRenderTextureInd];
-            }
-        }
-
-        this._bindTexture(channel, postProcessInput?.texture ?? null, name);
-    }
-
-    /**
-     * Binds the output of the passed in post process to the texture channel specified
-     * @param channel The channel the texture should be bound to
-     * @param postProcess The post process which's output should be bound
-     * @param name name of the channel
-     */
-    public setTextureFromPostProcessOutput(channel: number, postProcess: Nullable<PostProcess>, name: string): void {
-        this._bindTexture(channel, postProcess?._outputTexture?.texture ?? null, name);
-    }
-
-    /**
      * Force a specific size of the canvas
      * @param width defines the new canvas' width
      * @param height defines the new canvas' height
@@ -1295,8 +1261,8 @@ export class WebGPUEngine extends AbstractEngine {
     /**
      * @internal
      */
-    public _getShaderProcessingContext(shaderLanguage: ShaderLanguage): Nullable<ShaderProcessingContext> {
-        return new WebGPUShaderProcessingContext(shaderLanguage);
+    public _getShaderProcessingContext(shaderLanguage: ShaderLanguage, pureMode: boolean): Nullable<ShaderProcessingContext> {
+        return new WebGPUShaderProcessingContext(shaderLanguage, pureMode);
     }
 
     private _currentPassIsMainPass() {
@@ -1718,7 +1684,7 @@ export class WebGPUEngine extends AbstractEngine {
      * @param indices defines the data to update
      * @param offset defines the offset in the target index buffer where update should start
      */
-    public updateDynamicIndexBuffer(indexBuffer: DataBuffer, indices: IndicesArray, offset: number = 0): void {
+    public override updateDynamicIndexBuffer(indexBuffer: DataBuffer, indices: IndicesArray, offset: number = 0): void {
         const gpuBuffer = indexBuffer as WebGPUDataBuffer;
 
         let view: ArrayBufferView;
@@ -1738,7 +1704,7 @@ export class WebGPUEngine extends AbstractEngine {
      * @param byteOffset the byte offset of the data
      * @param byteLength the byte length of the data
      */
-    public updateDynamicVertexBuffer(vertexBuffer: DataBuffer, data: DataArray, byteOffset?: number, byteLength?: number): void {
+    public override updateDynamicVertexBuffer(vertexBuffer: DataBuffer, data: DataArray, byteOffset?: number, byteLength?: number): void {
         const dataBuffer = vertexBuffer as WebGPUDataBuffer;
         if (byteOffset === undefined) {
             byteOffset = 0;
@@ -1953,6 +1919,7 @@ export class WebGPUEngine extends AbstractEngine {
      * @param onError defines a function to call when the effect creation has failed
      * @param indexParameters defines an object containing the index values to use to compile shaders (like the maximum number of simultaneous lights)
      * @param shaderLanguage the language the shader is written in (default: GLSL)
+     * @param extraInitializationsAsync additional async code to run before preparing the effect
      * @returns the new Effect
      */
     public createEffect(
@@ -1965,7 +1932,8 @@ export class WebGPUEngine extends AbstractEngine {
         onCompiled?: Nullable<(effect: Effect) => void>,
         onError?: Nullable<(effect: Effect, errors: string) => void>,
         indexParameters?: any,
-        shaderLanguage = ShaderLanguage.GLSL
+        shaderLanguage = ShaderLanguage.GLSL,
+        extraInitializationsAsync?: () => Promise<void>
     ): Effect {
         const vertex = typeof baseName === "string" ? baseName : baseName.vertexToken || baseName.vertexSource || baseName.vertexElement || baseName.vertex;
         const fragment = typeof baseName === "string" ? baseName : baseName.fragmentToken || baseName.fragmentSource || baseName.fragmentElement || baseName.fragment;
@@ -1983,7 +1951,7 @@ export class WebGPUEngine extends AbstractEngine {
             if (onCompiled && compiledEffect.isReady()) {
                 onCompiled(compiledEffect);
             }
-
+            compiledEffect._refCount++;
             return compiledEffect;
         }
         const effect = new Effect(
@@ -1998,7 +1966,8 @@ export class WebGPUEngine extends AbstractEngine {
             onError,
             indexParameters,
             name,
-            (<IEffectCreationOptions>attributesNamesOrOptions).shaderLanguage ?? shaderLanguage
+            (<IEffectCreationOptions>attributesNamesOrOptions).shaderLanguage ?? shaderLanguage,
+            (<IEffectCreationOptions>attributesNamesOrOptions).extraInitializationsAsync ?? extraInitializationsAsync
         );
         this._compiledEffects[name] = effect;
 
@@ -2037,12 +2006,14 @@ export class WebGPUEngine extends AbstractEngine {
         return {
             vertexStage: {
                 module: this._device.createShaderModule({
+                    label: "vertex",
                     code: vertexShader,
                 }),
                 entryPoint: "main",
             },
             fragmentStage: {
                 module: this._device.createShaderModule({
+                    label: "fragment",
                     code: fragmentShader,
                 }),
                 entryPoint: "main",
@@ -2142,18 +2113,25 @@ export class WebGPUEngine extends AbstractEngine {
     /**
      * @internal
      */
-    public _preparePipelineContext(
+    public async _preparePipelineContext(
         pipelineContext: IPipelineContext,
         vertexSourceCode: string,
         fragmentSourceCode: string,
         createAsRaw: boolean,
         rawVertexSourceCode: string,
         rawFragmentSourceCode: string,
-        rebuildRebind: any,
-        defines: Nullable<string>
+        _rebuildRebind: any,
+        defines: Nullable<string>,
+        _transformFeedbackVaryings: Nullable<string[]>,
+        _key: string,
+        onReady: () => void
     ) {
         const webGpuContext = pipelineContext as WebGPUPipelineContext;
         const shaderLanguage = webGpuContext.shaderProcessingContext.shaderLanguage;
+
+        if (shaderLanguage === ShaderLanguage.GLSL && !this._glslangAndTintAreFullyLoaded) {
+            await this.prepareGlslangAndTintAsync();
+        }
 
         if (this.dbgShowShaderCode) {
             Logger.Log(["defines", defines]);
@@ -2174,6 +2152,8 @@ export class WebGPUEngine extends AbstractEngine {
         } else {
             webGpuContext.stages = this._compilePipelineStageDescriptor(vertexSourceCode, fragmentSourceCode, defines, shaderLanguage);
         }
+
+        onReady();
     }
 
     /**
@@ -2477,7 +2457,7 @@ export class WebGPUEngine extends AbstractEngine {
                 texture.baseHeight = imageBitmap.height;
                 texture.width = imageBitmap.width;
                 texture.height = imageBitmap.height;
-                texture.format = texture.format !== -1 ? texture.format : format ?? Constants.TEXTUREFORMAT_RGBA;
+                texture.format = texture.format !== -1 ? texture.format : (format ?? Constants.TEXTUREFORMAT_RGBA);
                 texture.type = texture.type !== -1 ? texture.type : Constants.TEXTURETYPE_UNSIGNED_BYTE;
                 texture._creationFlags = creationFlags ?? 0;
 
@@ -2550,18 +2530,6 @@ export class WebGPUEngine extends AbstractEngine {
      */
     public wrapWebGLTexture(): InternalTexture {
         throw new Error("wrapWebGLTexture is not supported, use wrapWebGPUTexture instead.");
-    }
-
-    public generateMipMapsForCubemap(texture: InternalTexture) {
-        if (texture.generateMipMaps) {
-            const gpuTexture = texture._hardwareTexture?.underlyingResource;
-
-            if (!gpuTexture) {
-                this._textureHelper.createGPUTextureForInternalTexture(texture);
-            }
-
-            this._generateMipmaps(texture);
-        }
     }
 
     /**
@@ -2665,7 +2633,7 @@ export class WebGPUEngine extends AbstractEngine {
      * @param createPolynomials defines wheter or not to create polynomails harmonics for the texture
      * @returns the cube texture as an InternalTexture
      */
-    createPrefilteredCubeTexture(
+    public override createPrefilteredCubeTexture(
         rootUrl: string,
         scene: Nullable<Scene>,
         lodScale: number,
@@ -2724,7 +2692,10 @@ export class WebGPUEngine extends AbstractEngine {
         }
     }
 
-    protected _setTexture(
+    /**
+     * @internal
+     */
+    public override _setTexture(
         channel: number,
         texture: Nullable<BaseTexture>,
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -3684,7 +3655,7 @@ export class WebGPUEngine extends AbstractEngine {
         }
 
         // Cull face
-        const cullFace = this.cullBackFaces ?? cullBackFaces ?? true ? 1 : 2;
+        const cullFace = (this.cullBackFaces ?? cullBackFaces ?? true) ? 1 : 2;
         if (this._depthCullingState.cullFace !== cullFace || force) {
             this._depthCullingState.cullFace = cullFace;
         }
@@ -3880,6 +3851,7 @@ export class WebGPUEngine extends AbstractEngine {
      */
     public override dispose(): void {
         this._isDisposed = true;
+        this.hideLoadingUI();
         this._timestampQuery.dispose();
         this._mainTexture?.destroy();
         this._depthTexture?.destroy();
@@ -3986,7 +3958,7 @@ export class WebGPUEngine extends AbstractEngine {
      * @param label defines the label of the buffer (for debug purpose)
      * @returns the new buffer
      */
-    createStorageBuffer(data: DataArray | number, creationFlags: number, label?: string): DataBuffer {
+    public createStorageBuffer(data: DataArray | number, creationFlags: number, label?: string): DataBuffer {
         return this._createBuffer(data, creationFlags | Constants.BUFFER_CREATIONFLAG_STORAGE, label);
     }
 
@@ -3997,7 +3969,7 @@ export class WebGPUEngine extends AbstractEngine {
      * @param byteOffset the byte offset of the data
      * @param byteLength the byte length of the data
      */
-    updateStorageBuffer(buffer: DataBuffer, data: DataArray, byteOffset?: number, byteLength?: number): void {
+    public updateStorageBuffer(buffer: DataBuffer, data: DataArray, byteOffset?: number, byteLength?: number): void {
         const dataBuffer = buffer as WebGPUDataBuffer;
         if (byteOffset === undefined) {
             byteOffset = 0;
@@ -4026,27 +3998,7 @@ export class WebGPUEngine extends AbstractEngine {
         this._bufferManager.setSubData(dataBuffer, byteOffset, view, 0, byteLength);
     }
 
-    /**
-     * Read data from a storage buffer
-     * @param storageBuffer The storage buffer to read from
-     * @param offset The offset in the storage buffer to start reading from (default: 0)
-     * @param size  The number of bytes to read from the storage buffer (default: capacity of the buffer)
-     * @param buffer The buffer to write the data we have read from the storage buffer to (optional)
-     * @param noDelay If true, a call to flushFramebuffer will be issued so that the data can be read back immediately and not in engine.onEndFrameObservable. This can speed up data retrieval, at the cost of a small perf penalty (default: false).
-     * @returns If not undefined, returns the (promise) buffer (as provided by the 4th parameter) filled with the data, else it returns a (promise) Uint8Array with the data read from the storage buffer
-     */
-    readFromStorageBuffer(storageBuffer: DataBuffer, offset?: number, size?: number, buffer?: ArrayBufferView, noDelay?: boolean): Promise<ArrayBufferView> {
-        size = size || storageBuffer.capacity;
-
-        const gpuBuffer = this._bufferManager.createRawBuffer(
-            size,
-            WebGPUConstants.BufferUsage.MapRead | WebGPUConstants.BufferUsage.CopyDst,
-            undefined,
-            "TempReadFromStorageBuffer"
-        );
-
-        this._renderEncoder.copyBufferToBuffer(storageBuffer.underlyingResource, offset ?? 0, gpuBuffer, 0, size);
-
+    private _readFromGPUBuffer(gpuBuffer: GPUBuffer, size: number, buffer?: ArrayBufferView, noDelay?: boolean): Promise<ArrayBufferView> {
         return new Promise((resolve, reject) => {
             const readFromBuffer = () => {
                 gpuBuffer.mapAsync(WebGPUConstants.MapMode.Read, 0, size).then(
@@ -4054,7 +4006,7 @@ export class WebGPUEngine extends AbstractEngine {
                         const copyArrayBuffer = gpuBuffer.getMappedRange(0, size);
                         let data: ArrayBufferView | undefined = buffer;
                         if (data === undefined) {
-                            data = new Uint8Array(size!);
+                            data = new Uint8Array(size);
                             (data as Uint8Array).set(new Uint8Array(copyArrayBuffer));
                         } else {
                             const ctor = data.constructor as any; // we want to create result data with the same type as buffer (Uint8Array, Float32Array, ...)
@@ -4089,11 +4041,61 @@ export class WebGPUEngine extends AbstractEngine {
     }
 
     /**
+     * Read data from a storage buffer
+     * @param storageBuffer The storage buffer to read from
+     * @param offset The offset in the storage buffer to start reading from (default: 0)
+     * @param size  The number of bytes to read from the storage buffer (default: capacity of the buffer)
+     * @param buffer The buffer to write the data we have read from the storage buffer to (optional)
+     * @param noDelay If true, a call to flushFramebuffer will be issued so that the data can be read back immediately and not in engine.onEndFrameObservable. This can speed up data retrieval, at the cost of a small perf penalty (default: false).
+     * @returns If not undefined, returns the (promise) buffer (as provided by the 4th parameter) filled with the data, else it returns a (promise) Uint8Array with the data read from the storage buffer
+     */
+    public readFromStorageBuffer(storageBuffer: DataBuffer, offset?: number, size?: number, buffer?: ArrayBufferView, noDelay?: boolean): Promise<ArrayBufferView> {
+        size = size || storageBuffer.capacity;
+
+        const gpuBuffer = this._bufferManager.createRawBuffer(
+            size,
+            WebGPUConstants.BufferUsage.MapRead | WebGPUConstants.BufferUsage.CopyDst,
+            undefined,
+            "TempReadFromStorageBuffer"
+        );
+
+        this._renderEncoder.copyBufferToBuffer(storageBuffer.underlyingResource, offset ?? 0, gpuBuffer, 0, size);
+
+        return this._readFromGPUBuffer(gpuBuffer, size, buffer, noDelay);
+    }
+
+    /**
+     * Read data from multiple storage buffers
+     * @param storageBuffers The list of storage buffers to read from
+     * @param offset The offset in the storage buffer to start reading from (default: 0). This is the same offset for all storage buffers!
+     * @param size  The number of bytes to read from each storage buffer (default: capacity of the first buffer)
+     * @param buffer The buffer to write the data we have read from the storage buffers to (optional). If provided, the buffer should be large enough to hold the data from all storage buffers!
+     * @param noDelay If true, a call to flushFramebuffer will be issued so that the data can be read back immediately and not in engine.onEndFrameObservable. This can speed up data retrieval, at the cost of a small perf penalty (default: false).
+     * @returns If not undefined, returns the (promise) buffer (as provided by the 4th parameter) filled with the data, else it returns a (promise) Uint8Array with the data read from the storage buffer
+     */
+    public readFromMultipleStorageBuffers(storageBuffers: DataBuffer[], offset?: number, size?: number, buffer?: ArrayBufferView, noDelay?: boolean): Promise<ArrayBufferView> {
+        size = size || storageBuffers[0].capacity;
+
+        const gpuBuffer = this._bufferManager.createRawBuffer(
+            size * storageBuffers.length,
+            WebGPUConstants.BufferUsage.MapRead | WebGPUConstants.BufferUsage.CopyDst,
+            undefined,
+            "TempReadFromMultipleStorageBuffers"
+        );
+
+        for (let i = 0; i < storageBuffers.length; i++) {
+            this._renderEncoder.copyBufferToBuffer(storageBuffers[i].underlyingResource, offset ?? 0, gpuBuffer, i * size, size);
+        }
+
+        return this._readFromGPUBuffer(gpuBuffer, size * storageBuffers.length, buffer, noDelay);
+    }
+
+    /**
      * Sets a storage buffer in the shader
      * @param name Defines the name of the storage buffer as defined in the shader
      * @param buffer Defines the value to give to the uniform
      */
-    setStorageBuffer(name: string, buffer: Nullable<StorageBuffer>): void {
+    public setStorageBuffer(name: string, buffer: Nullable<StorageBuffer>): void {
         this._currentDrawContext?.setBuffer(name, (buffer?.getBuffer() as WebGPUDataBuffer) ?? null);
     }
 }

@@ -15,6 +15,8 @@ import type { PrePassEffectConfiguration } from "./prePassEffectConfiguration";
 import type { RenderTargetTexture } from "../Materials/Textures/renderTargetTexture";
 import { GeometryBufferRenderer } from "../Rendering/geometryBufferRenderer";
 
+import "../Engines/Extensions/engine.multiRender";
+
 /**
  * Renders a pre pass of the scene
  * This means every mesh in the scene will be rendered to a render target texture
@@ -167,6 +169,30 @@ export class PrePassRenderer {
             type: Constants.TEXTURETYPE_UNSIGNED_INT,
             format: Constants.TEXTUREFORMAT_RGBA,
             name: "prePass_Albedo",
+        },
+        {
+            purpose: Constants.PREPASS_WORLD_NORMAL_TEXTURE_TYPE,
+            type: Constants.TEXTURETYPE_UNSIGNED_INT,
+            format: Constants.TEXTUREFORMAT_RGBA,
+            name: "prePass_WorldNormal",
+        },
+        {
+            purpose: Constants.PREPASS_LOCAL_POSITION_TEXTURE_TYPE,
+            type: Constants.TEXTURETYPE_HALF_FLOAT,
+            format: Constants.TEXTUREFORMAT_RGBA,
+            name: "prePass_LocalPosition",
+        },
+        {
+            purpose: Constants.PREPASS_NDC_DEPTH_TEXTURE_TYPE,
+            type: Constants.TEXTURETYPE_FLOAT,
+            format: Constants.TEXTUREFORMAT_R,
+            name: "prePass_NdcDepth",
+        },
+        {
+            purpose: Constants.PREPASS_VELOCITY_LINEAR_TEXTURE_TYPE,
+            type: Constants.TEXTURETYPE_HALF_FLOAT,
+            format: Constants.TEXTUREFORMAT_RGBA,
+            name: "prePass_VelocityLinear",
         },
     ];
 
@@ -826,7 +852,7 @@ export class PrePassRenderer {
                 this.mrtCount++;
             }
 
-            if (type === Constants.PREPASS_VELOCITY_TEXTURE_TYPE) {
+            if (type === Constants.PREPASS_VELOCITY_TEXTURE_TYPE || type === Constants.PREPASS_VELOCITY_LINEAR_TEXTURE_TYPE) {
                 this._scene.needsPreviousWorldMatrices = true;
             }
         }

@@ -2,11 +2,11 @@ import { InternalTexture, InternalTextureSource } from "../../Materials/Textures
 import { Logger } from "../../Misc/logger";
 import type { Nullable } from "../../types";
 import type { Scene } from "../../scene";
-import type { IInternalTextureLoader } from "../../Materials/Textures/internalTextureLoader";
 import { LoadImage } from "../../Misc/fileTools";
 import { RandomGUID } from "../../Misc/guid";
 import type { IWebRequest } from "../../Misc/interfaces/iWebRequest";
 import { AbstractEngine } from "../abstractEngine";
+import { _GetCompatibleTextureLoader } from "core/Materials/Textures/Loaders/textureLoaderManager";
 
 declare module "../../Engines/abstractEngine" {
     export interface AbstractEngine {
@@ -26,7 +26,8 @@ declare module "../../Engines/abstractEngine" {
             fallback: Nullable<InternalTexture>,
             beforeLoadCubeDataCallback: Nullable<(texture: InternalTexture, data: ArrayBufferView | ArrayBufferView[]) => void>,
             imageHandler: Nullable<(texture: InternalTexture, imgs: HTMLImageElement[] | ImageBitmap[]) => void>,
-            useSRGBBuffer: boolean
+            useSRGBBuffer: boolean,
+            buffer: Nullable<ArrayBufferView>
         ): InternalTexture;
 
         /** @internal */
@@ -176,7 +177,8 @@ AbstractEngine.prototype.createCubeTextureBase = function (
     fallback: Nullable<InternalTexture> = null,
     beforeLoadCubeDataCallback: Nullable<(texture: InternalTexture, data: ArrayBufferView | ArrayBufferView[]) => void> = null,
     imageHandler: Nullable<(texture: InternalTexture, imgs: HTMLImageElement[] | ImageBitmap[]) => void> = null,
-    useSRGBBuffer = false
+    useSRGBBuffer = false,
+    buffer: Nullable<ArrayBufferView> = null
 ): InternalTexture {
     const texture = fallback ? fallback : new InternalTexture(this, InternalTextureSource.Cube);
     texture.isCube = true;
@@ -192,6 +194,7 @@ AbstractEngine.prototype.createCubeTextureBase = function (
     if (!this._doNotHandleContextLost) {
         texture._extension = forcedExtension;
         texture._files = files;
+        texture._buffer = buffer;
     }
 
     const originalRootUrl = rootUrl;
@@ -203,13 +206,7 @@ AbstractEngine.prototype.createCubeTextureBase = function (
     const lastDot = rootUrlWithoutUriParams.lastIndexOf(".");
     const extension = forcedExtension ? forcedExtension : lastDot > -1 ? rootUrlWithoutUriParams.substring(lastDot).toLowerCase() : "";
 
-    let loader: Nullable<IInternalTextureLoader> = null;
-    for (const availableLoader of AbstractEngine._TextureLoaders) {
-        if (availableLoader.canLoad(extension)) {
-            loader = availableLoader;
-            break;
-        }
-    }
+    const loaderPromise = _GetCompatibleTextureLoader(extension);
 
     const onInternalError = (request?: IWebRequest, exception?: any) => {
         if (rootUrl === originalRootUrl) {
@@ -234,31 +231,36 @@ AbstractEngine.prototype.createCubeTextureBase = function (
                 texture,
                 beforeLoadCubeDataCallback,
                 imageHandler,
-                useSRGBBuffer
+                useSRGBBuffer,
+                buffer
             );
         }
     };
 
-    if (loader) {
-        const onloaddata = (data: ArrayBufferView | ArrayBufferView[]) => {
-            if (beforeLoadCubeDataCallback) {
-                beforeLoadCubeDataCallback(texture, data);
-            }
-            loader!.loadCubeData(data, texture, createPolynomials, onLoad, onError);
-        };
-        if (files && files.length === 6) {
-            if (loader.supportCascades) {
-                this._cascadeLoadFiles(scene, (images) => onloaddata(images.map((image) => new Uint8Array(image))), files, onError);
-            } else {
-                if (onError) {
-                    onError("Textures type does not support cascades.");
-                } else {
-                    Logger.Warn("Texture loader does not support cascades.");
+    if (loaderPromise) {
+        loaderPromise.then((loader) => {
+            const onloaddata = (data: ArrayBufferView | ArrayBufferView[]) => {
+                if (beforeLoadCubeDataCallback) {
+                    beforeLoadCubeDataCallback(texture, data);
                 }
+                loader.loadCubeData(data, texture, createPolynomials, onLoad, onError);
+            };
+            if (buffer) {
+                onloaddata(buffer);
+            } else if (files && files.length === 6) {
+                if (loader.supportCascades) {
+                    this._cascadeLoadFiles(scene, (images) => onloaddata(images.map((image) => new Uint8Array(image))), files, onError);
+                } else {
+                    if (onError) {
+                        onError("Textures type does not support cascades.");
+                    } else {
+                        Logger.Warn("Texture loader does not support cascades.");
+                    }
+                }
+            } else {
+                this._loadFile(rootUrl, (data) => onloaddata(new Uint8Array(data as ArrayBuffer)), undefined, undefined, true, onInternalError);
             }
-        } else {
-            this._loadFile(rootUrl, (data) => onloaddata(new Uint8Array(data as ArrayBuffer)), undefined, undefined, true, onInternalError);
-        }
+        });
     } else {
         if (!files || files.length === 0) {
             throw new Error("Cannot load cubemap because files were not defined, or the correct loader was not found.");

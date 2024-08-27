@@ -181,13 +181,13 @@ export class GreasedLineMesh extends GreasedLineBaseMesh {
             } else {
                 for (let j = 0; j < l; j++) {
                     // uvs
+                    const lengthRatio = lengthArray[j] / totalLength;
                     const uvOffsetBase = uvOffset + j * 4;
-                    uvArr[uvOffsetBase + 0] = j / (l - 1);
+                    uvArr[uvOffsetBase + 0] = lengthRatio;
                     uvArr[uvOffsetBase + 1] = 0;
-                    uvArr[uvOffsetBase + 2] = j / (l - 1);
+                    uvArr[uvOffsetBase + 2] = lengthRatio;
                     uvArr[uvOffsetBase + 3] = 1;
                 }
-                uvOffset += l * 4;
             }
         });
         this._vertexPositions = vertexPositionsArr;
@@ -360,7 +360,7 @@ export class GreasedLineMesh extends GreasedLineBaseMesh {
         return this.getBoundingInfo().boundingSphere;
     }
 
-    private static _CompareV3(positionIdx1: number, positionIdx2: number, positions: number[] | Float32Array) {
+    private static _CompareV3(positionIdx1: number, positionIdx2: number, positions: FloatArray) {
         const arrayIdx1 = positionIdx1 * 6;
         const arrayIdx2 = positionIdx2 * 6;
         return positions[arrayIdx1] === positions[arrayIdx2] && positions[arrayIdx1 + 1] === positions[arrayIdx2 + 1] && positions[arrayIdx1 + 2] === positions[arrayIdx2 + 2];

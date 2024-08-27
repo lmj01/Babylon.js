@@ -87,6 +87,11 @@ export class NodeMaterialBuildState {
         return this.sharedData.nodeMaterial.shaderLanguage;
     }
 
+    /** Gets suffix to add behind type casting */
+    public get fSuffix() {
+        return this.shaderLanguage === ShaderLanguage.WGSL ? "f" : "";
+    }
+
     /**
      * Finalize the compilation strings
      * @param state defines the current compilation state
@@ -143,7 +148,7 @@ export class NodeMaterialBuildState {
 
         if (this.shaderLanguage !== ShaderLanguage.WGSL) {
             this.compilationString = "precision highp float;\n" + this.compilationString;
-            this.compilationString = "#if defined(WEBGL2) || defines(WEBGPU)\nprecision highp sampler2DArray;\n#endif\n" + this.compilationString;
+            this.compilationString = "#if defined(WEBGL2) || defined(WEBGPU)\nprecision highp sampler2DArray;\n#endif\n" + this.compilationString;
 
             if (isFragmentMode) {
                 this.compilationString =
@@ -210,15 +215,52 @@ export class NodeMaterialBuildState {
     /**
      * @internal
      */
-    public _emit2DSampler(name: string) {
-        if (this.samplers.indexOf(name) < 0) {
+    public _emit2DSampler(name: string, define = "", force = false) {
+        if (this.samplers.indexOf(name) < 0 || force) {
+            if (define) {
+                this._samplerDeclaration += `#if ${define}\n`;
+            }
+
             if (this.shaderLanguage === ShaderLanguage.WGSL) {
                 this._samplerDeclaration += `var ${name + Constants.AUTOSAMPLERSUFFIX}: sampler;\n`;
                 this._samplerDeclaration += `var ${name}: texture_2d<f32>;\n`;
             } else {
                 this._samplerDeclaration += `uniform sampler2D ${name};\n`;
             }
-            this.samplers.push(name);
+
+            if (define) {
+                this._samplerDeclaration += `#endif\n`;
+            }
+
+            if (!force) {
+                this.samplers.push(name);
+            }
+        }
+    }
+
+    /**
+     * @internal
+     */
+    public _emitCubeSampler(name: string, define = "", force = false) {
+        if (this.samplers.indexOf(name) < 0 || force) {
+            if (define) {
+                this._samplerDeclaration += `#if ${define}\n`;
+            }
+
+            if (this.shaderLanguage === ShaderLanguage.WGSL) {
+                this._samplerDeclaration += `var ${name + Constants.AUTOSAMPLERSUFFIX}: sampler;\n`;
+                this._samplerDeclaration += `var ${name}: texture_cube<f32>;\n`;
+            } else {
+                this._samplerDeclaration += `uniform samplerCube ${name};\n`;
+            }
+
+            if (define) {
+                this._samplerDeclaration += `#endif\n`;
+            }
+
+            if (!force) {
+                this.samplers.push(name);
+            }
         }
     }
 
@@ -323,11 +365,12 @@ export class NodeMaterialBuildState {
             substitutionVars?: string;
         }
     ) {
+        const store = EngineShaderStore.GetIncludesShadersStore(this.shaderLanguage);
+
         if (options && options.repeatKey) {
             return `#include<${includeName}>${options.substitutionVars ? "(" + options.substitutionVars + ")" : ""}[0..${options.repeatKey}]\n`;
         }
 
-        const store = EngineShaderStore.GetIncludesShadersStore(this.shaderLanguage);
         let code = store[includeName] + "\n";
 
         if (this.sharedData.emitComments) {
@@ -369,6 +412,7 @@ export class NodeMaterialBuildState {
         if (this.functions[key]) {
             return;
         }
+        const store = EngineShaderStore.GetIncludesShadersStore(this.shaderLanguage);
 
         if (!options || (!options.removeAttributes && !options.removeUniforms && !options.removeVaryings && !options.removeIfDef && !options.replaceStrings)) {
             if (options && options.repeatKey) {
@@ -383,8 +427,6 @@ export class NodeMaterialBuildState {
 
             return;
         }
-
-        const store = EngineShaderStore.GetIncludesShadersStore(this.shaderLanguage);
 
         this.functions[key] = store[includeName];
 
@@ -508,7 +550,7 @@ export class NodeMaterialBuildState {
             return `select(${falseStatement}, ${trueStatement}, ${condition})`;
         }
 
-        return `${condition} ? ${trueStatement} : ${falseStatement}`;
+        return `(${condition}) ? ${trueStatement} : ${falseStatement}`;
     }
 
     /**
@@ -538,6 +580,87 @@ export class NodeMaterialBuildState {
         } else {
             return `${this._getShaderType(type)} ${name}`;
         }
+    }
+
+    /**
+     * @internal
+     */
+    public _samplerCubeFunc() {
+        if (this.shaderLanguage === ShaderLanguage.WGSL) {
+            return "textureSample";
+        }
+        return "textureCube";
+    }
+
+    /**
+     * @internal
+     */
+    public _samplerFunc() {
+        if (this.shaderLanguage === ShaderLanguage.WGSL) {
+            return "textureSample";
+        }
+        return "texture2D";
+    }
+
+    /**
+     * @internal
+     */
+    public _samplerLODFunc() {
+        if (this.shaderLanguage === ShaderLanguage.WGSL) {
+            return "textureSampleLevel";
+        }
+        return "texture2DLodEXT";
+    }
+
+    public _toLinearSpace(output: NodeMaterialConnectionPoint) {
+        if (this.shaderLanguage === ShaderLanguage.WGSL) {
+            if (output.type === NodeMaterialBlockConnectionPointTypes.Color3 || output.type === NodeMaterialBlockConnectionPointTypes.Vector3) {
+                return `toLinearSpaceVec3(${output.associatedVariableName})`;
+            }
+
+            return `toLinearSpace(${output.associatedVariableName})`;
+        }
+        return `toLinearSpace(${output.associatedVariableName})`;
+    }
+
+    /**
+     * @internal
+     */
+    public _generateTextureSample(uv: string, samplerName: string) {
+        if (this.shaderLanguage === ShaderLanguage.WGSL) {
+            return `${this._samplerFunc()}(${samplerName},${samplerName + Constants.AUTOSAMPLERSUFFIX}, ${uv})`;
+        }
+        return `${this._samplerFunc()}(${samplerName}, ${uv})`;
+    }
+
+    /**
+     * @internal
+     */
+    public _generateTextureSampleLOD(uv: string, samplerName: string, lod: string) {
+        if (this.shaderLanguage === ShaderLanguage.WGSL) {
+            return `${this._samplerLODFunc()}(${samplerName},${samplerName + Constants.AUTOSAMPLERSUFFIX}, ${uv}, ${lod})`;
+        }
+        return `${this._samplerLODFunc()}(${samplerName}, ${uv}, ${lod})`;
+    }
+
+    /**
+     * @internal
+     */
+    public _generateTextureSampleCube(uv: string, samplerName: string) {
+        if (this.shaderLanguage === ShaderLanguage.WGSL) {
+            return `${this._samplerCubeFunc()}(${samplerName},${samplerName + Constants.AUTOSAMPLERSUFFIX}, ${uv})`;
+        }
+        return `${this._samplerCubeFunc()}(${samplerName}, ${uv})`;
+    }
+
+    /**
+     * @internal
+     */
+    public _generateTextureSampleCubeLOD(uv: string, samplerName: string, lod: string) {
+        if (this.shaderLanguage === ShaderLanguage.WGSL) {
+            return `${this._samplerCubeFunc()}(${samplerName},${samplerName + Constants.AUTOSAMPLERSUFFIX}, ${uv}, ${lod})`;
+        }
+        return `${this._samplerCubeFunc()}(${samplerName}, ${uv}, ${lod})`;
     }
 
     private _convertVariableDeclarationToWGSL(type: string, dest: string, source: string): string {
@@ -630,6 +753,10 @@ export class NodeMaterialBuildState {
 
         // Remove voidnull
         code = code.replace(/\s->\svoidnull/g, "");
+
+        // Derivatives
+        code = code.replace(/dFdx/g, "dpdx");
+        code = code.replace(/dFdy/g, "dpdy");
 
         return code;
     }

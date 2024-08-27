@@ -18,8 +18,6 @@ import { Constants } from "../Engines/constants";
 import type { IAnimatable } from "../Animations/animatable.interface";
 import { DrawWrapper } from "../Materials/drawWrapper";
 
-import "../Shaders/particles.fragment";
-import "../Shaders/particles.vertex";
 import type { DataBuffer } from "../Buffers/dataBuffer";
 import { Color4, Color3, TmpColors } from "../Maths/math.color";
 import type { ISize } from "../Maths/math.size";
@@ -36,6 +34,7 @@ import { BoxParticleEmitter } from "./EmitterTypes/boxParticleEmitter";
 import { Clamp, Lerp, RandomRange } from "../Maths/math.scalar.functions";
 import { PrepareSamplersForImageProcessing, PrepareUniformsForImageProcessing } from "../Materials/imageProcessingConfiguration.functions";
 import type { ThinEngine } from "../Engines/thinEngine";
+import { ShaderLanguage } from "core/Materials/shaderLanguage";
 
 /**
  * This represents a thin particle system in Babylon.
@@ -45,6 +44,12 @@ import type { ThinEngine } from "../Engines/thinEngine";
  * @example https://doc.babylonjs.com/features/featuresDeepDive/particles/particle_system/particle_system_intro
  */
 export class ThinParticleSystem extends BaseParticleSystem implements IDisposable, IAnimatable, IParticleSystem {
+    /**
+     * Force all the particle systems to compile to glsl even on WebGPU engines.
+     * False by default. This is mostly meant for backward compatibility.
+     */
+    public static ForceGLSL = false;
+
     /**
      * This function can be defined to provide custom update for active particles.
      * This function will be called instead of regular update (age, position, color, etc.).
@@ -179,6 +184,16 @@ export class ThinParticleSystem extends BaseParticleSystem implements IDisposabl
         return this._particles;
     }
 
+    /** Shader language used by the material */
+    protected _shaderLanguage = ShaderLanguage.GLSL;
+
+    /**
+     * Gets the shader language used in this material.
+     */
+    public get shaderLanguage(): ShaderLanguage {
+        return this._shaderLanguage;
+    }
+
     /**
      * Gets the number of particles active at the same time.
      * @returns The number of active particles.
@@ -302,6 +317,8 @@ export class ThinParticleSystem extends BaseParticleSystem implements IDisposabl
         if (this._engine.getCaps().vertexArrayObject) {
             this._vertexArrayObject = null;
         }
+
+        this._initShaderSourceAsync();
 
         // Setup the default processing configuration to the scene.
         this._attachImageProcessingConfiguration(null);
@@ -1675,8 +1692,9 @@ export class ThinParticleSystem extends BaseParticleSystem implements IDisposabl
      * Fill the defines array according to the current settings of the particle system
      * @param defines Array to be updated
      * @param blendMode blend mode to take into account when updating the array
+     * @param fillImageProcessing fills the image processing defines
      */
-    public fillDefines(defines: Array<string>, blendMode: number) {
+    public fillDefines(defines: Array<string>, blendMode: number, fillImageProcessing: boolean = true): void {
         if (this._scene) {
             prepareStringDefinesForClipPlanes(this, this._scene, defines);
             if (this.applyFog && this._scene.fogEnabled && this._scene.fogMode !== Constants.FOGMODE_NONE) {
@@ -1722,7 +1740,7 @@ export class ThinParticleSystem extends BaseParticleSystem implements IDisposabl
             }
         }
 
-        if (this._imageProcessingConfiguration) {
+        if (fillImageProcessing && this._imageProcessingConfiguration) {
             this._imageProcessingConfiguration.prepareDefines(this._imageProcessingConfigurationDefines);
             defines.push(this._imageProcessingConfigurationDefines.toString());
         }
@@ -1792,7 +1810,21 @@ export class ThinParticleSystem extends BaseParticleSystem implements IDisposabl
 
             this.fillUniformsAttributesAndSamplerNames(effectCreationOption, attributesNamesOrOptions, samplers);
 
-            drawWrapper.setEffect(this._engine.createEffect("particles", attributesNamesOrOptions, effectCreationOption, samplers, join), join);
+            drawWrapper.setEffect(
+                this._engine.createEffect(
+                    "particles",
+                    attributesNamesOrOptions,
+                    effectCreationOption,
+                    samplers,
+                    join,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    this._shaderLanguage
+                ),
+                join
+            );
         }
 
         return drawWrapper;
@@ -1924,11 +1956,29 @@ export class ThinParticleSystem extends BaseParticleSystem implements IDisposabl
         this.resetDrawCache();
     }
 
+    private _shadersLoaded = false;
+    private async _initShaderSourceAsync() {
+        const engine = this._engine;
+
+        if (engine.isWebGPU && !ThinParticleSystem.ForceGLSL) {
+            this._shaderLanguage = ShaderLanguage.WGSL;
+
+            await Promise.all([import("../ShadersWGSL/particles.vertex"), import("../ShadersWGSL/particles.fragment")]);
+        } else {
+            await Promise.all([import("../Shaders/particles.vertex"), import("../Shaders/particles.fragment")]);
+        }
+
+        this._shadersLoaded = true;
+    }
+
     /**
      * Is this system ready to be used/rendered
      * @returns true if the system is ready
      */
     public isReady(): boolean {
+        if (!this._shadersLoaded) {
+            return false;
+        }
         if (!this.emitter || (this._imageProcessingConfiguration && !this._imageProcessingConfiguration.isReady()) || !this.particleTexture || !this.particleTexture.isReady()) {
             return false;
         }

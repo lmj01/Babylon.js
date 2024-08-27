@@ -5,7 +5,6 @@ import type { Scene, IDisposable } from "../scene";
 import { ScenePerformancePriority } from "../scene";
 import type { Vector2 } from "../Maths/math.vector";
 import { Quaternion, Matrix, Vector3, TmpVectors } from "../Maths/math.vector";
-import { Engine } from "../Engines/engine";
 import type { Node } from "../node";
 import { VertexBuffer } from "../Buffers/buffer";
 import type { IGetSetVerticesData } from "../Meshes/mesh.vertexData";
@@ -43,6 +42,117 @@ import type { Collider } from "../Collisions/collider";
 import type { TrianglePickingPredicate } from "../Culling/ray";
 import type { RenderingGroup } from "../Rendering/renderingGroup";
 import type { IEdgesRendererOptions } from "../Rendering/edgesRenderer";
+import type { MorphTarget } from "../Morph/morphTarget";
+import { nativeOverride } from "../Misc/decorators";
+import { AbstractEngine } from "core/Engines/abstractEngine";
+
+function applyMorph(data: FloatArray, kind: string, morphTargetManager: MorphTargetManager): void {
+    let getTargetData: Nullable<(target: MorphTarget) => Nullable<FloatArray>> = null;
+    switch (kind) {
+        case VertexBuffer.PositionKind:
+            getTargetData = (target) => target.getPositions();
+            break;
+        case VertexBuffer.NormalKind:
+            getTargetData = (target) => target.getNormals();
+            break;
+        case VertexBuffer.TangentKind:
+            getTargetData = (target) => target.getTangents();
+            break;
+        case VertexBuffer.UVKind:
+            getTargetData = (target) => target.getUVs();
+            break;
+        default:
+            return;
+    }
+
+    for (let index = 0; index < data.length; index++) {
+        let value = data[index];
+        for (let targetCount = 0; targetCount < morphTargetManager.numTargets; targetCount++) {
+            const target = morphTargetManager.getTarget(targetCount);
+            const influence = target.influence;
+            if (influence !== 0) {
+                const targetData = getTargetData(target);
+                if (targetData) {
+                    value += (targetData[index] - data[index]) * influence;
+                }
+            }
+        }
+        data[index] = value;
+    }
+}
+
+function applySkeleton(
+    data: FloatArray,
+    kind: string,
+    skeletonMatrices: Float32Array,
+    matricesIndicesData: FloatArray,
+    matricesWeightsData: FloatArray,
+    matricesIndicesExtraData: Nullable<FloatArray>,
+    matricesWeightsExtraData: Nullable<FloatArray>
+): void {
+    const tempVector = TmpVectors.Vector3[0];
+    const finalMatrix = TmpVectors.Matrix[0];
+    const tempMatrix = TmpVectors.Matrix[1];
+
+    const transformFromFloatsToRef = kind === VertexBuffer.NormalKind ? Vector3.TransformNormalFromFloatsToRef : Vector3.TransformCoordinatesFromFloatsToRef;
+
+    for (let index = 0, matWeightIdx = 0; index < data.length; index += 3, matWeightIdx += 4) {
+        finalMatrix.reset();
+
+        let inf: number;
+        let weight: number;
+        for (inf = 0; inf < 4; inf++) {
+            weight = matricesWeightsData[matWeightIdx + inf];
+            if (weight > 0) {
+                Matrix.FromFloat32ArrayToRefScaled(skeletonMatrices, Math.floor(matricesIndicesData[matWeightIdx + inf] * 16), weight, tempMatrix);
+                finalMatrix.addToSelf(tempMatrix);
+            }
+        }
+        if (matricesIndicesExtraData && matricesWeightsExtraData) {
+            for (inf = 0; inf < 4; inf++) {
+                weight = matricesWeightsExtraData[matWeightIdx + inf];
+                if (weight > 0) {
+                    Matrix.FromFloat32ArrayToRefScaled(skeletonMatrices, Math.floor(matricesIndicesExtraData[matWeightIdx + inf] * 16), weight, tempMatrix);
+                    finalMatrix.addToSelf(tempMatrix);
+                }
+            }
+        }
+
+        transformFromFloatsToRef(data[index], data[index + 1], data[index + 2], finalMatrix, tempVector);
+        tempVector.toArray(data, index);
+    }
+}
+
+/**
+ * Opaque cache when computing data about a mesh
+ */
+export interface IMeshDataCache {
+    /** @internal */
+    _outputData?: Float32Array;
+
+    /** @internal */
+    _vertexData?: { [kind: string]: Float32Array };
+}
+
+/**
+ * Options when computing data about a mesh
+ */
+export interface IMeshDataOptions {
+    /** Apply skeleton when computing the bounding info. Defaults to false. */
+    applySkeleton?: boolean;
+
+    /** Apply morph when computing the bounding info. Defaults to false. */
+    applyMorph?: boolean;
+
+    /** Update the cached positions stored as a Vector3 array. Defaults to true. */
+    updatePositionsArray?: boolean;
+
+    /**
+     * Cache to avoid redundant allocations and computations when computing the bounding info multiple times. Pass in
+     * an initial empty object and continue with subsequent calls using the same object. Caching is disabled by default.
+     */
+    cache?: IMeshDataCache;
+}
 
 /** @internal */
 // eslint-disable-next-line @typescript-eslint/naming-convention
@@ -116,12 +226,23 @@ class _InternalAbstractMeshDataInfo {
      * Bounding info that is unnafected by the addition of thin instances
      */
     public _rawBoundingInfo: Nullable<BoundingInfo> = null;
+    /** @internal
+     * This value will indicate us that at some point, the mesh was specifically used with the opposite winding order
+     * We use that as a clue to force the material to sideOrientation = null
+     */
+    public _sideOrientationHint = false;
+
+    /**
+     * @internal
+     * if this is set to true, the mesh will be visible only if its parent(s) are also visible
+     */
+    public _inheritVisibility = false;
 }
 
 /**
  * Class used to store all common mesh properties
  */
-export class AbstractMesh extends TransformNode implements IDisposable, ICullable, IGetSetVerticesData {
+export abstract class AbstractMesh extends TransformNode implements IDisposable, ICullable, IGetSetVerticesData {
     /** No occlusion */
     public static OCCLUSION_TYPE_NONE = 0;
     /** Occlusion set to optimistic */
@@ -422,9 +543,40 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
     public alphaIndex = Number.MAX_VALUE;
 
     /**
+     * If set to true, a mesh will only be visible only if its parent(s) are also visible (default is false)
+     */
+    public get inheritVisibility(): boolean {
+        return this._internalAbstractMeshDataInfo._inheritVisibility;
+    }
+
+    public set inheritVisibility(value: boolean) {
+        this._internalAbstractMeshDataInfo._inheritVisibility = value;
+    }
+
+    private _isVisible = true;
+    /**
      * Gets or sets a boolean indicating if the mesh is visible (renderable). Default is true
      */
-    public isVisible = true;
+    public get isVisible(): boolean {
+        if (!this._isVisible || !this.inheritVisibility || !this._parentNode) {
+            return this._isVisible;
+        }
+        if (this._isVisible) {
+            let parent: Nullable<Node> = this._parentNode;
+            while (parent) {
+                const parentVisible = (parent as AbstractMesh).isVisible;
+                if (typeof parentVisible !== "undefined") {
+                    return parentVisible;
+                }
+                parent = parent.parent;
+            }
+        }
+        return this._isVisible;
+    }
+
+    public set isVisible(value: boolean) {
+        this._isVisible = value;
+    }
 
     /**
      * Gets or sets a boolean indicating if the mesh can be picked (by scene.pick for instance or through actions). Default is true
@@ -487,6 +639,11 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
         return this._internalAbstractMeshDataInfo._material;
     }
     public set material(value: Nullable<Material>) {
+        this._setMaterial(value);
+    }
+
+    /** @internal */
+    protected _setMaterial(value: Nullable<Material>) {
         if (this._internalAbstractMeshDataInfo._material === value) {
             return;
         }
@@ -562,7 +719,11 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
     /** Defines alpha to use when rendering overlay */
     public overlayAlpha = 0.5;
 
-    /** Gets or sets a boolean indicating that this mesh contains vertex color data with alpha values */
+    /**
+     * Gets or sets a boolean indicating that this mesh needs to use vertex alpha data to render.
+     * This property is misnamed and should be `useVertexAlpha`. Note that the mesh will be rendered
+     * with alpha blending when this flag is set even if vertex alpha data is missing from the geometry.
+     */
     public get hasVertexAlpha(): boolean {
         return this._internalAbstractMeshDataInfo._hasVertexAlpha;
     }
@@ -784,9 +945,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
     }
 
     /** @internal */
-    public get _positions(): Nullable<Vector3[]> {
-        return null;
-    }
+    public abstract get _positions(): Nullable<Vector3[]>;
 
     // Loading properties
     /** @internal */
@@ -1158,6 +1317,13 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
     }
 
     /**
+     * Copies the requested vertex data kind into the given vertex data map. Float data is constructed if the map doesn't have the data.
+     * @param kind defines the vertex data kind to use
+     * @param vertexData defines the map that stores the resulting data
+     */
+    public abstract copyVerticesData(kind: string, vertexData: { [kind: string]: Float32Array }): void;
+
+    /**
      * Sets the vertex data of the mesh geometry for the requested `kind`.
      * If the mesh has no geometry, a new Geometry object is set to the mesh and then passed this vertex data.
      * Note that a new underlying VertexBuffer object is created each call.
@@ -1452,18 +1618,19 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
     /**
      * This method recomputes and sets a new BoundingInfo to the mesh unless it is locked.
      * This means the mesh underlying bounding box and sphere are recomputed.
-     * @param applySkeleton defines whether to apply the skeleton before computing the bounding info
-     * @param applyMorph  defines whether to apply the morph target before computing the bounding info
+     * @param options defines a set of options for computing the bounding info
      * @returns the current mesh
      */
-    public refreshBoundingInfo(applySkeleton: boolean = false, applyMorph: boolean = false): AbstractMesh {
-        if (this._boundingInfo && this._boundingInfo.isLocked) {
-            return this;
-        }
+    public abstract refreshBoundingInfo(options: IMeshDataOptions): AbstractMesh;
 
-        this._refreshBoundingInfo(this._getPositionData(applySkeleton, applyMorph), null);
-        return this;
-    }
+    /**
+     * This method recomputes and sets a new BoundingInfo to the mesh unless it is locked.
+     * This means the mesh underlying bounding box and sphere are recomputed.
+     * @param applySkeletonOrOptions defines whether to apply the skeleton before computing the bounding info or a set of options
+     * @param applyMorph defines whether to apply the morph target before computing the bounding info
+     * @returns the current mesh
+     */
+    public abstract refreshBoundingInfo(applySkeletonOrOptions: boolean | IMeshDataOptions, applyMorph: boolean): AbstractMesh;
 
     /**
      * @internal
@@ -1488,108 +1655,109 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
     }
 
     /**
-     * Internal function to get buffer data and possibly apply morphs and normals
-     * @param applySkeleton
-     * @param applyMorph
-     * @param data
-     * @param kind the kind of data you want. Can be Normal or Position
-     * @returns a FloatArray of the vertex data
+     * @internal
      */
-    private _getData(applySkeleton: boolean = false, applyMorph: boolean = false, data?: Nullable<FloatArray>, kind: string = VertexBuffer.PositionKind): Nullable<FloatArray> {
-        data = data ?? this.getVerticesData(kind)!.slice();
+    public _refreshBoundingInfoDirect(extend: { minimum: Vector3; maximum: Vector3 }): void {
+        if (this._boundingInfo) {
+            this._boundingInfo.reConstruct(extend.minimum, extend.maximum);
+        } else {
+            this._boundingInfo = new BoundingInfo(extend.minimum, extend.maximum);
+        }
 
-        if (data && applyMorph && this.morphTargetManager) {
-            let faceIndexCount = 0;
-            let positionIndex = 0;
-            for (let vertexCount = 0; vertexCount < data.length; vertexCount++) {
-                let value = data[vertexCount];
-                for (let targetCount = 0; targetCount < this.morphTargetManager.numTargets; targetCount++) {
-                    const targetMorph = this.morphTargetManager.getTarget(targetCount);
-                    const influence = targetMorph.influence;
-                    if (influence !== 0.0) {
-                        let morphTargetData: Nullable<FloatArray> = null;
-                        switch (kind) {
-                            case VertexBuffer.PositionKind:
-                                morphTargetData = targetMorph.getPositions();
-                                break;
-                            case VertexBuffer.NormalKind:
-                                morphTargetData = targetMorph.getNormals();
-                                break;
-                            case VertexBuffer.TangentKind:
-                                morphTargetData = targetMorph.getTangents();
-                                break;
-                            case VertexBuffer.UVKind:
-                                morphTargetData = targetMorph.getUVs();
-                                break;
-                        }
-                        if (morphTargetData) {
-                            value += (morphTargetData[vertexCount] - data[vertexCount]) * influence;
-                        }
-                    }
-                }
-                data[vertexCount] = value;
-
-                faceIndexCount++;
-                if (kind === VertexBuffer.PositionKind) {
-                    if (this._positions && faceIndexCount === 3) {
-                        // We want to merge into positions every 3 indices starting (but not 0)
-                        faceIndexCount = 0;
-                        const index = positionIndex * 3;
-                        this._positions[positionIndex++].copyFromFloats(data[index], data[index + 1], data[index + 2]);
-                    }
-                }
+        if (this.subMeshes) {
+            for (let index = 0; index < this.subMeshes.length; index++) {
+                this.subMeshes[index].refreshBoundingInfo(null);
             }
         }
 
-        if (data && applySkeleton && this.skeleton) {
-            const matricesIndicesData = this.getVerticesData(VertexBuffer.MatricesIndicesKind);
-            const matricesWeightsData = this.getVerticesData(VertexBuffer.MatricesWeightsKind);
+        this._updateBoundingInfo();
+    }
+
+    // This function is only here so we can apply the nativeOverride decorator.
+    @nativeOverride.filter(
+        (...[data, matricesIndicesData, matricesWeightsData, matricesIndicesExtraData, matricesWeightsExtraData]: Parameters<typeof AbstractMesh._ApplySkeleton>) =>
+            !Array.isArray(data) &&
+            !Array.isArray(matricesIndicesData) &&
+            !Array.isArray(matricesWeightsData) &&
+            !Array.isArray(matricesIndicesExtraData) &&
+            !Array.isArray(matricesWeightsExtraData)
+    )
+    private static _ApplySkeleton(
+        data: FloatArray,
+        kind: string,
+        skeletonMatrices: Float32Array,
+        matricesIndicesData: FloatArray,
+        matricesWeightsData: FloatArray,
+        matricesIndicesExtraData: Nullable<FloatArray>,
+        matricesWeightsExtraData: Nullable<FloatArray>
+    ): void {
+        applySkeleton(data, kind, skeletonMatrices, matricesIndicesData, matricesWeightsData, matricesIndicesExtraData, matricesWeightsExtraData);
+    }
+
+    /** @internal */
+    public _getData(options: IMeshDataOptions, data: Nullable<FloatArray>, kind: string = VertexBuffer.PositionKind): Nullable<FloatArray> {
+        const cache = options.cache;
+
+        const getVertexData = (kind: string): Nullable<FloatArray> => {
+            if (cache) {
+                const vertexData = (cache._vertexData ||= {});
+                if (!vertexData[kind]) {
+                    this.copyVerticesData(kind, vertexData);
+                }
+                return vertexData[kind];
+            }
+
+            return this.getVerticesData(kind);
+        };
+
+        data ||= getVertexData(kind);
+        if (!data) {
+            return null;
+        }
+
+        if (cache) {
+            if (cache._outputData) {
+                cache._outputData.set(data);
+            } else {
+                cache._outputData = new Float32Array(data);
+            }
+
+            data = cache._outputData;
+        } else if ((options.applyMorph && this.morphTargetManager) || (options.applySkeleton && this.skeleton)) {
+            data = data.slice();
+        }
+
+        if (options.applyMorph && this.morphTargetManager) {
+            applyMorph(data, kind, this.morphTargetManager);
+        }
+
+        if (options.applySkeleton && this.skeleton) {
+            const matricesIndicesData = getVertexData(VertexBuffer.MatricesIndicesKind);
+            const matricesWeightsData = getVertexData(VertexBuffer.MatricesWeightsKind);
             if (matricesWeightsData && matricesIndicesData) {
                 const needExtras = this.numBoneInfluencers > 4;
-                const matricesIndicesExtraData = needExtras ? this.getVerticesData(VertexBuffer.MatricesIndicesExtraKind) : null;
-                const matricesWeightsExtraData = needExtras ? this.getVerticesData(VertexBuffer.MatricesWeightsExtraKind) : null;
-
+                const matricesIndicesExtraData = needExtras ? getVertexData(VertexBuffer.MatricesIndicesExtraKind) : null;
+                const matricesWeightsExtraData = needExtras ? getVertexData(VertexBuffer.MatricesWeightsExtraKind) : null;
                 const skeletonMatrices = this.skeleton.getTransformMatrices(this);
+                AbstractMesh._ApplySkeleton(data, kind, skeletonMatrices, matricesIndicesData, matricesWeightsData, matricesIndicesExtraData, matricesWeightsExtraData);
+            }
+        }
 
-                const tempVector = TmpVectors.Vector3[0];
-                const finalMatrix = TmpVectors.Matrix[0];
-                const tempMatrix = TmpVectors.Matrix[1];
-
-                let matWeightIdx = 0;
-                for (let index = 0; index < data.length; index += 3, matWeightIdx += 4) {
-                    finalMatrix.reset();
-
-                    let inf: number;
-                    let weight: number;
-                    for (inf = 0; inf < 4; inf++) {
-                        weight = matricesWeightsData[matWeightIdx + inf];
-                        if (weight > 0) {
-                            Matrix.FromFloat32ArrayToRefScaled(skeletonMatrices, Math.floor(matricesIndicesData[matWeightIdx + inf] * 16), weight, tempMatrix);
-                            finalMatrix.addToSelf(tempMatrix);
-                        }
-                    }
-                    if (needExtras) {
-                        for (inf = 0; inf < 4; inf++) {
-                            weight = matricesWeightsExtraData![matWeightIdx + inf];
-                            if (weight > 0) {
-                                Matrix.FromFloat32ArrayToRefScaled(skeletonMatrices, Math.floor(matricesIndicesExtraData![matWeightIdx + inf] * 16), weight, tempMatrix);
-                                finalMatrix.addToSelf(tempMatrix);
-                            }
-                        }
-                    }
-
-                    if (kind === VertexBuffer.NormalKind) {
-                        Vector3.TransformNormalFromFloatsToRef(data[index], data[index + 1], data[index + 2], finalMatrix, tempVector);
-                    } else {
-                        Vector3.TransformCoordinatesFromFloatsToRef(data[index], data[index + 1], data[index + 2], finalMatrix, tempVector);
-                    }
-                    tempVector.toArray(data, index);
-
-                    if (kind === VertexBuffer.PositionKind && this._positions) {
-                        this._positions[index / 3].copyFrom(tempVector);
-                    }
+        if (options.updatePositionsArray !== false && kind === VertexBuffer.PositionKind) {
+            const positions = this._internalAbstractMeshDataInfo._positions || [];
+            const previousLength = positions.length;
+            positions.length = data.length / 3;
+            if (previousLength < positions.length) {
+                for (let positionIndex = previousLength; positionIndex < positions.length; positionIndex++) {
+                    positions[positionIndex] = new Vector3();
                 }
             }
+
+            for (let positionIndex = 0, dataIndex = 0; positionIndex < positions.length; positionIndex++, dataIndex += 3) {
+                positions[positionIndex].copyFromFloats(data[dataIndex], data[dataIndex + 1], data[dataIndex + 2]);
+            }
+
+            this._internalAbstractMeshDataInfo._positions = positions;
         }
 
         return data;
@@ -1602,7 +1770,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
      * @returns the normals data
      */
     public getNormalsData(applySkeleton = false, applyMorph = false): Nullable<FloatArray> {
-        return this._getData(applySkeleton, applyMorph, null, VertexBuffer.NormalKind);
+        return this._getData({ applySkeleton, applyMorph, updatePositionsArray: false }, null, VertexBuffer.NormalKind);
     }
 
     /**
@@ -1612,34 +1780,8 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
      * @param data defines the position data to apply the skeleton and morph to
      * @returns the position data
      */
-    public getPositionData(applySkeleton: boolean = false, applyMorph: boolean = false, data?: Nullable<FloatArray>): Nullable<FloatArray> {
-        return this._getData(applySkeleton, applyMorph, data, VertexBuffer.PositionKind);
-    }
-
-    /**
-     * @internal
-     */
-    public _getPositionData(applySkeleton: boolean, applyMorph: boolean): Nullable<FloatArray> {
-        let data = this.getVerticesData(VertexBuffer.PositionKind);
-
-        if (this._internalAbstractMeshDataInfo._positions) {
-            this._internalAbstractMeshDataInfo._positions = null;
-        }
-
-        if (data && ((applySkeleton && this.skeleton) || (applyMorph && this.morphTargetManager))) {
-            data = data.slice();
-            this._generatePointsArray();
-            if (this._positions) {
-                const pos = this._positions;
-                this._internalAbstractMeshDataInfo._positions = new Array<Vector3>(pos.length);
-                for (let i = 0; i < pos.length; i++) {
-                    this._internalAbstractMeshDataInfo._positions[i] = pos[i]?.clone() || new Vector3();
-                }
-            }
-            return this.getPositionData(applySkeleton, applyMorph, data);
-        }
-
-        return data;
+    public getPositionData(applySkeleton: boolean = false, applyMorph: boolean = false, data: Nullable<FloatArray> = null): Nullable<FloatArray> {
+        return this._getData({ applySkeleton, applyMorph, updatePositionsArray: false }, data, VertexBuffer.PositionKind);
     }
 
     /** @internal */
@@ -1792,7 +1934,7 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
             this._internalAbstractMeshDataInfo._meshCollisionData._diffPositionForCollisions
         );
 
-        if (this._internalAbstractMeshDataInfo._meshCollisionData._diffPositionForCollisions.length() > Engine.CollisionsEpsilon) {
+        if (this._internalAbstractMeshDataInfo._meshCollisionData._diffPositionForCollisions.length() > AbstractEngine.CollisionsEpsilon) {
             this.position.addInPlace(this._internalAbstractMeshDataInfo._meshCollisionData._diffPositionForCollisions);
         }
 
@@ -2075,8 +2217,8 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
 
         // Action manager
         if (this.actionManager !== undefined && this.actionManager !== null) {
-            // If it's the only mesh using the action manager, dispose of it.
-            if (!this._scene.meshes.some((m) => m !== this && m.actionManager === this.actionManager)) {
+            // If we are the only mesh using the action manager, dispose of the action manager too unless it has opted out from that behavior
+            if (this.actionManager.disposeWhenUnowned && !this._scene.meshes.some((m) => m !== this && m.actionManager === this.actionManager)) {
                 this.actionManager.dispose();
             }
             this.actionManager = null;
@@ -2195,28 +2337,6 @@ export class AbstractMesh extends TransformNode implements IDisposable, ICullabl
         this.onRebuildObservable.clear();
 
         super.dispose(doNotRecurse, disposeMaterialAndTextures);
-    }
-
-    /**
-     * Adds the passed mesh as a child to the current mesh
-     * @param mesh defines the child mesh
-     * @param preserveScalingSign if true, keep scaling sign of child. Otherwise, scaling sign might change.
-     * @returns the current mesh
-     */
-    public addChild(mesh: AbstractMesh, preserveScalingSign: boolean = false): AbstractMesh {
-        mesh.setParent(this, preserveScalingSign);
-        return this;
-    }
-
-    /**
-     * Removes the passed mesh from the current mesh children list
-     * @param mesh defines the child mesh
-     * @param preserveScalingSign if true, keep scaling sign of child. Otherwise, scaling sign might change.
-     * @returns the current mesh
-     */
-    public removeChild(mesh: AbstractMesh, preserveScalingSign: boolean = false): AbstractMesh {
-        mesh.setParent(null, preserveScalingSign);
-        return this;
     }
 
     // Facet data

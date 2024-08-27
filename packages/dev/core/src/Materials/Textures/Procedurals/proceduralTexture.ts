@@ -75,6 +75,11 @@ export class ProceduralTexture extends Texture {
      */
     public nodeMaterialSource: Nullable<NodeMaterial> = null;
 
+    /**
+     * Define the list of custom preprocessor defines used in the shader
+     */
+    public defines: string = "";
+
     /** @internal */
     @serialize()
     public _generateMipMaps: boolean;
@@ -209,6 +214,10 @@ export class ProceduralTexture extends Texture {
                 type: textureType,
                 ...this._options,
             });
+            if (this._rtWrapper.is3D) {
+                this.setFloat("layer", 0);
+                this.setInt("layerNum", 0);
+            }
         }
         return this._rtWrapper;
     }
@@ -292,7 +301,7 @@ export class ProceduralTexture extends Texture {
     }
 
     protected _getDefines(): string {
-        return "";
+        return this.defines;
     }
 
     /**
@@ -692,24 +701,42 @@ export class ProceduralTexture extends Texture {
 
                 // Draw order
                 engine.drawElementsType(Material.TriangleFillMode, 0, 6);
+                // Unbind and restore viewport
+                engine.unBindFramebuffer(this._rtWrapper, true);
             }
         } else {
-            engine.bindFramebuffer(this._rtWrapper, 0, undefined, undefined, true);
-
-            // VBOs
-            engine.bindBuffers(this._vertexBuffers, this._indexBuffer, this._drawWrapper.effect!);
-
-            // Clear
-            if (this.autoClear) {
-                engine.clear(scene.clearColor, true, false, false);
+            let numLayers = 1;
+            if (this._rtWrapper.is3D) {
+                numLayers = this._rtWrapper.depth;
+            } else if (this._rtWrapper.is2DArray) {
+                numLayers = this._rtWrapper.layers;
             }
+            for (let layer = 0; layer < numLayers; layer++) {
+                engine.bindFramebuffer(this._rtWrapper, 0, undefined, undefined, true, 0, layer);
 
-            // Draw order
-            engine.drawElementsType(Material.TriangleFillMode, 0, 6);
+                // VBOs
+                engine.bindBuffers(this._vertexBuffers, this._indexBuffer, this._drawWrapper.effect!);
+
+                if (this._rtWrapper.is3D || this._rtWrapper.is2DArray) {
+                    this._drawWrapper.effect?.setFloat("layer", numLayers !== 1 ? layer / (numLayers - 1) : 0);
+                    this._drawWrapper.effect?.setInt("layerNum", layer);
+                    for (const name in this._textures) {
+                        this._drawWrapper.effect!.setTexture(name, this._textures[name]);
+                    }
+                }
+
+                // Clear
+                if (this.autoClear) {
+                    engine.clear(scene.clearColor, true, false, false);
+                }
+
+                // Draw order
+                engine.drawElementsType(Material.TriangleFillMode, 0, 6);
+                // Unbind and restore viewport
+                engine.unBindFramebuffer(this._rtWrapper, !this._generateMipMaps);
+            }
         }
 
-        // Unbind and restore viewport
-        engine.unBindFramebuffer(this._rtWrapper, this.isCube);
         if (viewPort) {
             engine.setViewport(viewPort);
         }

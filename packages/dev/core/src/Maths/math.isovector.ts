@@ -15,17 +15,17 @@ export class _IsoVector {
      * @param y defines the second coordinate, must be an integer
      */
     constructor(
-        /** defines the first coordinate */
+        /** [0] defines the first coordinate */
         public x: number = 0,
-        /** defines the second coordinate */
+        /** [0] defines the second coordinate */
         public y: number = 0
     ) {
         if (x !== Math.floor(x)) {
-            x === Math.floor(x);
+            x = Math.floor(x);
             Logger.Warn("x is not an integer, floor(x) used");
         }
         if (y !== Math.floor(y)) {
-            y === Math.floor(y);
+            y = Math.floor(y);
             Logger.Warn("y is not an integer, floor(y) used");
         }
     }
@@ -78,11 +78,11 @@ export class _IsoVector {
     public rotate120(m: number, n: number) {
         //m, n integers
         if (m !== Math.floor(m)) {
-            m === Math.floor(m);
+            m = Math.floor(m);
             Logger.Warn("m not an integer only floor(m) used");
         }
         if (n !== Math.floor(n)) {
-            n === Math.floor(n);
+            n = Math.floor(n);
             Logger.Warn("n not an integer only floor(n) used");
         }
         const x = this.x;
@@ -102,11 +102,11 @@ export class _IsoVector {
     public rotateNeg120(m: number, n: number) {
         //m, n integers
         if (m !== Math.floor(m)) {
-            m === Math.floor(m);
+            m = Math.floor(m);
             Logger.Warn("m is not an integer, floor(m) used");
         }
         if (n !== Math.floor(n)) {
-            n === Math.floor(n);
+            n = Math.floor(n);
             Logger.Warn("n is not an integer,   floor(n) used");
         }
         const x = this.x;

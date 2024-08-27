@@ -21,8 +21,6 @@ import type { Effect } from "../Materials/effect";
 import { Material } from "../Materials/material";
 import { Constants } from "../Engines/constants";
 
-import "../Shaders/glowMapGeneration.fragment";
-import "../Shaders/glowMapGeneration.vertex";
 import { _WarnImport } from "../Misc/devTools";
 import type { DataBuffer } from "../Buffers/dataBuffer";
 import { EffectFallbacks } from "../Materials/effectFallbacks";
@@ -30,6 +28,7 @@ import { DrawWrapper } from "../Materials/drawWrapper";
 import { addClipPlaneUniforms, bindClipPlane, prepareStringDefinesForClipPlanes } from "../Materials/clipPlaneMaterialHelper";
 import { BindMorphTargetParameters, PrepareAttributesForMorphTargetsInfluencers, PushAttributesForInstances } from "../Materials/materialHelper.functions";
 import { GetExponentOfTwo } from "../Misc/tools.functions";
+import { ShaderLanguage } from "core/Materials/shaderLanguage";
 
 /**
  * Effect layer options. This helps customizing the behaviour
@@ -97,6 +96,12 @@ export abstract class EffectLayer {
     protected _textures: BaseTexture[] = [];
     protected _emissiveTextureAndColor: { texture: Nullable<BaseTexture>; color: Color4 } = { texture: null, color: new Color4() };
     protected _effectIntensity: { [meshUniqueId: number]: number } = {};
+
+    /**
+     * Force all the effect layers to compile to glsl even on WebGPU engines.
+     * False by default. This is mostly meant for backward compatibility.
+     */
+    public static ForceGLSL = false;
 
     /**
      * The name of the layer
@@ -183,6 +188,16 @@ export abstract class EffectLayer {
         return this._mainTexture;
     }
 
+    /** Shader language used by the material */
+    protected _shaderLanguage = ShaderLanguage.GLSL;
+
+    /**
+     * Gets the shader language used in this material.
+     */
+    public get shaderLanguage(): ShaderLanguage {
+        return this._shaderLanguage;
+    }
+
     /**
      * @internal
      */
@@ -239,16 +254,24 @@ export abstract class EffectLayer {
      * Instantiates a new effect Layer and references it in the scene.
      * @param name The name of the layer
      * @param scene The scene to use the layer in
+     * @param forceGLSL Use the GLSL code generation for the shader (even on WebGPU). Default is false
      */
     constructor(
         /** The Friendly of the effect in the scene */
         name: string,
-        scene?: Scene
+        scene?: Scene,
+        forceGLSL = false
     ) {
         this.name = name;
 
         this._scene = scene || <Scene>EngineStore.LastCreatedScene;
         EffectLayer._SceneComponentInitialization(this._scene);
+
+        const engine = this._scene.getEngine();
+
+        if (engine.isWebGPU && !forceGLSL && !EffectLayer.ForceGLSL) {
+            this._shaderLanguage = ShaderLanguage.WGSL;
+        }
 
         this._engine = this._scene.getEngine();
         this._maxSize = this._engine.getCaps().maxTextureSize;
@@ -260,6 +283,8 @@ export abstract class EffectLayer {
         this._generateIndexBuffer();
         this._generateVertexBuffer();
     }
+
+    private _shadersLoaded = false;
 
     /**
      * Get the effect name of the layer.
@@ -493,7 +518,15 @@ export abstract class EffectLayer {
             const previousAlphaMode = engine.getAlphaMode();
 
             for (index = 0; index < transparentSubMeshes.length; index++) {
-                this._renderSubMesh(transparentSubMeshes.data[index], true);
+                const subMesh = transparentSubMeshes.data[index];
+                const material = subMesh.getMaterial();
+                if (material && material.needDepthPrePass) {
+                    const engine = material.getScene().getEngine();
+                    engine.setColorWrite(false);
+                    this._renderSubMesh(subMesh);
+                    engine.setColorWrite(true);
+                }
+                this._renderSubMesh(subMesh, true);
             }
 
             engine.setAlphaMode(previousAlphaMode);
@@ -719,13 +752,28 @@ export abstract class EffectLayer {
                     fallbacks,
                     undefined,
                     undefined,
-                    { maxSimultaneousMorphTargets: morphInfluencers }
+                    { maxSimultaneousMorphTargets: morphInfluencers },
+                    this._shaderLanguage,
+                    this._shadersLoaded
+                        ? undefined
+                        : async () => {
+                              await this._importShadersAsync();
+                              this._shadersLoaded = true;
+                          }
                 ),
                 join
             );
         }
 
         return drawWrapper.effect!.isReady();
+    }
+
+    protected async _importShadersAsync(): Promise<void> {
+        if (this._shaderLanguage === ShaderLanguage.WGSL) {
+            await Promise.all([import("../ShadersWGSL/glowMapGeneration.vertex"), import("../ShadersWGSL/glowMapGeneration.fragment")]);
+        } else {
+            await Promise.all([import("../Shaders/glowMapGeneration.vertex"), import("../Shaders/glowMapGeneration.fragment")]);
+        }
     }
 
     /**
@@ -876,7 +924,7 @@ export abstract class EffectLayer {
         }
 
         // Culling
-        let sideOrientation = renderingMesh.overrideMaterialSideOrientation ?? material.sideOrientation;
+        let sideOrientation = material._getEffectiveOrientation(renderingMesh);
         const mainDeterminant = effectiveMesh._getWorldMatrixDeterminant();
         if (mainDeterminant < 0) {
             sideOrientation = sideOrientation === Material.ClockWiseSideOrientation ? Material.CounterClockWiseSideOrientation : Material.ClockWiseSideOrientation;

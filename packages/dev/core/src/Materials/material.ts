@@ -51,6 +51,7 @@ import type { Animation } from "../Animations/animation";
 import type { InstancedMesh } from "../Meshes/instancedMesh";
 import { BindSceneUniformBuffer } from "./materialHelper.functions";
 import { SerializationHelper } from "../Misc/decorators.serialization";
+import { ShaderLanguage } from "./shaderLanguage";
 
 declare let BABYLON: any;
 
@@ -227,6 +228,16 @@ export class Material implements IAnimatable, IClipPlanesHolder {
      * This is mostly used when shader parallel compilation is supported (true by default)
      */
     public allowShaderHotSwapping = true;
+
+    /** Shader language used by the material */
+    protected _shaderLanguage = ShaderLanguage.GLSL;
+
+    /**
+     * Gets the shader language used in this material.
+     */
+    public get shaderLanguage(): ShaderLanguage {
+        return this._shaderLanguage;
+    }
 
     /**
      * The ID of the material
@@ -415,7 +426,7 @@ export class Material implements IAnimatable, IClipPlanesHolder {
      * Stores the value for side orientation
      */
     @serialize()
-    public sideOrientation: number;
+    public sideOrientation: Nullable<number> = null;
 
     /**
      * Callback triggered when the material is compiled
@@ -933,12 +944,6 @@ export class Material implements IAnimatable, IClipPlanesHolder {
         this._drawWrapper = new DrawWrapper(this._scene.getEngine(), false);
         this._drawWrapper.materialContext = this._materialContext;
 
-        if (this._scene.useRightHandedSystem) {
-            this.sideOrientation = Material.ClockWiseSideOrientation;
-        } else {
-            this.sideOrientation = Material.CounterClockWiseSideOrientation;
-        }
-
         this._uniformBuffer = new UniformBuffer(this._scene.getEngine(), undefined, undefined, name);
         this._useUBO = this.getScene().getEngine().supportsUniformBuffers;
 
@@ -1046,6 +1051,11 @@ export class Material implements IAnimatable, IClipPlanesHolder {
      */
     public getScene(): Scene {
         return this._scene;
+    }
+
+    /** @internal */
+    public _getEffectiveOrientation(mesh: Mesh): number {
+        return this.sideOrientation !== null ? this.sideOrientation : mesh.sideOrientation;
     }
 
     /**
@@ -1297,7 +1307,7 @@ export class Material implements IAnimatable, IClipPlanesHolder {
      * @param effect defines the effect used to bind the material
      * @param _subMesh defines the subMesh that the material has been bound for
      */
-    protected _afterBind(mesh?: Mesh, effect: Nullable<Effect> = null, _subMesh?: SubMesh): void {
+    protected _afterBind(mesh?: AbstractMesh, effect: Nullable<Effect> = null, _subMesh?: SubMesh): void {
         this._scene._cachedMaterial = this;
         if (this._needToBindSceneUbo) {
             if (effect) {

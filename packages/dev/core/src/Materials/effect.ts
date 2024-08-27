@@ -14,8 +14,6 @@ import { ShaderStore as EngineShaderStore } from "../Engines/shaderStore";
 import { ShaderLanguage } from "./shaderLanguage";
 import type { InternalTexture } from "../Materials/Textures/internalTexture";
 import type { ThinTexture } from "../Materials/Textures/thinTexture";
-import type { RenderTargetTexture } from "../Materials/Textures/renderTargetTexture";
-import type { PostProcess } from "../PostProcesses/postProcess";
 import type { IPipelineGenerationOptions } from "./effect.functions";
 import { _processShaderCode, getCachedPipeline, createAndPreparePipelineContext, resetCachedPipeline } from "./effect.functions";
 
@@ -128,6 +126,10 @@ export interface IEffectCreationOptions {
      * Provide an existing pipeline context to avoid creating a new one
      */
     existingPipelineContext?: IPipelineContext;
+    /**
+     * Additional async code to run before preparing the effect
+     */
+    extraInitializationsAsync?: () => Promise<void>;
 }
 
 /**
@@ -186,6 +188,9 @@ export class Effect implements IDisposable {
 
     private _isDisposed = false;
 
+    /** @internal */
+    public _refCount = 1;
+
     /**
      * Observable that will be called when effect is bound.
      */
@@ -211,14 +216,16 @@ export class Effect implements IDisposable {
     public _engine: AbstractEngine;
     private _uniformBuffersNamesList: string[];
     private _uniformsNames: string[];
-    private _samplers: { [key: string]: number } = {};
+    /** @internal */
+    public _samplers: { [key: string]: number } = {};
     private _isReady = false;
     private _compilationError = "";
     private _allFallbacksProcessed = false;
     private _attributesNames: string[];
     private _attributes: number[];
     private _attributeLocationByName: { [name: string]: number };
-    private _uniforms: { [key: string]: Nullable<WebGLUniformLocation> } = {};
+    /** @internal */
+    public _uniforms: { [key: string]: Nullable<WebGLUniformLocation> } = {};
     /**
      * Key for the effect.
      * @internal
@@ -278,6 +285,7 @@ export class Effect implements IDisposable {
      * @param indexParameters Parameters to be used with Babylons include syntax to iterate over an array (eg. \{lights: 10\})
      * @param key Effect Key identifying uniquely compiled shader variants
      * @param shaderLanguage the language the shader is written in (default: GLSL)
+     * @param extraInitializationsAsync additional async code to run before preparing the effect
      */
     constructor(
         baseName: IShaderPath | string,
@@ -291,7 +299,8 @@ export class Effect implements IDisposable {
         onError: Nullable<(effect: Effect, errors: string) => void> = null,
         indexParameters?: any,
         key: string = "",
-        shaderLanguage = ShaderLanguage.GLSL
+        shaderLanguage = ShaderLanguage.GLSL,
+        extraInitializationsAsync?: () => Promise<void>
     ) {
         this.name = baseName;
         this._key = key;
@@ -350,7 +359,7 @@ export class Effect implements IDisposable {
 
         this.uniqueId = Effect._UniqueIdSeed++;
         if (!cachedPipeline) {
-            this._processShaderCode();
+            this._processShaderCodeAsync(null, false, null, extraInitializationsAsync);
         } else {
             this._pipelineContext = cachedPipeline;
             this._pipelineContext.setEngine(this._engine);
@@ -363,8 +372,17 @@ export class Effect implements IDisposable {
     }
 
     /** @internal */
-    public _processShaderCode(shaderProcessor: Nullable<IShaderProcessor> = null, keepExistingPipelineContext = false) {
-        this._processingContext = this._engine._getShaderProcessingContext(this._shaderLanguage);
+    public async _processShaderCodeAsync(
+        shaderProcessor: Nullable<IShaderProcessor> = null,
+        keepExistingPipelineContext = false,
+        shaderProcessingContext: Nullable<ShaderProcessingContext> = null,
+        extraInitializationsAsync?: () => Promise<void>
+    ) {
+        if (extraInitializationsAsync) {
+            await extraInitializationsAsync();
+        }
+
+        this._processingContext = shaderProcessingContext || this._engine._getShaderProcessingContext(this._shaderLanguage, false);
 
         const processorOptions: ProcessingOptions = {
             defines: this.defines.split("\n"),
@@ -590,7 +608,7 @@ export class Effect implements IDisposable {
     public get vertexSourceCode(): string {
         return this._vertexSourceCodeOverride && this._fragmentSourceCodeOverride
             ? this._vertexSourceCodeOverride
-            : this._pipelineContext?._getVertexShaderCode() ?? this._vertexSourceCode;
+            : (this._pipelineContext?._getVertexShaderCode() ?? this._vertexSourceCode);
     }
 
     /**
@@ -600,7 +618,7 @@ export class Effect implements IDisposable {
     public get fragmentSourceCode(): string {
         return this._vertexSourceCodeOverride && this._fragmentSourceCodeOverride
             ? this._fragmentSourceCodeOverride
-            : this._pipelineContext?._getFragmentShaderCode() ?? this._fragmentSourceCode;
+            : (this._pipelineContext?._getFragmentShaderCode() ?? this._fragmentSourceCode);
     }
 
     /**
@@ -918,15 +936,6 @@ export class Effect implements IDisposable {
     }
 
     /**
-     * Sets a depth stencil texture from a render target on the engine to be used in the shader.
-     * @param channel Name of the sampler variable.
-     * @param texture Texture to set.
-     */
-    public setDepthStencilTexture(channel: string, texture: Nullable<RenderTargetTexture>): void {
-        this._engine.setDepthStencilTexture(this._samplers[channel], this._uniforms[channel], texture, channel);
-    }
-
-    /**
      * Sets an array of textures on the engine to be used in the shader.
      * @param channel Name of the variable.
      * @param textures Textures to set.
@@ -949,25 +958,6 @@ export class Effect implements IDisposable {
         }
 
         this._engine.setTextureArray(this._samplers[channel], this._uniforms[channel], textures, channel);
-    }
-
-    /**
-     * Sets a texture to be the input of the specified post process. (To use the output, pass in the next post process in the pipeline)
-     * @param channel Name of the sampler variable.
-     * @param postProcess Post process to get the input texture from.
-     */
-    public setTextureFromPostProcess(channel: string, postProcess: Nullable<PostProcess>): void {
-        this._engine.setTextureFromPostProcess(this._samplers[channel], postProcess, channel);
-    }
-
-    /**
-     * (Warning! setTextureFromPostProcessOutput may be desired instead)
-     * Sets the input texture of the passed in post process to be input of this effect. (To use the output of the passed in post process use setTextureFromPostProcessOutput)
-     * @param channel Name of the sampler variable.
-     * @param postProcess Post process to get the output texture from.
-     */
-    public setTextureFromPostProcessOutput(channel: string, postProcess: Nullable<PostProcess>): void {
-        this._engine.setTextureFromPostProcessOutput(this._samplers[channel], postProcess, channel);
     }
 
     /**
@@ -1458,6 +1448,13 @@ export class Effect implements IDisposable {
      * Release all associated resources.
      **/
     public dispose() {
+        this._refCount--;
+
+        if (this._refCount > 0) {
+            // Others are still using the effect
+            return;
+        }
+
         if (this._pipelineContext) {
             resetCachedPipeline(this._pipelineContext);
         }

@@ -7,9 +7,9 @@ import { ParticleSystem } from "./particleSystem";
 import type { Scene } from "../scene";
 import { SceneComponentConstants } from "../sceneComponent";
 import type { AssetContainer } from "../assetContainer";
-import "../Shaders/particles.vertex";
 import type { EffectFallbacks } from "../Materials/effectFallbacks";
 import { AbstractEngine } from "../Engines/abstractEngine";
+import { ShaderLanguage } from "core/Materials/shaderLanguage";
 
 // Adds the parsers to the scene parsers.
 AbstractScene.AddParser(SceneComponentConstants.NAME_PARTICLESYSTEM, (parsedData: any, scene: Scene, container: AssetContainer, rootUrl: string) => {
@@ -52,6 +52,7 @@ declare module "../Engines/abstractEngine" {
          * @param onCompiled defines a function to call when the effect creation is successful
          * @param onError defines a function to call when the effect creation has failed
          * @param particleSystem the particle system you want to create the effect for
+         * @param shaderLanguage defines the shader language to use
          * @returns the new Effect
          */
         createEffectForParticles(
@@ -62,7 +63,8 @@ declare module "../Engines/abstractEngine" {
             fallbacks?: EffectFallbacks,
             onCompiled?: (effect: Effect) => void,
             onError?: (effect: Effect, errors: string) => void,
-            particleSystem?: IParticleSystem
+            particleSystem?: IParticleSystem,
+            shaderLanguage?: ShaderLanguage
         ): Effect;
     }
 }
@@ -75,7 +77,8 @@ AbstractEngine.prototype.createEffectForParticles = function (
     fallbacks?: EffectFallbacks,
     onCompiled?: (effect: Effect) => void,
     onError?: (effect: Effect, errors: string) => void,
-    particleSystem?: IParticleSystem
+    particleSystem?: IParticleSystem,
+    shaderLanguage = ShaderLanguage.GLSL
 ): Effect {
     let attributesNamesOrOptions: Array<string> = [];
     let effectCreationOption: Array<string> = [];
@@ -113,7 +116,16 @@ AbstractEngine.prototype.createEffectForParticles = function (
         defines,
         fallbacks,
         onCompiled,
-        onError
+        onError,
+        undefined,
+        shaderLanguage,
+        async () => {
+            if (shaderLanguage === ShaderLanguage.GLSL) {
+                await import("../Shaders/particles.vertex");
+            } else {
+                await import("../ShadersWGSL/particles.vertex");
+            }
+        }
     );
 };
 

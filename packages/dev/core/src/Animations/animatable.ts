@@ -130,11 +130,11 @@ export class Animatable {
         scene: Scene,
         /** defines the target object */
         public target: any,
-        /** defines the starting frame number (default is 0) */
+        /** [0] defines the starting frame number (default is 0) */
         public fromFrame: number = 0,
-        /** defines the ending frame number (default is 100) */
+        /** [100] defines the ending frame number (default is 100) */
         public toFrame: number = 100,
-        /** defines if the animation must loop (default is false)  */
+        /** [false] defines if the animation must loop (default is false)  */
         public loopAnimation: boolean = false,
         speedRatio: number = 1.0,
         /** defines a callback to call when animation ends if it is not looping */
@@ -142,9 +142,9 @@ export class Animatable {
         animations?: Animation[],
         /** defines a callback to call when animation loops */
         public onAnimationLoop?: Nullable<() => void>,
-        /** defines whether the animation should be evaluated additively */
+        /** [false] defines whether the animation should be evaluated additively */
         public isAdditive: boolean = false,
-        /** defines the order in which this animatable should be processed in the list of active animatables (default: 0) */
+        /** [0] defines the order in which this animatable should be processed in the list of active animatables (default: 0) */
         public playOrder = 0
     ) {
         this._scene = scene;
@@ -296,7 +296,7 @@ export class Animatable {
         }
 
         for (let index = 0; index < runtimeAnimations.length; index++) {
-            runtimeAnimations[index].goToFrame(frame);
+            runtimeAnimations[index].goToFrame(frame, this._weight);
         }
 
         this._goToFrame = frame;
@@ -339,8 +339,9 @@ export class Animatable {
      * @param animationName defines a string used to only stop some of the runtime animations instead of all
      * @param targetMask a function that determines if the animation should be stopped based on its target (all animations will be stopped if both this and animationName are empty)
      * @param useGlobalSplice if true, the animatables will be removed by the caller of this function (false by default)
+     * @param skipOnAnimationEnd defines if the system should not raise onAnimationEnd. Default is false
      */
-    public stop(animationName?: string, targetMask?: (target: any) => boolean, useGlobalSplice = false): void {
+    public stop(animationName?: string, targetMask?: (target: any) => boolean, useGlobalSplice = false, skipOnAnimationEnd = false): void {
         if (animationName || targetMask) {
             const idx = this._scene._activeAnimatables.indexOf(this);
 
@@ -364,7 +365,9 @@ export class Animatable {
                     if (!useGlobalSplice) {
                         this._scene._activeAnimatables.splice(idx, 1);
                     }
-                    this._raiseOnAnimationEnd();
+                    if (!skipOnAnimationEnd) {
+                        this._raiseOnAnimationEnd();
+                    }
                 }
             }
         } else {
@@ -382,7 +385,9 @@ export class Animatable {
 
                 this._runtimeAnimations.length = 0;
 
-                this._raiseOnAnimationEnd();
+                if (!skipOnAnimationEnd) {
+                    this._raiseOnAnimationEnd();
+                }
             }
         }
     }

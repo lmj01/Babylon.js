@@ -11,7 +11,7 @@ import type { SphericalPolynomial } from "../../Maths/sphericalPolynomial";
 /**
  * Defines the source of the internal texture
  */
-export enum InternalTextureSource {
+export const enum InternalTextureSource {
     /**
      * The source of the texture data is unknown
      */
@@ -472,7 +472,8 @@ export class InternalTexture extends TextureSampler {
                     0,
                     null,
                     undefined,
-                    this._useSRGBBuffer
+                    this._useSRGBBuffer,
+                    ArrayBuffer.isView(this._buffer) ? this._buffer : null
                 );
                 return;
 

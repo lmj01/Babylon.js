@@ -9,6 +9,7 @@ import type { NodeMaterial, NodeMaterialDefines } from "../../nodeMaterial";
 import type { Mesh } from "../../../../Meshes/mesh";
 import type { AbstractMesh } from "../../../../Meshes/abstractMesh";
 import { bindClipPlane } from "../../../../Materials/clipPlaneMaterialHelper";
+import { ShaderLanguage } from "core/Materials/shaderLanguage";
 /**
  * Block used to implement clip planes
  */
@@ -48,6 +49,31 @@ export class ClipPlanesBlock extends NodeMaterialBlock {
         state._excludeVariableName("fClipDistance5");
         state._excludeVariableName("vClipPlane6");
         state._excludeVariableName("fClipDistance6");
+
+        this._initShaderSourceAsync(state.shaderLanguage);
+    }
+
+    private async _initShaderSourceAsync(shaderLanguage: ShaderLanguage) {
+        this._codeIsReady = false;
+
+        if (shaderLanguage === ShaderLanguage.WGSL) {
+            await Promise.all([
+                import("../../../../ShadersWGSL/ShadersInclude/clipPlaneFragment"),
+                import("../../../../ShadersWGSL/ShadersInclude/clipPlaneFragmentDeclaration"),
+                import("../../../../ShadersWGSL/ShadersInclude/clipPlaneVertex"),
+                import("../../../../ShadersWGSL/ShadersInclude/clipPlaneVertexDeclaration"),
+            ]);
+        } else {
+            await Promise.all([
+                import("../../../../Shaders/ShadersInclude/clipPlaneFragment"),
+                import("../../../../Shaders/ShadersInclude/clipPlaneFragmentDeclaration"),
+                import("../../../../Shaders/ShadersInclude/clipPlaneVertex"),
+                import("../../../../Shaders/ShadersInclude/clipPlaneVertexDeclaration"),
+            ]);
+        }
+
+        this._codeIsReady = true;
+        this.onCodeIsReadyObservable.notifyObservers(this);
     }
 
     /**
@@ -66,12 +92,12 @@ export class ClipPlanesBlock extends NodeMaterialBlock {
     public override prepareDefines(mesh: AbstractMesh, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines) {
         const scene = mesh.getScene();
 
-        const useClipPlane1 = nodeMaterial.clipPlane ?? scene.clipPlane ? true : false;
-        const useClipPlane2 = nodeMaterial.clipPlane2 ?? scene.clipPlane2 ? true : false;
-        const useClipPlane3 = nodeMaterial.clipPlane3 ?? scene.clipPlane3 ? true : false;
-        const useClipPlane4 = nodeMaterial.clipPlane4 ?? scene.clipPlane4 ? true : false;
-        const useClipPlane5 = nodeMaterial.clipPlane5 ?? scene.clipPlane5 ? true : false;
-        const useClipPlane6 = nodeMaterial.clipPlane6 ?? scene.clipPlane6 ? true : false;
+        const useClipPlane1 = (nodeMaterial.clipPlane ?? scene.clipPlane) ? true : false;
+        const useClipPlane2 = (nodeMaterial.clipPlane2 ?? scene.clipPlane2) ? true : false;
+        const useClipPlane3 = (nodeMaterial.clipPlane3 ?? scene.clipPlane3) ? true : false;
+        const useClipPlane4 = (nodeMaterial.clipPlane4 ?? scene.clipPlane4) ? true : false;
+        const useClipPlane5 = (nodeMaterial.clipPlane5 ?? scene.clipPlane5) ? true : false;
+        const useClipPlane6 = (nodeMaterial.clipPlane6 ?? scene.clipPlane6) ? true : false;
 
         defines.setValue("CLIPPLANE", useClipPlane1, true);
         defines.setValue("CLIPPLANE2", useClipPlane2, true);

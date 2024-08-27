@@ -31,8 +31,6 @@ import type { RenderTargetTexture } from "../Materials/Textures/renderTargetText
 import { RegisterClass } from "../Misc/typeStore";
 import { MaterialFlags } from "./materialFlags";
 
-import "../Shaders/default.fragment";
-import "../Shaders/default.vertex";
 import { Constants } from "../Engines/constants";
 import { EffectFallbacks } from "./effectFallbacks";
 import type { Effect, IEffectCreationOptions } from "./effect";
@@ -61,6 +59,8 @@ import {
     PrepareUniformsAndSamplersList,
 } from "./materialHelper.functions";
 import { SerializationHelper } from "../Misc/decorators.serialization";
+import { UniformBuffer } from "./uniformBuffer";
+import { ShaderLanguage } from "./shaderLanguage";
 
 const onCreatedEffectParameters = { effect: null as unknown as Effect, subMesh: null as unknown as Nullable<SubMesh> };
 
@@ -173,13 +173,21 @@ export class StandardMaterialDefines extends MaterialDefines implements IImagePr
     public PREPASS_ALBEDO_SQRT_INDEX = -1;
     public PREPASS_DEPTH = false;
     public PREPASS_DEPTH_INDEX = -1;
+    public PREPASS_NDC_DEPTH = false;
+    public PREPASS_NDC_DEPTH_INDEX = -1;
     public PREPASS_NORMAL = false;
     public PREPASS_NORMAL_INDEX = -1;
     public PREPASS_NORMAL_WORLDSPACE = false;
+    public PREPASS_WORLD_NORMAL = false;
+    public PREPASS_WORLD_NORMAL_INDEX = -1;
     public PREPASS_POSITION = false;
     public PREPASS_POSITION_INDEX = -1;
+    public PREPASS_LOCAL_POSITION = false;
+    public PREPASS_LOCAL_POSITION_INDEX = -1;
     public PREPASS_VELOCITY = false;
     public PREPASS_VELOCITY_INDEX = -1;
+    public PREPASS_VELOCITY_LINEAR = false;
+    public PREPASS_VELOCITY_LINEAR_INDEX = -1;
     public PREPASS_REFLECTIVITY = false;
     public PREPASS_REFLECTIVITY_INDEX = -1;
     public SCENE_MRT_COUNT = 0;
@@ -257,6 +265,12 @@ export class StandardMaterialDefines extends MaterialDefines implements IImagePr
  * @see https://doc.babylonjs.com/features/featuresDeepDive/materials/using/materials_introduction
  */
 export class StandardMaterial extends PushMaterial {
+    /**
+     * Force all the standard materials to compile to glsl even on WebGPU engines.
+     * False by default. This is mostly meant for backward compatibility.
+     */
+    public static ForceGLSL = false;
+
     @serializeAsTexture("diffuseTexture")
     private _diffuseTexture: Nullable<BaseTexture> = null;
     /**
@@ -655,6 +669,8 @@ export class StandardMaterial extends PushMaterial {
         }
     }
 
+    private _shadersLoaded = false;
+
     /**
      * Defines additional PrePass parameters for the material.
      */
@@ -793,9 +809,19 @@ export class StandardMaterial extends PushMaterial {
      * @see https://doc.babylonjs.com/features/featuresDeepDive/materials/using/materials_introduction
      * @param name Define the name of the material in the scene
      * @param scene Define the scene the material belong to
+     * @param forceGLSL Use the GLSL code generation for the shader (even on WebGPU). Default is false
      */
-    constructor(name: string, scene?: Scene) {
+    constructor(name: string, scene?: Scene, forceGLSL = false) {
         super(name, scene);
+        const engine = this.getScene().getEngine();
+        if (engine.isWebGPU && !forceGLSL && !StandardMaterial.ForceGLSL) {
+            // Switch main UBO to non UBO to connect to leftovers UBO in webgpu
+            if (this._uniformBuffer) {
+                this._uniformBuffer.dispose();
+            }
+            this._uniformBuffer = new UniformBuffer(engine, undefined, undefined, this.name, true);
+            this._shaderLanguage = ShaderLanguage.WGSL;
+        }
 
         this.detailMap = new DetailMapConfiguration(this);
 
@@ -1455,6 +1481,17 @@ export class StandardMaterial extends PushMaterial {
                     processFinalCode: csnrOptions.processFinalCode,
                     processCodeAfterIncludes: this._eventInfo.customCode,
                     multiTarget: defines.PREPASS,
+                    shaderLanguage: this._shaderLanguage,
+                    extraInitializationsAsync: this._shadersLoaded
+                        ? undefined
+                        : async () => {
+                              if (this._shaderLanguage === ShaderLanguage.WGSL) {
+                                  await Promise.all([import("../ShadersWGSL/default.vertex"), import("../ShadersWGSL/default.fragment")]);
+                              } else {
+                                  await Promise.all([import("../Shaders/default.vertex"), import("../Shaders/default.fragment")]);
+                              }
+                              this._shadersLoaded = true;
+                          },
                 },
                 engine
             );

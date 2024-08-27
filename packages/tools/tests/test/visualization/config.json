@@ -2,6 +2,96 @@
     "root": "https://cdn.babylonjs.com",
     "tests": [
         {
+            "title": "EXR Loader",
+            "playgroundId": "#4RN0VF#151",
+            "referenceImage": "exr-loader.png",
+            "excludedEngines": ["webgl1"]
+        },
+        {
+            "title": "Simple refraction",
+            "playgroundId": "#22KZUW#652",
+            "referenceImage": "simple-refraction.png"
+        },
+        {
+            "title": "Detail map",
+            "playgroundId": "#F8FDYT#2",
+            "referenceImage": "detail-map.png"
+        },
+        {
+            "title": "needDepthPrePass",
+            "playgroundId": "#7A66KI#1",
+            "referenceImage": "needDepthPrePass.png"
+        },
+        {
+            "title": "Decal map PP",
+            "playgroundId": "#9BVW2S#82",
+            "renderCount": 120,
+            "referenceImage": "decal-map-pp.png",
+            "excludedEngines": ["webgl1"]
+        },
+        {
+            "title": "Convolution Post Process",
+            "playgroundId": "#FBH4J7#281",
+            "referenceImage": "convolution.png"
+        },
+        {
+            "title": "Volumetric Light Scattering Post Process with Skeleton",
+            "playgroundId": "#5E318S#4",
+            "referenceImage": "volumetricLightScatteringSkeleton.png"
+        },
+        {
+            "title": "Volumetric Light Scattering Post Process with Morph Targets",
+            "playgroundId": "#5E318S#5",
+            "referenceImage": "volumetricLightScatteringMorphTargets.png"
+        },
+        {
+            "title": "Color correction",
+            "playgroundId": "#FBH4J7#278",
+            "referenceImage": "color-correction.png"
+        },
+        {
+            "title": "NME Multi Build",
+            "playgroundId": "#D8AK3Z#104",
+            "referenceImage": "nme-multi-build.png"
+        },
+        {
+            "title": "BoundingInfo Helper",
+            "playgroundId": "#BCNJD4#42",
+            "referenceImage": "bbhelper.png",
+            "excludedEngines": ["webgl1"]
+        },
+        {
+            "title": "NME Shadow Map",
+            "playgroundId": "#M3QR7E#83",
+            "referenceImage": "nmeshadowmap.png",
+            "excludedEngines": ["webgl1"]
+        },
+        {
+            "title": "NMEGLTF",
+            "playgroundId": "#WGZLGJ#10320",
+            "referenceImage": "nmegltf.png"
+        },
+        {
+            "title": "GPUPicker",
+            "playgroundId": "#1RWFMT#2",
+            "renderCount": 20,
+            "referenceImage": "gpuPicker.png"
+        },
+        {
+            "title": "Trailmesh - tapered and untapered",
+            "playgroundId": "#XGGSWJ#1",
+            "renderCount": 100,
+            "referenceImage": "trailMesh.png"
+        },
+        {
+            "title": "3D Procedural Textures",
+            "playgroundId": "#AYZY4Q#7",
+            "renderCount": 5,
+            "referenceImage": "procedural-textures-3d.png",
+            "excludedEngines": ["webgl1", "webgpu"],
+            "excludeFromAutomaticTesting": true
+        },
+        {
             "title": "GUI Input Text Area with Placeholder",
             "playgroundId": "#NVAEWD#364",
             "referenceImage": "gui-inputtextarea-withplaceholder.png"
@@ -166,6 +256,13 @@
             "playgroundId": "#D8AK3Z#17",
             "renderCount": 5,
             "referenceImage": "node-material-pbr-1.png"
+        },
+        {
+            "title": "Node material PBR - Pure WebGPU",
+            "playgroundId": "#D8AK3Z#80",
+            "renderCount": 5,
+            "referenceImage": "node-material-pbr-2.png",
+            "excludedEngines": ["webgl1", "webgl2"]
         },
         {
             "title": "Basis loader",
@@ -499,7 +596,8 @@
             "title": "Shadow depth wrappers",
             "playgroundId": "#PNQRY1#73",
             "referenceImage": "shadowDepthWrappers.png",
-            "renderCount": 20
+            "renderCount": 20,
+            "excludedEngines": ["webgpu"]
         },
         {
             "title": "Displacement map",
@@ -782,7 +880,8 @@
             "title": "GLTF Serializer Morph Target Animation",
             "renderCount": 2,
             "playgroundId": "#84M2SR#107",
-            "referenceImage": "gltfSerializerMorphTargetAnimation.png"
+            "referenceImage": "gltfSerializerMorphTargetAnimation.png",
+            "excludedEngines": ["webgpu"]
         },
         {
             "title": "GLTF Serializer Morph Target Animation Group",
@@ -1139,6 +1238,17 @@
             "playgroundId": "#26R8NS#6",
             "replace": "//options//, roundTrip = true; useRightHandedSystem = true;",
             "referenceImage": "objStanfordBunnyNormalsRoundTripRH.png"
+        },
+        {
+            "title": "glTF to OBJ (LH)",
+            "playgroundId": "#HYZWGK#3",
+            "referenceImage": "gltfToObjLH.png"
+        },
+        {
+            "title": "glTF to OBJ (RH)",
+            "playgroundId": "#HYZWGK#3",
+            "replace": "//options//, useRightHandedSystem = true;",
+            "referenceImage": "gltfToObjRH.png"
         },
         {
             "title": "GLTF Extension KHR_materials_variants",
@@ -1566,6 +1676,18 @@
             "referenceImage": "bakedVertexAnimation.png"
         },
         {
+            "title": "Baked Vertex Animation with Depth Of Field",
+            "renderCount": 20,
+            "playgroundId": "#JWO4R0#7",
+            "referenceImage": "bakedVertexAnimationDOF.png"
+        },
+        {
+            "title": "Baked Vertex Animation with Volumetric Light Scattering Post Process",
+            "renderCount": 20,
+            "playgroundId": "#1LF9GK#2",
+            "referenceImage": "bakedVertexAnimationVLS.png"
+        },
+        {
             "title": "Bones and morphs computation order",
             "renderCount": 40,
             "playgroundId": "#WGZLGJ#4040",
@@ -1587,7 +1709,8 @@
         {
             "title": "Material Plugin",
             "playgroundId": "#22HT5Z#10",
-            "referenceImage": "materialPlugin.png"
+            "referenceImage": "materialPlugin.png",
+            "excludedEngines": ["webgpu"]
         },
         {
             "title": "Serialize and Load Instanced Hierarchy",
@@ -1649,6 +1772,7 @@
         {
             "title": "Fluid rendering particle system",
             "playgroundId": "#544N0Q#67",
+            "renderCount": 120,
             "referenceImage": "fluidParticleSystem.png",
             "excludedEngines": ["webgl1"]
         },
@@ -1657,7 +1781,7 @@
             "playgroundId": "#PCMH7A#2",
             "referenceImage": "fluidBoxSphere.png",
             "renderCount": 120,
-            "excludedEngines": ["webgl1"]
+            "excludedEngines": ["webgl1", "webgpu"]
         },
         {
             "title": "Export GLTF Extension KHR_texture_transform",
@@ -1791,7 +1915,7 @@
         {
             "title": "MeshDebugPluginMaterial",
             "playgroundId": "#TFDNZI#2",
-            "excludedEngines": ["webgl1"]
+            "excludedEngines": ["webgl1", "webgpu"]
         },
         {
             "title": "SerializeScene and ImportMesh with string skeletonIds",
@@ -2068,6 +2192,47 @@
             "title": "Shadows in RHS mode",
             "playgroundId": "#RO51RT#14",
             "referenceImage": "shadows-rhs.png"
+        },
+        {
+            "title": "Load environment from data buffer",
+            "playgroundId": "#YLI4J1",
+            "referenceImage": "environment-from-data-buffer.png"
+        },
+        {
+            "title": "computeMaxExtents (BrainStem)",
+            "playgroundId": "#M2H33B",
+            "replace": "//options//, modelIndex = 2;",
+            "referenceImage": "computeMaxExtents-BoxAnimated.png"
+        },
+        {
+            "title": "computeMaxExtents (Fox 0)",
+            "playgroundId": "#M2H33B",
+            "replace": "//options//, modelIndex = 4; animationIndex = 0;",
+            "referenceImage": "computeMaxExtents-Fox0.png"
+        },
+        {
+            "title": "computeMaxExtents (Fox 1)",
+            "playgroundId": "#M2H33B",
+            "replace": "//options//, modelIndex = 4; animationIndex = 1;",
+            "referenceImage": "computeMaxExtents-Fox1.png"
+        },
+        {
+            "title": "computeMaxExtents (MorphStressTest)",
+            "playgroundId": "#M2H33B",
+            "replace": "//options//, modelIndex = 5;",
+            "referenceImage": "computeMaxExtents-MorphStressTest.png"
+        },
+        {
+            "title": "glTF Loader Capabilities",
+            "playgroundId": "#EBO3J1#10",
+            "referenceImage": "glTFLoaderCapabilities.png"
+        },
+        {
+            "title": "IBL Voxel Shadowing",
+            "playgroundId": "#8R5SSE#180",
+            "referenceImage": "voxelShadows.png",
+            "renderCount": 15,
+            "excludedEngines": ["webgl1", "webgpu"]
         }
     ]
 }

@@ -22,6 +22,10 @@ export class MonacoManager {
     private _hostElement: HTMLDivElement;
     private _templates: {
         label: string;
+        key: string;
+        documentation: string;
+        insertText: string;
+        plainText: string;
         language: string;
         kind: number;
         sortText: string;
@@ -31,6 +35,18 @@ export class MonacoManager {
     private _isDirty = false;
 
     public constructor(public globalState: GlobalState) {
+        // First Fetch JSON data for templates code
+        this._templates = [];
+        this._load(globalState);
+        const url = "templates.json?uncacher=" + Date.now();
+        fetch(url)
+            .then((response) => response.json())
+            .then((data) => {
+                this._templates = data;
+            });
+    }
+
+    private _load(globalState: GlobalState) {
         window.addEventListener("beforeunload", (evt) => {
             if (this._isDirty && Utilities.ReadBoolFromStore("safe-mode", false)) {
                 const message = "Are you sure you want to leave. You have unsaved work.";
@@ -44,6 +60,10 @@ export class MonacoManager {
                 this._setNewContent();
                 this._resetEditor(true);
             }
+        });
+
+        globalState.onInsertSnippetRequiredObservable.add((snippetKey: string) => {
+            this._insertSnippet(snippetKey);
         });
 
         globalState.onClearRequiredObservable.add(() => {
@@ -173,6 +193,49 @@ class Playground {
         }
     }
 
+    private _indentCode(code: string, indentation: number): string {
+        const indent = " ".repeat(indentation);
+        const lines = code.split("\n");
+        const indentedCode = lines.map((line) => indent + line).join("\n");
+        return indentedCode;
+    }
+
+    private _getCode(key: string): string {
+        let code = "";
+        this._templates.forEach(function (item) {
+            if (item.key === key) {
+                code = item.plainText;
+            }
+        });
+        return code + "\n";
+    }
+
+    private _insertCodeAtCursor(code: string) {
+        if (this._editor) {
+            // Get the current position of the cursor
+            const position = this._editor.getPosition();
+            if (position) {
+                // Fix indent regarding current position
+                if (position.column && position.column > 1) {
+                    code = this._indentCode(code, position.column - 1).slice(position.column - 1);
+                }
+                // Insert code
+                this._editor.executeEdits("", [
+                    {
+                        range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column),
+                        text: code,
+                        forceMoveMarkers: true,
+                    },
+                ]);
+            }
+        }
+    }
+
+    private _insertSnippet(snippetKey: string) {
+        const snippet = this._getCode(snippetKey);
+        this._insertCodeAtCursor(snippet);
+    }
+
     private _resetEditor(resetMetadata?: boolean) {
         location.hash = "";
         if (resetMetadata) {
@@ -253,7 +316,7 @@ class Playground {
             // cleanup, just in case
             snapshot = snapshot.split("&")[0];
             for (let index = 0; index < declarations.length; index++) {
-                declarations[index] = declarations[index].replace("https://preview.babylonjs.com", "https://babylonsnapshots.z22.web.core.windows.net/" + snapshot);
+                declarations[index] = declarations[index].replace("https://preview.babylonjs.com", "https://snapshots-cvgtc2eugrd3cgfd.z01.azurefd.net/" + snapshot);
             }
         }
 
@@ -277,10 +340,10 @@ class Playground {
         declarations.push("https://preview.babylonjs.com/glTF2Interface/babylon.glTF2Interface.d.ts");
         declarations.push("https://assets.babylonjs.com/generated/Assets.d.ts");
 
-        // Check for Unity Toolkit
-        if (location.href.indexOf("UnityToolkit") !== -1 || Utilities.ReadBoolFromStore("unity-toolkit", false) || Utilities.ReadBoolFromStore("unity-toolkit-used", false)) {
-            declarations.push("https://cdn.jsdelivr.net/gh/BabylonJS/UnityExporter@master/Redist/Runtime/babylon.toolkit.d.ts");
-            declarations.push("https://cdn.jsdelivr.net/gh/BabylonJS/UnityExporter@master/Redist/Runtime/unity.playground.d.ts");
+        // Check for Babylon Toolkit
+        if (location.href.indexOf("BabylonToolkit") !== -1 || Utilities.ReadBoolFromStore("babylon-toolkit", false) || Utilities.ReadBoolFromStore("babylon-toolkit-used", false)) {
+            declarations.push("https://cdn.jsdelivr.net/gh/BabylonJS/BabylonToolkit@master/Runtime/babylon.toolkit.d.ts");
+            declarations.push("https://cdn.jsdelivr.net/gh/BabylonJS/BabylonToolkit@master/Runtime/default.playground.d.ts");
         }
 
         const timestamp = typeof globalThis !== "undefined" && (globalThis as any).__babylonSnapshotTimestamp__ ? (globalThis as any).__babylonSnapshotTimestamp__ : 0;
@@ -294,7 +357,7 @@ class Playground {
 
         let libContent = "";
         const responses = await Promise.all(declarations.map((declaration) => fetch(declaration)));
-        const fallbackUrl = "https://babylonsnapshots.z22.web.core.windows.net/refs/heads/master";
+        const fallbackUrl = "https://snapshots-cvgtc2eugrd3cgfd.z01.azurefd.net/refs/heads/master";
         for (const response of responses) {
             if (!response.ok) {
                 // attempt a fallback
@@ -331,12 +394,6 @@ declare var canvas: HTMLCanvasElement;
         this._setupMonacoColorProvider();
 
         if (initialCall) {
-            // Load code templates
-            const response = await fetch("templates.json");
-            if (response.ok) {
-                this._templates = await response.json();
-            }
-
             // enhance templates with extra properties
             for (const template of this._templates) {
                 template.kind = monaco.languages.CompletionItemKind.Snippet;
@@ -557,10 +614,16 @@ declare var canvas: HTMLCanvasElement;
         }[] = [];
 
         for (const candidate of this._tagCandidates) {
+            if (model.isDisposed()) {
+                continue;
+            }
             const matches = model.findMatches(candidate.name, false, false, true, null, false);
             if (!matches) continue;
 
             for (const match of matches) {
+                if (model.isDisposed()) {
+                    continue;
+                }
                 const position = {
                     lineNumber: match.range.startLineNumber,
                     column: match.range.startColumn,

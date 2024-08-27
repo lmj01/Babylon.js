@@ -18,7 +18,6 @@ import type { Scene } from "core/scene";
 
 import { Container } from "./controls/container";
 import { Control } from "./controls/control";
-import type { IFocusableControl } from "./controls/focusableControl";
 import { Style } from "./style";
 import { Measure } from "./measure";
 import { Constants } from "core/Engines/constants";
@@ -85,7 +84,7 @@ export class AdvancedDynamicTexture extends DynamicTexture {
     private _idealHeight = 0;
     private _useSmallestIdeal: boolean = false;
     private _renderAtIdealSize = false;
-    private _focusedControl: Nullable<IFocusableControl>;
+    private _focusedControl: Nullable<Control>;
     private _blockNextFocusCheck = false;
     private _renderScale = 1;
     private _rootElement: Nullable<HTMLElement>;
@@ -147,6 +146,17 @@ export class AdvancedDynamicTexture extends DynamicTexture {
      * Gets or sets a boolean indicating that the canvas must be reverted on Y when updating the texture
      */
     public applyYInversionOnUpdate = true;
+
+    /**
+     * A boolean indicating whether or not the elements can be navigated to using the tab key.
+     * Defaults to false.
+     */
+    public disableTabNavigation = false;
+
+    /**
+     * If set to true, the POINTERTAP event type will be used for "click", instead of POINTERUP
+     */
+    public usePointerTapForClickEvent = false;
     /**
      * Gets or sets a number used to scale rendering size (2 means that the texture will be twice bigger).
      * Useful when you want more antialiasing
@@ -322,10 +332,10 @@ export class AdvancedDynamicTexture extends DynamicTexture {
     /**
      * Gets or sets the current focused control
      */
-    public get focusedControl(): Nullable<IFocusableControl> {
+    public get focusedControl(): Nullable<Control> {
         return this._focusedControl;
     }
-    public set focusedControl(control: Nullable<IFocusableControl>) {
+    public set focusedControl(control: Nullable<Control>) {
         if (this._focusedControl == control) {
             return;
         }
@@ -411,6 +421,22 @@ export class AdvancedDynamicTexture extends DynamicTexture {
             }
         });
         this._preKeyboardObserver = scene.onPreKeyboardObservable.add((info) => {
+            // check if tab is pressed
+            if (!this.disableTabNavigation && info.type === KeyboardEventTypes.KEYDOWN && info.event.code === "Tab") {
+                const forward = !info.event.shiftKey;
+                if (
+                    (forward && this._focusProperties.index === this._focusProperties.total - 1) ||
+                    (!forward && this._focusProperties.index === 0 && this._focusProperties.total > 0)
+                ) {
+                    this.focusedControl = null;
+                    this._focusProperties.index = 0;
+                    this._focusProperties.total = -1;
+                    return;
+                }
+                this._focusNextElement(forward);
+                info.event.preventDefault();
+                return;
+            }
             if (!this._focusedControl) {
                 return;
             }
@@ -963,7 +989,8 @@ export class AdvancedDynamicTexture extends DynamicTexture {
                 pi.type !== PointerEventTypes.POINTERMOVE &&
                 pi.type !== PointerEventTypes.POINTERUP &&
                 pi.type !== PointerEventTypes.POINTERDOWN &&
-                pi.type !== PointerEventTypes.POINTERWHEEL
+                pi.type !== PointerEventTypes.POINTERWHEEL &&
+                pi.type !== PointerEventTypes.POINTERTAP
             ) {
                 return;
             }
@@ -982,6 +1009,43 @@ export class AdvancedDynamicTexture extends DynamicTexture {
         this._attachPickingToSceneRender(scene, () => this._translateToPicking(scene, tempViewport, null), false);
         this._attachToOnPointerOut(scene);
         this._attachToOnBlur(scene);
+    }
+
+    private _focusProperties: { index: number; total: number } = { index: 0, total: -1 };
+
+    private _focusNextElement(forward: boolean = true): void {
+        // generate the order of tab-able controls
+        const sortedTabbableControls: Control[] = [];
+        this.executeOnAllControls((control) => {
+            if (control.isFocusInvisible || !control.isVisible || control.tabIndex < 0) {
+                return;
+            }
+            sortedTabbableControls.push(control);
+        });
+        // if no control is tab-able, return
+        if (sortedTabbableControls.length === 0) {
+            return;
+        }
+        sortedTabbableControls.sort((a, b) => {
+            // if tabIndex is 0, put it in the end of the list, otherwise sort by tabIndex
+            return a.tabIndex === 0 ? 1 : b.tabIndex === 0 ? -1 : a.tabIndex - b.tabIndex;
+        });
+        this._focusProperties.total = sortedTabbableControls.length;
+        // if no control is focused, focus the first one
+        let nextIndex = -1;
+        if (!this._focusedControl) {
+            nextIndex = forward ? 0 : sortedTabbableControls.length - 1;
+        } else {
+            const currentIndex = sortedTabbableControls.indexOf(this._focusedControl);
+            nextIndex = currentIndex + (forward ? 1 : -1);
+            if (nextIndex < 0) {
+                nextIndex = sortedTabbableControls.length - 1;
+            } else if (nextIndex >= sortedTabbableControls.length) {
+                nextIndex = 0;
+            }
+        }
+        sortedTabbableControls[nextIndex].focus();
+        this._focusProperties.index = nextIndex;
     }
 
     /**
@@ -1189,7 +1253,7 @@ export class AdvancedDynamicTexture extends DynamicTexture {
      * Move the focus to a specific control
      * @param control defines the control which will receive the focus
      */
-    public moveFocusToControl(control: IFocusableControl): void {
+    public moveFocusToControl(control: Control): void {
         this.focusedControl = control;
         this._lastPickedControl = <any>control;
         this._blockNextFocusCheck = true;
@@ -1437,6 +1501,7 @@ export class AdvancedDynamicTexture extends DynamicTexture {
      * @param onlyAlphaTesting defines a boolean indicating that alpha blending will not be used (only alpha testing) (false by default)
      * @param invertY defines if the texture needs to be inverted on the y axis during loading (true by default)
      * @param materialSetupCallback defines a custom way of creating and setting up the material on the mesh
+     * @param sampling defines the texture sampling mode (Texture.TRILINEAR_SAMPLINGMODE by default)
      * @returns a new AdvancedDynamicTexture
      */
     public static CreateForMesh(
@@ -1446,19 +1511,12 @@ export class AdvancedDynamicTexture extends DynamicTexture {
         supportPointerMove = true,
         onlyAlphaTesting = false,
         invertY?: boolean,
-        materialSetupCallback: (mesh: AbstractMesh, uniqueId: string, texture: AdvancedDynamicTexture, onlyAlphaTesting: boolean) => void = this._CreateMaterial
+        materialSetupCallback: (mesh: AbstractMesh, uniqueId: string, texture: AdvancedDynamicTexture, onlyAlphaTesting: boolean) => void = this._CreateMaterial,
+        sampling = Texture.TRILINEAR_SAMPLINGMODE
     ): AdvancedDynamicTexture {
         // use a unique ID in name so serialization will work even if you create two ADTs for a single mesh
         const uniqueId = RandomGUID();
-        const result = new AdvancedDynamicTexture(
-            `AdvancedDynamicTexture for ${mesh.name} [${uniqueId}]`,
-            width,
-            height,
-            mesh.getScene(),
-            true,
-            Texture.TRILINEAR_SAMPLINGMODE,
-            invertY
-        );
+        const result = new AdvancedDynamicTexture(`AdvancedDynamicTexture for ${mesh.name} [${uniqueId}]`, width, height, mesh.getScene(), true, sampling, invertY);
 
         materialSetupCallback(mesh, uniqueId, result, onlyAlphaTesting);
 
@@ -1495,10 +1553,18 @@ export class AdvancedDynamicTexture extends DynamicTexture {
      * @param height defines the texture height (1024 by default)
      * @param supportPointerMove defines a boolean indicating if the texture must capture move events (true by default)
      * @param invertY defines if the texture needs to be inverted on the y axis during loading (true by default)
+     * @param sampling defines the texture sampling mode (Texture.TRILINEAR_SAMPLINGMODE by default)
      * @returns a new AdvancedDynamicTexture
      */
-    public static CreateForMeshTexture(mesh: AbstractMesh, width = 1024, height = 1024, supportPointerMove = true, invertY?: boolean): AdvancedDynamicTexture {
-        const result = new AdvancedDynamicTexture(mesh.name + " AdvancedDynamicTexture", width, height, mesh.getScene(), true, Texture.TRILINEAR_SAMPLINGMODE, invertY);
+    public static CreateForMeshTexture(
+        mesh: AbstractMesh,
+        width = 1024,
+        height = 1024,
+        supportPointerMove = true,
+        invertY?: boolean,
+        sampling = Texture.TRILINEAR_SAMPLINGMODE
+    ): AdvancedDynamicTexture {
+        const result = new AdvancedDynamicTexture(mesh.name + " AdvancedDynamicTexture", width, height, mesh.getScene(), true, sampling, invertY);
         result.attachToMesh(mesh, supportPointerMove);
         return result;
     }

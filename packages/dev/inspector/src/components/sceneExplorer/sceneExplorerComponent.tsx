@@ -7,7 +7,7 @@ import type { Scene } from "core/scene";
 import { EngineStore } from "core/Engines/engineStore";
 
 import { TreeItemComponent } from "./treeItemComponent";
-import Resizable from "re-resizable";
+import { Resizable } from "re-resizable";
 import { HeaderComponent } from "../headerComponent";
 import { SceneTreeItemComponent } from "./entities/sceneTreeItemComponent";
 import { Tools } from "../../tools";
@@ -23,6 +23,7 @@ import { ParticleHelper } from "core/Particles/particleHelper";
 import { GPUParticleSystem } from "core/Particles/gpuParticleSystem";
 import { SSAO2RenderingPipeline } from "core/PostProcesses/RenderPipeline/Pipelines/ssao2RenderingPipeline";
 import { SSRRenderingPipeline } from "core/PostProcesses/RenderPipeline/Pipelines/ssrRenderingPipeline";
+import { IblShadowsRenderPipeline } from "core/Rendering/IBLShadows/iblShadowsRenderPipeline";
 import { StandardMaterial } from "core/Materials/standardMaterial";
 import { PBRMaterial } from "core/Materials/PBR/pbrMaterial";
 import { SpriteManager } from "core/Sprites/spriteManager";
@@ -41,6 +42,8 @@ import "./sceneExplorer.scss";
 interface ISceneExplorerFilterComponentProps {
     onFilter: (filter: string) => void;
 }
+
+const ResizableCasted = Resizable as any as React.ComponentClass<any>;
 
 export class SceneExplorerFilterComponent extends React.Component<ISceneExplorerFilterComponentProps> {
     constructor(props: ISceneExplorerFilterComponentProps) {
@@ -299,6 +302,20 @@ export class SceneExplorerComponent extends React.Component<ISceneExplorerCompon
                     label: "Add new SSR Rendering Pipeline",
                     action: () => {
                         const newPipeline = new SSRRenderingPipeline("SSR rendering pipeline", scene, scene.cameras);
+                        this.props.globalState.onSelectionChangedObservable.notifyObservers(newPipeline);
+                    },
+                });
+            }
+
+            if (
+                scene.getEngine().getCaps().drawBuffersExtension &&
+                scene.getEngine().getCaps().texelFetch &&
+                !pipelines.some((p) => p.getClassName() === "IBLShadowsRenderingPipeline")
+            ) {
+                defaultMenuItems.push({
+                    label: "Add new IBL Shadows Rendering Pipeline",
+                    action: () => {
+                        const newPipeline = new IblShadowsRenderPipeline("IBL Shadows rendering pipeline", scene, {}, scene.cameras);
                         this.props.globalState.onSelectionChangedObservable.notifyObservers(newPipeline);
                     },
                 });
@@ -732,16 +749,16 @@ export class SceneExplorerComponent extends React.Component<ISceneExplorerCompon
         }
 
         return (
-            <Resizable
+            <ResizableCasted
                 tabIndex={-1}
                 id="sceneExplorer"
-                ref={this._sceneExplorerRef}
                 size={{ height: "100%" }}
+                ref={this._sceneExplorerRef}
                 minWidth={300}
                 maxWidth={600}
                 minHeight="100%"
                 enable={{ top: false, right: true, bottom: false, left: false, topRight: false, bottomRight: false, bottomLeft: false, topLeft: false }}
-                onKeyDown={(keyEvent) => this.processKeys(keyEvent, allNodes)}
+                onKeyDown={(keyEvent: React.KeyboardEvent<HTMLDivElement>) => this.processKeys(keyEvent, allNodes)}
             >
                 {!this.props.noHeader && (
                     <HeaderComponent
@@ -754,7 +771,7 @@ export class SceneExplorerComponent extends React.Component<ISceneExplorerCompon
                     />
                 )}
                 {this.renderContent(allNodes)}
-            </Resizable>
+            </ResizableCasted>
         );
     }
 }

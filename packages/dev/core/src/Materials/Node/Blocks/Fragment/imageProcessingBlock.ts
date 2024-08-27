@@ -11,9 +11,7 @@ import { RegisterClass } from "../../../../Misc/typeStore";
 import type { Scene } from "../../../../scene";
 import { editableInPropertyPage, PropertyTypeForEdition } from "../../../../Decorators/nodeDecorator";
 
-import "../../../../Shaders/ShadersInclude/helperFunctions";
-import "../../../../Shaders/ShadersInclude/imageProcessingDeclaration";
-import "../../../../Shaders/ShadersInclude/imageProcessingFunctions";
+import { ShaderLanguage } from "core/Materials/shaderLanguage";
 
 /**
  * Block used to add image processing support to fragment shader
@@ -89,6 +87,28 @@ export class ImageProcessingBlock extends NodeMaterialBlock {
         state._excludeVariableName("txColorTransform");
         state._excludeVariableName("colorTransformSettings");
         state._excludeVariableName("ditherIntensity");
+        this._initShaderSourceAsync(state.shaderLanguage);
+    }
+
+    private async _initShaderSourceAsync(shaderLanguage: ShaderLanguage) {
+        this._codeIsReady = false;
+
+        if (shaderLanguage === ShaderLanguage.WGSL) {
+            await Promise.all([
+                import("../../../../ShadersWGSL/ShadersInclude/helperFunctions"),
+                import("../../../../ShadersWGSL/ShadersInclude/imageProcessingDeclaration"),
+                import("../../../../ShadersWGSL/ShadersInclude/imageProcessingFunctions"),
+            ]);
+        } else {
+            await Promise.all([
+                import("../../../../Shaders/ShadersInclude/helperFunctions"),
+                import("../../../../Shaders/ShadersInclude/imageProcessingDeclaration"),
+                import("../../../../Shaders/ShadersInclude/imageProcessingFunctions"),
+            ]);
+        }
+
+        this._codeIsReady = true;
+        this.onCodeIsReadyObservable.notifyObservers(this);
     }
 
     public override isReady(mesh: AbstractMesh, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines) {
@@ -147,6 +167,7 @@ export class ImageProcessingBlock extends NodeMaterialBlock {
         const color = this.color;
         const output = this._outputs[0];
         const comments = `//${this.name}`;
+        const overrideText = state.shaderLanguage === ShaderLanguage.WGSL ? "Vec3" : "";
 
         state._emitFunctionFromInclude("helperFunctions", comments);
         state._emitFunctionFromInclude("imageProcessingDeclaration", comments);
@@ -156,16 +177,16 @@ export class ImageProcessingBlock extends NodeMaterialBlock {
             if (color.connectedPoint!.type === NodeMaterialBlockConnectionPointTypes.Color4 || color.connectedPoint!.type === NodeMaterialBlockConnectionPointTypes.Vector4) {
                 state.compilationString += `${state._declareOutput(output)} = ${color.associatedVariableName};\n`;
             } else {
-                state.compilationString += `${state._declareOutput(output)} = vec4(${color.associatedVariableName}, 1.0);\n`;
+                state.compilationString += `${state._declareOutput(output)} = vec4${state.fSuffix}(${color.associatedVariableName}, 1.0);\n`;
             }
             state.compilationString += `#ifdef IMAGEPROCESSINGPOSTPROCESS\n`;
             if (this.convertInputToLinearSpace) {
-                state.compilationString += `${output.associatedVariableName}.rgb = toLinearSpace(${color.associatedVariableName}.rgb);\n`;
+                state.compilationString += `${output.associatedVariableName} = vec4${state.fSuffix}(toLinearSpace${overrideText}(${color.associatedVariableName}.rgb), ${color.associatedVariableName}.a);\n`;
             }
             state.compilationString += `#else\n`;
             state.compilationString += `#ifdef IMAGEPROCESSING\n`;
             if (this.convertInputToLinearSpace) {
-                state.compilationString += `${output.associatedVariableName}.rgb = toLinearSpace(${color.associatedVariableName}.rgb);\n`;
+                state.compilationString += `${output.associatedVariableName} = vec4${state.fSuffix}(toLinearSpace${overrideText}(${color.associatedVariableName}.rgb), ${color.associatedVariableName}.a);\n`;
             }
             state.compilationString += `${output.associatedVariableName} = applyImageProcessing(${output.associatedVariableName});\n`;
             state.compilationString += `#endif\n`;

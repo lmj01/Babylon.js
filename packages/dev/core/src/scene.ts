@@ -129,7 +129,7 @@ export interface SceneOptions {
 /**
  * Define how the scene should favor performance over ease of use
  */
-export enum ScenePerformancePriority {
+export const enum ScenePerformancePriority {
     /** Default mode. No change. Performance will be treated as less important than backward compatibility */
     BackwardCompatible,
     /** Some performance options will be turned on trying to strike a balance between perf and ease of use */
@@ -2466,9 +2466,9 @@ export class Scene extends AbstractScene implements IAnimatable, IClipPlanesHold
     public removeMesh(toRemove: AbstractMesh, recursive = false): number {
         const index = this.meshes.indexOf(toRemove);
         if (index !== -1) {
-            // Remove from the scene if mesh found
-            this.meshes[index] = this.meshes[this.meshes.length - 1];
-            this.meshes.pop();
+            // Remove from the scene if the mesh found
+
+            this.meshes.splice(index, 1);
 
             if (!toRemove.parent) {
                 toRemove._removeFromSceneRootNodes();

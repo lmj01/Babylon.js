@@ -99,6 +99,11 @@ export interface IShaderMaterialOptions {
      * The language the shader is written in (default: GLSL)
      */
     shaderLanguage?: ShaderLanguage;
+
+    /**
+     * Defines additional code to call to prepare the shader code
+     */
+    extraInitializationsAsync?: () => Promise<void>;
 }
 
 /**
@@ -902,6 +907,7 @@ export class ShaderMaterial extends PushMaterial {
                     onError: this.onError,
                     indexParameters: { maxSimultaneousMorphTargets: numInfluencers },
                     shaderLanguage: this._options.shaderLanguage,
+                    extraInitializationsAsync: this._options.extraInitializationsAsync,
                 },
                 engine
             );
@@ -984,7 +990,7 @@ export class ShaderMaterial extends PushMaterial {
      * @param effectOverride - If provided, use this effect instead of internal effect
      * @param subMesh defines the submesh to bind the material to
      */
-    public override bind(world: Matrix, mesh?: Mesh, effectOverride?: Nullable<Effect>, subMesh?: SubMesh): void {
+    public override bind(world: Matrix, mesh?: AbstractMesh, effectOverride?: Nullable<Effect>, subMesh?: SubMesh): void {
         // Std values
         const storeEffectOnSubMeshes = subMesh && this._storeEffectOnSubMeshes;
         const effect = effectOverride ?? (storeEffectOnSubMeshes ? subMesh.effect : this.getEffect());
@@ -1458,7 +1464,6 @@ export class ShaderMaterial extends PushMaterial {
         }
 
         this._textures = {};
-
         super.dispose(forceDisposeEffect, forceDisposeTextures, notBoundToMesh);
     }
 

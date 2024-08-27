@@ -1,4 +1,4 @@
-import { ArrayTools } from "../Misc/arrayTools";
+import { BuildArray } from "../Misc/arrayTools";
 import { RegisterClass } from "../Misc/typeStore";
 import type { DeepImmutable, FloatArray, Tuple } from "../types";
 import { Epsilon, ToGammaSpace, ToLinearSpace } from "./math.constants";
@@ -51,15 +51,15 @@ export class Color3 implements Tensor<Tuple<number, 3>, IColor3Like>, IColor3Lik
      */
     constructor(
         /**
-         * Defines the red component (between 0 and 1, default is 0)
+         * [0] Defines the red component (between 0 and 1, default is 0)
          */
         public r: number = 0,
         /**
-         * Defines the green component (between 0 and 1, default is 0)
+         * [0] Defines the green component (between 0 and 1, default is 0)
          */
         public g: number = 0,
         /**
-         * Defines the blue component (between 0 and 1, default is 0)
+         * [0] Defines the blue component (between 0 and 1, default is 0)
          */
         public b: number = 0
     ) {}
@@ -1020,19 +1020,19 @@ export class Color4 implements Tensor<Tuple<number, 4>, IColor4Like>, IColor4Lik
      */
     constructor(
         /**
-         * Defines the red component (between 0 and 1, default is 0)
+         * [0] Defines the red component (between 0 and 1, default is 0)
          */
         public r: number = 0,
         /**
-         * Defines the green component (between 0 and 1, default is 0)
+         * [0] Defines the green component (between 0 and 1, default is 0)
          */
         public g: number = 0,
         /**
-         * Defines the blue component (between 0 and 1, default is 0)
+         * [0] Defines the blue component (between 0 and 1, default is 0)
          */
         public b: number = 0,
         /**
-         * Defines the alpha component (between 0 and 1, default is 1)
+         * [1] Defines the alpha component (between 0 and 1, default is 1)
          */
         public a: number = 1
     ) {}
@@ -1859,8 +1859,8 @@ Object.defineProperties(Color4.prototype, {
  * @internal
  */
 export class TmpColors {
-    public static Color3: Color3[] = ArrayTools.BuildArray(3, Color3.Black);
-    public static Color4: Color4[] = ArrayTools.BuildArray(3, () => new Color4(0, 0, 0, 0));
+    public static Color3: Color3[] = BuildArray(3, Color3.Black);
+    public static Color4: Color4[] = BuildArray(3, () => new Color4(0, 0, 0, 0));
 }
 
 RegisterClass("BABYLON.Color3", Color3);

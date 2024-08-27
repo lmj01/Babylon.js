@@ -3,7 +3,6 @@ import type { Nullable, IndicesArray, DataArray, FloatArray, DeepImmutable } fro
 import { Engine } from "../Engines/engine";
 import type { VertexBuffer } from "../Buffers/buffer";
 import { InternalTexture, InternalTextureSource } from "../Materials/Textures/internalTexture";
-import type { IInternalTextureLoader } from "../Materials/Textures/internalTextureLoader";
 import { Texture } from "../Materials/Textures/texture";
 import type { BaseTexture } from "../Materials/Textures/baseTexture";
 import type { VideoTexture } from "../Materials/Textures/videoTexture";
@@ -26,7 +25,7 @@ import { ThinEngine } from "./thinEngine";
 import type { IWebRequest } from "../Misc/interfaces/iWebRequest";
 import { EngineStore } from "./engineStore";
 import { ShaderCodeInliner } from "./Processors/shaderCodeInliner";
-import { WebGL2ShaderProcessor } from "../Engines/WebGL/webGL2ShaderProcessors";
+import { NativeShaderProcessor } from "./Native/nativeShaderProcessors";
 import type { IMaterialContext } from "./IMaterialContext";
 import type { IDrawContext } from "./IDrawContext";
 import type { ICanvas, IImage } from "./ICanvas";
@@ -50,7 +49,23 @@ import {
     getNativeStencilOpFail,
     getNativeAddressMode,
 } from "./Native/nativeHelpers";
-import { AbstractEngine } from "./abstractEngine";
+import { checkNonFloatVertexBuffers } from "../Buffers/buffer.nonFloatVertexBuffers";
+import type { ShaderProcessingContext } from "./Processors/shaderProcessingOptions";
+import { NativeShaderProcessingContext } from "./Native/nativeShaderProcessingContext";
+import type { ShaderLanguage } from "../Materials/shaderLanguage";
+import type { WebGLHardwareTexture } from "./WebGL/webGLHardwareTexture";
+
+import "../Buffers/buffer.align";
+import { _GetCompatibleTextureLoader } from "core/Materials/Textures/Loaders/textureLoaderManager";
+
+// REVIEW: add a flag to effect to prevent multiple compilations of the same shader.
+declare module "../Materials/effect" {
+    /** internal */
+    export interface Effect {
+        /** internal */
+        _checkedNonFloatVertexBuffers?: boolean;
+    }
+}
 
 declare const _native: INative;
 
@@ -188,12 +203,18 @@ class CommandBufferEncoder {
     }
 }
 
+const remappedAttributesNames: string[] = [];
+
 /** @internal */
 export class NativeEngine extends Engine {
     // This must match the protocol version in NativeEngine.cpp
     private static readonly PROTOCOL_VERSION = 8;
 
-    private readonly _engine: INativeEngine = new _native.Engine();
+    private readonly _engine: INativeEngine = new _native.Engine({
+        version: Engine.Version,
+        nonFloatVertexBuffers: true,
+    });
+
     private readonly _camera: Nullable<INativeCamera> = _native.Camera ? new _native.Camera() : null;
 
     private readonly _commandBufferEncoder = new CommandBufferEncoder(this._engine);
@@ -211,6 +232,8 @@ export class NativeEngine extends Engine {
     private _zOffset: number = 0;
     private _zOffsetUnits: number = 0;
     private _depthWrite: boolean = true;
+    // warning for non supported fill mode has already been displayed
+    private _fillModeWarningDisplayed = false;
 
     public override setHardwareScalingLevel(level: number): void {
         super.setHardwareScalingLevel(level);
@@ -305,6 +328,7 @@ export class NativeEngine extends Engine {
             needTypeSuffixInShaderConstants: false,
             supportMSAA: true,
             supportSSAO2: false,
+            supportIBLShadows: false,
             supportExtendedTextureFormats: false,
             supportSwitchCaseInShader: false,
             supportSyncTextureRead: false,
@@ -314,7 +338,8 @@ export class NativeEngine extends Engine {
             needToAlwaysBindUniformBuffers: false,
             supportRenderPasses: true,
             supportSpriteInstancing: false,
-            forceVertexBufferStrideAndOffsetMultiple4Bytes: false,
+            forceVertexBufferStrideAndOffsetMultiple4Bytes: true,
+            _checkNonFloatVertexBuffersDontRecreatePipelineContext: false,
             _collectUbosUpdatedInFrame: false,
         };
 
@@ -394,7 +419,7 @@ export class NativeEngine extends Engine {
         }
 
         // Shader processor
-        this._shaderProcessor = new WebGL2ShaderProcessor();
+        this._shaderProcessor = new NativeShaderProcessor();
 
         this.onNewSceneAddedObservable.add((scene) => {
             const originalRender = scene.render;
@@ -527,6 +552,11 @@ export class NativeEngine extends Engine {
         effect: Effect,
         overrideVertexBuffers?: { [kind: string]: Nullable<VertexBuffer> }
     ): void {
+        if (!effect._checkedNonFloatVertexBuffers) {
+            checkNonFloatVertexBuffers(vertexBuffers, effect);
+            effect._checkedNonFloatVertexBuffers = true;
+        }
+
         if (indexBuffer) {
             this._engine.recordIndexBuffer(vertexArray, indexBuffer.nativeIndexBuffer!);
         }
@@ -546,14 +576,14 @@ export class NativeEngine extends Engine {
                 }
 
                 if (vertexBuffer) {
-                    const buffer = vertexBuffer.getBuffer() as Nullable<NativeDataBuffer>;
+                    const buffer = vertexBuffer.effectiveBuffer as Nullable<NativeDataBuffer>;
                     if (buffer && buffer.nativeVertexBuffer) {
                         this._engine.recordVertexBuffer(
                             vertexArray,
                             buffer.nativeVertexBuffer!,
                             location,
-                            vertexBuffer.byteOffset,
-                            vertexBuffer.byteStride,
+                            vertexBuffer.effectiveByteOffset,
+                            vertexBuffer.effectiveByteStride,
                             vertexBuffer.getSize(),
                             getNativeAttribType(vertexBuffer.type),
                             vertexBuffer.normalized,
@@ -603,7 +633,31 @@ export class NativeEngine extends Engine {
 
     public override getAttributes(pipelineContext: IPipelineContext, attributesNames: string[]): number[] {
         const nativePipelineContext = pipelineContext as NativePipelineContext;
-        return this._engine.getAttributes(nativePipelineContext.program, attributesNames);
+        const nativeShaderProcessingContext = nativePipelineContext.shaderProcessingContext!;
+
+        remappedAttributesNames.length = 0;
+        for (let index = 0; index < attributesNames.length; index++) {
+            const origAttributeName = attributesNames[index];
+            const attributeName = nativeShaderProcessingContext.remappedAttributeNames[origAttributeName] ?? origAttributeName;
+            remappedAttributesNames[index] = attributeName;
+        }
+        return this._engine.getAttributes(nativePipelineContext.program, remappedAttributesNames);
+    }
+
+    /**
+     * Triangle Fan and Line Loop are not supported by modern rendering API
+     * @param fillMode  defines the primitive to use
+     * @returns true if supported
+     */
+    private _checkSupportedFillMode(fillMode: number): boolean {
+        if (fillMode == Constants.MATERIAL_LineLoopDrawMode || fillMode == Constants.MATERIAL_TriangleFanDrawMode) {
+            if (!this._fillModeWarningDisplayed) {
+                Logger.Warn("Line Loop and Triangle Fan are not supported fill modes with Babylon Native. Elements with these fill mode will not be visible.");
+                this._fillModeWarningDisplayed = true;
+            }
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -614,6 +668,9 @@ export class NativeEngine extends Engine {
      * @param instancesCount defines the number of instances to draw (if instantiation is enabled)
      */
     public override drawElementsType(fillMode: number, indexStart: number, indexCount: number, instancesCount?: number): void {
+        if (!this._checkSupportedFillMode(fillMode)) {
+            return;
+        }
         // Apply states
         this._drawCalls.addCount(1, false);
 
@@ -642,6 +699,9 @@ export class NativeEngine extends Engine {
      * @param instancesCount defines the number of instances to draw (if instantiation is enabled)
      */
     public override drawArraysType(fillMode: number, verticesStart: number, verticesCount: number, instancesCount?: number): void {
+        if (!this._checkSupportedFillMode(fillMode)) {
+            return;
+        }
         // Apply states
         this._drawCalls.addCount(1, false);
 
@@ -662,9 +722,9 @@ export class NativeEngine extends Engine {
         // }
     }
 
-    public override createPipelineContext(): IPipelineContext {
+    public override createPipelineContext(shaderProcessingContext: Nullable<ShaderProcessingContext>): IPipelineContext {
         const isAsync = !!(this._caps.parallelShaderCompile && this._engine.createProgramAsync);
-        return new NativePipelineContext(this, isAsync);
+        return new NativePipelineContext(this, isAsync, shaderProcessingContext as Nullable<NativeShaderProcessingContext>);
     }
 
     public override createMaterialContext(): IMaterialContext | undefined {
@@ -686,13 +746,25 @@ export class NativeEngine extends Engine {
         _rawVertexSourceCode: string,
         _rawFragmentSourceCode: string,
         _rebuildRebind: any,
-        defines: Nullable<string>
+        defines: Nullable<string>,
+        _transformFeedbackVaryings: Nullable<string[]>,
+        _key: string,
+        onReady: () => void
     ) {
         if (createAsRaw) {
             this.createRawShaderProgram();
         } else {
             this.createShaderProgram(pipelineContext, vertexSourceCode, fragmentSourceCode, defines);
         }
+
+        onReady();
+    }
+
+    /**
+     * @internal
+     */
+    public override _getShaderProcessingContext(_shaderLanguage: ShaderLanguage): Nullable<ShaderProcessingContext> {
+        return new NativeShaderProcessingContext();
     }
 
     /**
@@ -877,7 +949,7 @@ export class NativeEngine extends Engine {
         this._commandBufferEncoder.encodeCommandArgAsUInt32(culling ? 1 : 0);
         this._commandBufferEncoder.encodeCommandArgAsFloat32(zOffset);
         this._commandBufferEncoder.encodeCommandArgAsFloat32(zOffsetUnits);
-        this._commandBufferEncoder.encodeCommandArgAsUInt32(this.cullBackFaces ?? cullBackFaces ?? true ? 1 : 0);
+        this._commandBufferEncoder.encodeCommandArgAsUInt32((this.cullBackFaces ?? cullBackFaces ?? true) ? 1 : 0);
         this._commandBufferEncoder.encodeCommandArgAsUInt32(reverseSide ? 1 : 0);
         this._commandBufferEncoder.finishEncodingCommand();
     }
@@ -1251,15 +1323,6 @@ export class NativeEngine extends Engine {
         this._alphaMode = mode;
     }
 
-    /**
-     * Gets the current alpha mode
-     * @see https://doc.babylonjs.com/features/featuresDeepDive/materials/advanced/transparent_rendering
-     * @returns the current alpha mode
-     */
-    public override getAlphaMode(): number {
-        return this._alphaMode;
-    }
-
     public override setInt(uniform: WebGLUniformLocation, int: number): boolean {
         if (!uniform) {
             return false;
@@ -1533,9 +1596,9 @@ export class NativeEngine extends Engine {
         return this._engine.createTexture();
     }
 
-    protected override _deleteTexture(texture: Nullable<WebGLTexture>): void {
+    protected override _deleteTexture(texture: Nullable<WebGLHardwareTexture>): void {
         if (texture) {
-            this._engine.deleteTexture(texture as NativeTexture);
+            this._engine.deleteTexture(texture.underlyingResource as NativeTexture);
         }
     }
 
@@ -1748,12 +1811,11 @@ export class NativeEngine extends Engine {
         const lastDot = url.lastIndexOf(".");
         const extension = forcedExtension ? forcedExtension : lastDot > -1 ? url.substring(lastDot).toLowerCase() : "";
 
-        let loader: Nullable<IInternalTextureLoader> = null;
-        for (const availableLoader of AbstractEngine._TextureLoaders) {
-            if (availableLoader.canLoad(extension)) {
-                loader = availableLoader;
-                break;
-            }
+        // some formats are already supported by bimg, no need to try to load them with JS
+        // leaving TextureLoader extension check for future use
+        let loaderPromise = null;
+        if (extension.endsWith(".basis") || extension.endsWith(".ktx") || extension.endsWith(".ktx2") || mimeType === "image/ktx" || mimeType === "image/ktx2") {
+            loaderPromise = _GetCompatibleTextureLoader(extension);
         }
 
         if (scene) {
@@ -1804,7 +1866,7 @@ export class NativeEngine extends Engine {
         };
 
         // processing for non-image formats
-        if (loader) {
+        if (loaderPromise) {
             throw new Error("Loading textures from IInternalTextureLoader not yet implemented.");
         } else {
             const onload = (data: ArrayBufferView) => {
@@ -2011,6 +2073,7 @@ export class NativeEngine extends Engine {
      * @param fallback defines texture to use while falling back when (compressed) texture file not found.
      * @param loaderOptions options to be passed to the loader
      * @param useSRGBBuffer defines if the texture must be loaded in a sRGB GPU buffer (if supported by the GPU).
+     * @param buffer defines the data buffer to load instead of loading the rootUrl
      * @returns the cube texture as an InternalTexture
      */
     public override createCubeTexture(
@@ -2027,7 +2090,8 @@ export class NativeEngine extends Engine {
         lodOffset: number = 0,
         fallback: Nullable<InternalTexture> = null,
         loaderOptions?: any,
-        useSRGBBuffer = false
+        useSRGBBuffer = false,
+        buffer: Nullable<ArrayBufferView> = null
     ): InternalTexture {
         const texture = fallback ? fallback : new InternalTexture(this, InternalTextureSource.Cube);
         texture.isCube = true;
@@ -2040,6 +2104,7 @@ export class NativeEngine extends Engine {
         if (!this._doNotHandleContextLost) {
             texture._extension = forcedExtension;
             texture._files = files;
+            texture._buffer = buffer;
         }
 
         const lastDot = rootUrl.lastIndexOf(".");
@@ -2086,7 +2151,9 @@ export class NativeEngine extends Engine {
                 );
             };
 
-            if (files && files.length === 6) {
+            if (buffer) {
+                onloaddata(buffer);
+            } else if (files && files.length === 6) {
                 throw new Error(`Multi-file loading not allowed on env files.`);
             } else {
                 const onInternalError = (request?: IWebRequest, exception?: any) => {
@@ -2298,10 +2365,6 @@ export class NativeEngine extends Engine {
             throw new Error("Required width/height for frame buffers not yet supported in NativeEngine.");
         }
 
-        if (forceFullscreenViewport) {
-            //Not supported yet but don't stop rendering
-        }
-
         if (nativeRTWrapper._framebufferDepthStencil) {
             this._bindUnboundFramebuffer(nativeRTWrapper._framebufferDepthStencil);
         } else {
@@ -2340,7 +2403,10 @@ export class NativeEngine extends Engine {
     }
 
     // TODO: Refactor to share more logic with base Engine implementation.
-    protected override _setTexture(channel: number, texture: Nullable<BaseTexture>, isPartOfTextureArray = false, depthStencilTexture = false): boolean {
+    /**
+     * @internal
+     */
+    public override _setTexture(channel: number, texture: Nullable<BaseTexture>, isPartOfTextureArray = false, depthStencilTexture = false): boolean {
         const uniform = this._boundUniforms[channel] as unknown as NativeUniform;
         if (!uniform) {
             return false;

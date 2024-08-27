@@ -169,10 +169,12 @@ export class WebGPUShaderProcessingContext implements ShaderProcessingContext {
     public attributeNamesFromEffect: string[];
     public attributeLocationsFromEffect: number[];
 
+    public vertexBufferKindToNumberOfComponents: { [kind: string]: number } = {};
+
     private _attributeNextLocation: number;
     private _varyingNextLocation: number;
 
-    constructor(shaderLanguage: ShaderLanguage) {
+    constructor(shaderLanguage: ShaderLanguage, pureMode = false) {
         this.shaderLanguage = shaderLanguage;
 
         this._attributeNextLocation = 0;
@@ -196,7 +198,9 @@ export class WebGPUShaderProcessingContext implements ShaderProcessingContext {
 
         this.leftOverUniforms = [];
 
-        this._findStartingGroupBinding();
+        if (!pureMode) {
+            this._findStartingGroupBinding();
+        }
     }
 
     private _findStartingGroupBinding(): void {

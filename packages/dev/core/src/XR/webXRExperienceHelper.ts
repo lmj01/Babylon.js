@@ -11,6 +11,7 @@ import { Logger } from "../Misc/logger";
 import { UniversalCamera } from "../Cameras/universalCamera";
 import { Quaternion, Vector3 } from "../Maths/math.vector";
 import type { ThinEngine } from "../Engines/thinEngine";
+import { AbstractEngine } from "core/Engines/abstractEngine";
 
 /**
  * Options for setting up XR spectator camera.
@@ -180,6 +181,9 @@ export class WebXRExperienceHelper implements IDisposable {
                 this.camera.rotationQuaternion.set(0, 0, 0, 1);
                 this.onInitialXRPoseSetObservable.notifyObservers(this.camera);
             }
+
+            // Vision Pro suspends the audio context when entering XR, so we resume it here if needed.
+            AbstractEngine.audioEngine?._resumeAudioContextOnStateChange();
 
             this.sessionManager.onXRSessionEnded.addOnce(() => {
                 // when using the back button and not the exit button (default on mobile), the session is ending but the EXITING state was not set

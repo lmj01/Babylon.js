@@ -2,10 +2,10 @@
 import type { NodeMaterialBlock } from "./nodeMaterialBlock";
 import { PushMaterial } from "../pushMaterial";
 import type { Scene } from "../../scene";
-import { AbstractMesh } from "../../Meshes/abstractMesh";
+import type { AbstractMesh } from "../../Meshes/abstractMesh";
 import { Matrix, Vector2 } from "../../Maths/math.vector";
 import { Color3, Color4 } from "../../Maths/math.color";
-import type { Mesh } from "../../Meshes/mesh";
+import { Mesh } from "../../Meshes/mesh";
 import { NodeMaterialBuildState } from "./nodeMaterialBuildState";
 import type { IEffectCreationOptions } from "../effect";
 import { Effect } from "../effect";
@@ -115,14 +115,26 @@ export class NodeMaterialDefines extends MaterialDefines implements IImageProces
     public PREPASS_NORMAL = false;
     /** Prepass normal index */
     public PREPASS_NORMAL_INDEX = -1;
+    /** Prepass world normal */
+    public PREPASS_WORLD_NORMAL = false;
+    /** Prepass world normal index */
+    public PREPASS_WORLD_NORMAL_INDEX = -1;
     /** Prepass position */
     public PREPASS_POSITION = false;
     /** Prepass position index */
     public PREPASS_POSITION_INDEX = -1;
+    /** Prepass local position */
+    public PREPASS_LOCAL_POSITION = false;
+    /** Prepass local position index */
+    public PREPASS_LOCAL_POSITION_INDEX = -1;
     /** Prepass depth */
     public PREPASS_DEPTH = false;
     /** Prepass depth index */
     public PREPASS_DEPTH_INDEX = -1;
+    /** Clip-space depth */
+    public PREPASS_NDC_DEPTH = false;
+    /** Clip-space depth index */
+    public PREPASS_NDC_DEPTH_INDEX = -1;
     /** Scene MRT count */
     public SCENE_MRT_COUNT = 0;
 
@@ -252,6 +264,7 @@ export class NodeMaterial extends PushMaterial {
     private _cachedWorldViewProjectionMatrix = new Matrix();
     private _optimizers = new Array<NodeMaterialOptimizer>();
     private _animationFrame = -1;
+    private _buildIsInProgress = false;
 
     /** Define the Url to load node editor script */
     public static EditorURL = `${Tools._DefaultCdnUrl}/v${AbstractEngine.Version}/nodeEditor/babylon.nodeEditor.js`;
@@ -305,9 +318,13 @@ export class NodeMaterial extends PushMaterial {
         return undefined;
     }
 
-    /** Get the active shader language */
-    public get shaderLanguage(): ShaderLanguage {
+    /** Gets or sets the active shader language */
+    public override get shaderLanguage(): ShaderLanguage {
         return this._options.shaderLanguage;
+    }
+
+    public override set shaderLanguage(value: ShaderLanguage) {
+        this._options.shaderLanguage = value;
     }
 
     /**
@@ -797,6 +814,11 @@ export class NodeMaterial extends PushMaterial {
      * @param autoConfigure defines if the autoConfigure method should be called when initializing blocks (default is false)
      */
     public build(verbose: boolean = false, updateBuildId = true, autoConfigure = false) {
+        if (this._buildIsInProgress) {
+            Logger.Warn("Build is already in progress, You can use NodeMaterial.onBuildObservable to determine when the build is completed.");
+            return;
+        }
+        this._buildIsInProgress = true;
         // First time?
         if (!this._vertexCompilationState && !autoConfigure) {
             autoConfigure = true;
@@ -851,6 +873,28 @@ export class NodeMaterial extends PushMaterial {
             this._initializeBlock(fragmentOutputNode, this._fragmentCompilationState, vertexNodes, autoConfigure);
         }
 
+        // Are blocks code ready?
+        let waitingNodeCount = 0;
+        for (const node of this.attachedBlocks) {
+            if (!node.codeIsReady) {
+                waitingNodeCount++;
+                node.onCodeIsReadyObservable.addOnce(() => {
+                    waitingNodeCount--;
+                    if (waitingNodeCount === 0) {
+                        this._finishBuildProcess(verbose, updateBuildId, vertexNodes, fragmentNodes);
+                    }
+                });
+            }
+        }
+
+        if (waitingNodeCount !== 0) {
+            return;
+        }
+
+        this._finishBuildProcess(verbose, updateBuildId, vertexNodes, fragmentNodes);
+    }
+
+    private _finishBuildProcess(verbose: boolean = false, updateBuildId = true, vertexNodes: NodeMaterialBlock[], fragmentNodes: NodeMaterialBlock[]) {
         // Optimize
         this.optimize();
 
@@ -891,6 +935,7 @@ export class NodeMaterial extends PushMaterial {
             Logger.Log(this._fragmentCompilationState.compilationString);
         }
 
+        this._buildIsInProgress = false;
         this._buildWasSuccessful = true;
         this.onBuildObservable.notifyObservers(this);
 
@@ -985,8 +1030,16 @@ export class NodeMaterial extends PushMaterial {
             result.push(Constants.PREPASS_DEPTH_TEXTURE_TYPE);
         }
 
+        if (prePassOutputBlock.viewDepthNDC.isConnected) {
+            result.push(Constants.PREPASS_NDC_DEPTH_TEXTURE_TYPE);
+        }
+
         if (prePassOutputBlock.viewNormal.isConnected) {
             result.push(Constants.PREPASS_NORMAL_TEXTURE_TYPE);
+        }
+
+        if (prePassOutputBlock.worldNormal.isConnected) {
+            result.push(Constants.PREPASS_WORLD_NORMAL_TEXTURE_TYPE);
         }
 
         if (prePassOutputBlock.worldPosition.isConnected) {
@@ -1010,8 +1063,14 @@ export class NodeMaterial extends PushMaterial {
             if (block.depth.isConnected && !result.includes(Constants.PREPASS_DEPTH_TEXTURE_TYPE)) {
                 result.push(Constants.PREPASS_DEPTH_TEXTURE_TYPE);
             }
+            if (block.clipSpaceDepth.isConnected && !result.includes(Constants.PREPASS_NDC_DEPTH_TEXTURE_TYPE)) {
+                result.push(Constants.PREPASS_NDC_DEPTH_TEXTURE_TYPE);
+            }
             if (block.normal.isConnected && !result.includes(Constants.PREPASS_NORMAL_TEXTURE_TYPE)) {
                 result.push(Constants.PREPASS_NORMAL_TEXTURE_TYPE);
+            }
+            if (block.worldNormal.isConnected && !result.includes(Constants.PREPASS_WORLD_NORMAL_TEXTURE_TYPE)) {
+                result.push(Constants.PREPASS_WORLD_NORMAL_TEXTURE_TYPE);
             }
         }
 
@@ -1098,13 +1157,13 @@ export class NodeMaterial extends PushMaterial {
 
         const defines = new NodeMaterialDefines();
 
-        const dummyMesh = new AbstractMesh(tempName + "PostProcess", this.getScene());
+        const dummyMesh = new Mesh(tempName + "PostProcess", this.getScene());
 
         let buildId = this._buildId;
 
         this._processDefines(dummyMesh, defines);
 
-        Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString, this._vertexCompilationState._builtCompilationString);
+        Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString, this._vertexCompilationState._builtCompilationString, this.shaderLanguage);
 
         if (!postProcess) {
             postProcess = new PostProcess(
@@ -1122,7 +1181,8 @@ export class NodeMaterial extends PushMaterial {
                 tempName,
                 { maxSimultaneousLights: this.maxSimultaneousLights },
                 false,
-                textureFormat
+                textureFormat,
+                this.shaderLanguage
             );
         } else {
             postProcess.updateEffect(
@@ -1192,14 +1252,14 @@ export class NodeMaterial extends PushMaterial {
 
         const proceduralTexture = new ProceduralTexture(tempName, size, null, scene);
 
-        const dummyMesh = new AbstractMesh(tempName + "Procedural", this.getScene());
+        const dummyMesh = new Mesh(tempName + "Procedural", this.getScene());
         dummyMesh.reservedDataStore = {
             hidden: true,
         };
 
         const defines = new NodeMaterialDefines();
         const result = this._processDefines(dummyMesh, defines);
-        Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString, this._vertexCompilationState._builtCompilationString);
+        Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString, this._vertexCompilationState._builtCompilationString, this.shaderLanguage);
 
         let effect = this.getScene().getEngine().createEffect(
             {
@@ -1211,14 +1271,17 @@ export class NodeMaterial extends PushMaterial {
             this._fragmentCompilationState.samplers,
             defines.toString(),
             result?.fallbacks,
-            undefined
+            undefined,
+            undefined,
+            undefined,
+            this.shaderLanguage
         );
 
         proceduralTexture.nodeMaterialSource = this;
         proceduralTexture._setEffect(effect);
 
         let buildId = this._buildId;
-        proceduralTexture.onBeforeGenerationObservable.add(() => {
+        const refreshEffect = () => {
             if (buildId !== this._buildId) {
                 delete Effect.ShadersStore[tempName + "VertexShader"];
                 delete Effect.ShadersStore[tempName + "PixelShader"];
@@ -1233,7 +1296,7 @@ export class NodeMaterial extends PushMaterial {
             const result = this._processDefines(dummyMesh, defines);
 
             if (result) {
-                Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString, this._vertexCompilationState._builtCompilationString);
+                Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString, this._vertexCompilationState._builtCompilationString, this.shaderLanguage);
 
                 TimingTools.SetImmediate(() => {
                     effect = this.getScene().getEngine().createEffect(
@@ -1254,6 +1317,15 @@ export class NodeMaterial extends PushMaterial {
             }
 
             this._checkInternals(effect);
+        };
+
+        proceduralTexture.onBeforeGenerationObservable.add(() => {
+            refreshEffect();
+        });
+
+        // This is needed if the procedural texture is not set to refresh automatically
+        this.onBuildObservable.add(() => {
+            refreshEffect();
         });
 
         return proceduralTexture;
@@ -1278,7 +1350,7 @@ export class NodeMaterial extends PushMaterial {
         if (!dummyMesh) {
             dummyMesh = this.getScene().getMeshByName(this.name + "Particle");
             if (!dummyMesh) {
-                dummyMesh = new AbstractMesh(this.name + "Particle", this.getScene());
+                dummyMesh = new Mesh(this.name + "Particle", this.getScene());
                 dummyMesh.reservedDataStore = {
                     hidden: true,
                 };
@@ -1293,9 +1365,9 @@ export class NodeMaterial extends PushMaterial {
         if (!effect) {
             const result = this._processDefines(dummyMesh, defines);
 
-            Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString);
+            Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString, undefined, this.shaderLanguage);
 
-            particleSystem.fillDefines(particleSystemDefines, blendMode);
+            particleSystem.fillDefines(particleSystemDefines, blendMode, false);
 
             join = particleSystemDefines.join("\n");
 
@@ -1309,7 +1381,8 @@ export class NodeMaterial extends PushMaterial {
                     result?.fallbacks,
                     onCompiled,
                     onError,
-                    particleSystem
+                    particleSystem,
+                    this.shaderLanguage
                 );
 
             particleSystem.setCustomEffect(effect, blendMode);
@@ -1328,7 +1401,7 @@ export class NodeMaterial extends PushMaterial {
 
             particleSystemDefines.length = 0;
 
-            particleSystem.fillDefines(particleSystemDefines, blendMode);
+            particleSystem.fillDefines(particleSystemDefines, blendMode, false);
 
             const particleSystemDefinesJoinedCurrent = particleSystemDefines.join("\n");
 
@@ -1340,7 +1413,7 @@ export class NodeMaterial extends PushMaterial {
             const result = this._processDefines(dummyMesh!, defines!);
 
             if (result) {
-                Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString);
+                Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString, undefined, this.shaderLanguage);
 
                 effect = this.getScene()
                     .getEngine()
@@ -2180,6 +2253,8 @@ export class NodeMaterial extends PushMaterial {
             }
         }
 
+        serializationObject.uniqueId = this.uniqueId;
+
         return serializationObject;
     }
 
@@ -2463,6 +2538,9 @@ export class NodeMaterial extends PushMaterial {
 
                         nodeMaterial.parseSerializedObject(serializationObject, undefined, undefined, urlRewriter);
                         nodeMaterial.snippetId = snippetId;
+
+                        // We reset sideOrientation to default value
+                        nodeMaterial.sideOrientation = null;
 
                         try {
                             if (!skipBuild) {

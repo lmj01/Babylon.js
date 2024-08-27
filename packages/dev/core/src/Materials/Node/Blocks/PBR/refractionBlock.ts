@@ -19,6 +19,7 @@ import { CubeTexture } from "../../../Textures/cubeTexture";
 import { Texture } from "../../../Textures/texture";
 import { NodeMaterialSystemValues } from "../../Enums/nodeMaterialSystemValues";
 import { Scalar } from "../../../../Maths/math.scalar";
+import { ShaderLanguage } from "core/Materials/shaderLanguage";
 
 /**
  * Block used to implement the refraction part of the sub surface module of the PBR material
@@ -289,12 +290,15 @@ export class RefractionBlock extends NodeMaterialBlock {
         state.samplers.push(this._2DSamplerName);
 
         this._define3DName = state._getFreeDefineName("SS_REFRACTIONMAP_3D");
+        const refractionTexture = this._getTexture();
 
-        state._samplerDeclaration += `#ifdef ${this._define3DName}\n`;
-        state._samplerDeclaration += `uniform samplerCube ${this._cubeSamplerName};\n`;
-        state._samplerDeclaration += `#else\n`;
-        state._samplerDeclaration += `uniform sampler2D ${this._2DSamplerName};\n`;
-        state._samplerDeclaration += `#endif\n`;
+        if (refractionTexture) {
+            state._samplerDeclaration += `#ifdef ${this._define3DName}\n`;
+            state._emitCubeSampler(this._cubeSamplerName, undefined, true);
+            state._samplerDeclaration += `#else\n`;
+            state._emit2DSampler(this._2DSamplerName, undefined, true);
+            state._samplerDeclaration += `#endif\n`;
+        }
 
         // Fragment
         state.sharedData.blocksWithDefines.push(this);
@@ -308,27 +312,29 @@ export class RefractionBlock extends NodeMaterialBlock {
 
         state._emitUniformFromString(this._refractionMatrixName, NodeMaterialBlockConnectionPointTypes.Matrix);
 
-        state._emitFunction(
-            "sampleRefraction",
-            `
-            #ifdef ${this._define3DName}
-                #define sampleRefraction(s, c) textureCube(s, c)
-            #else
-                #define sampleRefraction(s, c) texture2D(s, c)
-            #endif\n`,
-            `//${this.name}`
-        );
+        if (state.shaderLanguage !== ShaderLanguage.WGSL) {
+            state._emitFunction(
+                "sampleRefraction",
+                `
+                #ifdef ${this._define3DName}
+                    #define sampleRefraction(s, c) textureCube(s, c)
+                #else
+                    #define sampleRefraction(s, c) texture2D(s, c)
+                #endif\n`,
+                `//${this.name}`
+            );
 
-        state._emitFunction(
-            "sampleRefractionLod",
-            `
-            #ifdef ${this._define3DName}
-                #define sampleRefractionLod(s, c, l) textureCubeLodEXT(s, c, l)
-            #else
-                #define sampleRefractionLod(s, c, l) texture2DLodEXT(s, c, l)
-            #endif\n`,
-            `//${this.name}`
-        );
+            state._emitFunction(
+                "sampleRefractionLod",
+                `
+                #ifdef ${this._define3DName}
+                    #define sampleRefractionLod(s, c, l) textureCubeLodEXT(s, c, l)
+                #else
+                    #define sampleRefractionLod(s, c, l) texture2DLodEXT(s, c, l)
+                #endif\n`,
+                `//${this.name}`
+            );
+        }
 
         this._vRefractionMicrosurfaceInfosName = state._getFreeVariableName("vRefractionMicrosurfaceInfos");
 

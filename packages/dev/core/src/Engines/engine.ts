@@ -11,7 +11,6 @@ import type { EngineOptions } from "./thinEngine";
 import { ThinEngine } from "./thinEngine";
 import { Constants } from "./constants";
 import type { IViewportLike, IColor4Like } from "../Maths/math.like";
-import type { RenderTargetTexture } from "../Materials/Textures/renderTargetTexture";
 import { PerformanceMonitor } from "../Misc/performanceMonitor";
 import type { DataBuffer } from "../Buffers/dataBuffer";
 import { WebGLDataBuffer } from "../Meshes/WebGL/webGLDataBuffer";
@@ -28,7 +27,6 @@ import "./AbstractEngine/abstractEngine.states";
 import "./AbstractEngine/abstractEngine.renderPass";
 import "./AbstractEngine/abstractEngine.texture";
 
-import type { Material } from "../Materials/material";
 import type { PostProcess } from "../PostProcesses/postProcess";
 import { AbstractEngine } from "./abstractEngine";
 import {
@@ -288,21 +286,6 @@ export class Engine extends ThinEngine {
 
     /** @internal */
 
-    /**
-     * Will flag all materials in all scenes in all engines as dirty to trigger new shader compilation
-     * @param flag defines which part of the materials must be marked as dirty
-     * @param predicate defines a predicate used to filter which materials should be affected
-     */
-    public static MarkAllMaterialsAsDirty(flag: number, predicate?: (mat: Material) => boolean): void {
-        for (let engineIndex = 0; engineIndex < Engine.Instances.length; engineIndex++) {
-            const engine = Engine.Instances[engineIndex];
-
-            for (let sceneIndex = 0; sceneIndex < engine.scenes.length; sceneIndex++) {
-                engine.scenes[sceneIndex].markAllMaterialsAsDirty(flag, predicate);
-            }
-        }
-    }
-
     // eslint-disable-next-line jsdoc/require-returns-check
     /**
      * Method called to create the default loading screen.
@@ -448,17 +431,6 @@ export class Engine extends ThinEngine {
         }
     }
 
-    public override generateMipMapsForCubemap(texture: InternalTexture, unbind = true) {
-        if (texture.generateMipMaps) {
-            const gl = this._gl;
-            this._bindTextureDirectly(gl.TEXTURE_CUBE_MAP, texture, true);
-            gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
-            if (unbind) {
-                this._bindTextureDirectly(gl.TEXTURE_CUBE_MAP, null);
-            }
-        }
-    }
-
     /** States */
 
     /**
@@ -597,58 +569,6 @@ export class Engine extends ThinEngine {
     }
 
     /**
-     * Sets a depth stencil texture from a render target to the according uniform.
-     * @param channel The texture channel
-     * @param uniform The uniform to set
-     * @param texture The render target texture containing the depth stencil texture to apply
-     * @param name The texture name
-     */
-    public override setDepthStencilTexture(channel: number, uniform: Nullable<WebGLUniformLocation>, texture: Nullable<RenderTargetTexture>, name?: string): void {
-        if (channel === undefined) {
-            return;
-        }
-
-        if (uniform) {
-            this._boundUniforms[channel] = uniform;
-        }
-
-        if (!texture || !texture.depthStencilTexture) {
-            this._setTexture(channel, null, undefined, undefined, name);
-        } else {
-            this._setTexture(channel, texture, false, true, name);
-        }
-    }
-
-    /**
-     * Sets a texture to the context from a postprocess
-     * @param channel defines the channel to use
-     * @param postProcess defines the source postprocess
-     * @param name name of the channel
-     */
-    public override setTextureFromPostProcess(channel: number, postProcess: Nullable<PostProcess>, name: string): void {
-        let postProcessInput = null;
-        if (postProcess) {
-            if (postProcess._forcedOutputTexture) {
-                postProcessInput = postProcess._forcedOutputTexture;
-            } else if (postProcess._textures.data[postProcess._currentRenderTextureInd]) {
-                postProcessInput = postProcess._textures.data[postProcess._currentRenderTextureInd];
-            }
-        }
-
-        this._bindTexture(channel, postProcessInput?.texture ?? null, name);
-    }
-
-    /**
-     * Binds the output of the passed in post process to the texture channel specified
-     * @param channel The channel the texture should be bound to
-     * @param postProcess The post process which's output should be bound
-     * @param name name of the channel
-     */
-    public override setTextureFromPostProcessOutput(channel: number, postProcess: Nullable<PostProcess>, name: string): void {
-        this._bindTexture(channel, postProcess?._outputTexture?.texture ?? null, name);
-    }
-
-    /**
      * sets the object from which width and height will be taken from when getting render width and height
      * Will fallback to the gl object
      * @param dimensions the framebuffer width and height that will be used.
@@ -682,15 +602,6 @@ export class Engine extends ThinEngine {
      */
     public override getFontOffset(font: string): { ascent: number; height: number; descent: number } {
         return GetFontOffset(font);
-    }
-
-    /** @internal */
-    public _renderFrame() {
-        for (let index = 0; index < this._activeRenderLoops.length; index++) {
-            const renderFunction = this._activeRenderLoops[index];
-
-            renderFunction();
-        }
     }
 
     protected override _cancelFrame() {
@@ -746,11 +657,6 @@ export class Engine extends ThinEngine {
                 this._frameHandler = this._queueNewFrame(this._boundRenderFunction, this.getHostWindow());
             }
         }
-    }
-
-    /** @internal */
-    public _renderViews() {
-        return false;
     }
 
     /**
@@ -915,7 +821,7 @@ export class Engine extends ThinEngine {
 
         if (this._rescalePostProcess) {
             this._rescalePostProcess.externalTextureSamplerBinding = true;
-            this._rescalePostProcess.getEffect().executeWhenCompiled(() => {
+            const onCompiled = () => {
                 this._rescalePostProcess!.onApply = function (effect) {
                     effect._bindTexture("textureSampler", source);
                 };
@@ -936,7 +842,15 @@ export class Engine extends ThinEngine {
                 if (onComplete) {
                     onComplete();
                 }
-            });
+            };
+            const effect = this._rescalePostProcess.getEffect();
+            if (effect) {
+                effect.executeWhenCompiled(onCompiled);
+            } else {
+                this._rescalePostProcess.onEffectCreatedObservable.addOnce((effect) => {
+                    effect.executeWhenCompiled(onCompiled);
+                });
+            }
         }
     }
 
@@ -1123,6 +1037,8 @@ export class Engine extends ThinEngine {
     }
 
     public override dispose(): void {
+        this.hideLoadingUI();
+
         // Rescale PP
         if (this._rescalePostProcess) {
             this._rescalePostProcess.dispose();

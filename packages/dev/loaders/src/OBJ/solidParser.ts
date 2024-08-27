@@ -24,6 +24,7 @@ type MeshObject = {
     directMaterial?: Nullable<Material>;
     isObject: boolean; // If the entity is defined as an object ("o"), or group ("g")
     _babylonMesh?: AbstractMesh; // The corresponding Babylon mesh
+    hasLines?: boolean; // If the mesh has lines
 };
 
 /**
@@ -95,6 +96,7 @@ export class SolidParser {
     private _babylonMeshesArray: Array<Mesh>;
     private _pushTriangle: (faces: Array<string>, faceIndex: number) => void;
     private _handednessSign: number;
+    private _hasLineData: boolean = false; //If this mesh has line segment(l) data
 
     /**
      * Creates a new SolidParser
@@ -179,7 +181,9 @@ export class SolidParser {
             //Each element is a Vector3(x,y,z)
             this._wrappedPositionForBabylon.push(positionVectorFromOBJ);
             //Push the uvs for Babylon
-            //Each element is a Vector3(u,v)
+            //Each element is a Vector2(u,v)
+            //If the UVs are missing, set (u,v)=(0,0)
+            textureVectorFromOBJ = textureVectorFromOBJ ?? new Vector2(0, 0);
             this._wrappedUvsForBabylon.push(textureVectorFromOBJ);
             //Push the normals for Babylon
             //Each element is a Vector3(x,y,z)
@@ -222,6 +226,7 @@ export class SolidParser {
                 this._wrappedNormalsForBabylon[l].y,
                 this._wrappedNormalsForBabylon[l].z
             );
+
             this._unwrappedUVForBabylon.push(this._wrappedUvsForBabylon[l].x, this._wrappedUvsForBabylon[l].y); //z is an optional value not supported by BABYLON
             if (this._loadingOptions.importVertexColors) {
                 //Push the r, g, b, a values of each element in the unwrapped array
@@ -322,7 +327,7 @@ export class SolidParser {
                 indiceUvsFromObj,
                 0, //Default value for normals
                 this._positions[indicePositionFromObj], //Get the values for each element
-                this._uvs[indiceUvsFromObj],
+                this._uvs[indiceUvsFromObj] ?? Vector2.Zero(),
                 Vector3.Up(), //Default value for normals
                 this._loadingOptions.importVertexColors ? this._colors[indicePositionFromObj] : undefined
             );
@@ -358,8 +363,8 @@ export class SolidParser {
                 indiceUvsFromObj,
                 indiceNormalFromObj,
                 this._positions[indicePositionFromObj],
-                this._uvs[indiceUvsFromObj],
-                this._normals[indiceNormalFromObj] //Set the vector for each component
+                this._uvs[indiceUvsFromObj] ?? Vector2.Zero(),
+                this._normals[indiceNormalFromObj] ?? Vector3.Up() //Set the vector for each component
             );
         }
         //Reset variable for the next line
@@ -453,6 +458,7 @@ export class SolidParser {
             this._handledMesh.positions = this._unwrappedPositionsForBabylon.slice();
             this._handledMesh.normals = this._unwrappedNormalsForBabylon.slice();
             this._handledMesh.uvs = this._unwrappedUVForBabylon.slice();
+            this._handledMesh.hasLines = this._hasLineData;
 
             if (this._loadingOptions.importVertexColors) {
                 this._handledMesh.colors = this._unwrappedColorsForBabylon.slice();
@@ -464,6 +470,7 @@ export class SolidParser {
             this._unwrappedColorsForBabylon.length = 0;
             this._unwrappedNormalsForBabylon.length = 0;
             this._unwrappedUVForBabylon.length = 0;
+            this._hasLineData = false;
         }
     }
 
@@ -518,6 +525,18 @@ export class SolidParser {
         mesh.setVerticesData(VertexBuffer.NormalKind, normals);
     }
 
+    private static _IsLineElement(line: string) {
+        return line.startsWith("l");
+    }
+
+    private static _IsObjectElement(line: string) {
+        return line.startsWith("o");
+    }
+
+    private static _IsGroupElement(line: string) {
+        return line.startsWith("g");
+    }
+
     /**
      * Function used to parse an OBJ string
      * @param meshesNames defines the list of meshes to load (all if not defined)
@@ -539,7 +558,39 @@ export class SolidParser {
         }
 
         // Split the file into lines
-        const lines = data.split("\n");
+        // Preprocess line data
+        const linesOBJ = data.split("\n");
+        const lineLines: string[][] = [];
+        let currentGroup: string[] = [];
+
+        lineLines.push(currentGroup);
+
+        for (let i = 0; i < linesOBJ.length; i++) {
+            const line = linesOBJ[i].trim().replace(/\s\s/g, " ");
+
+            // Comment or newLine
+            if (line.length === 0 || line.charAt(0) === "#") {
+                continue;
+            }
+
+            if (SolidParser._IsGroupElement(line) || SolidParser._IsObjectElement(line)) {
+                currentGroup = [];
+                lineLines.push(currentGroup);
+            }
+
+            if (SolidParser._IsLineElement(line)) {
+                const lineValues = line.split(" ");
+                // create line elements with two vertices only
+                for (let i = 1; i < lineValues.length - 1; i++) {
+                    currentGroup.push(`l ${lineValues[i]} ${lineValues[i + 1]}`);
+                }
+            } else {
+                currentGroup.push(line);
+            }
+        }
+
+        const lines = lineLines.flat();
+
         // Look at each line
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim().replace(/\s\s/g, " ");
@@ -548,9 +599,8 @@ export class SolidParser {
             // Comment or newLine
             if (line.length === 0 || line.charAt(0) === "#") {
                 continue;
-
-                //Get information about one position possible for the vertices
             } else if (SolidParser.VertexPattern.test(line)) {
+                //Get information about one position possible for the vertices
                 result = line.match(/[^ ]+/g)!; // match will return non-null due to passing regex pattern
 
                 // Value of result with line: "v 1.0 2.0 3.0"
@@ -644,6 +694,7 @@ export class SolidParser {
                     result[1].trim().split(" "), // ["1", "2"]
                     0
                 );
+                this._hasLineData = true;
 
                 // Define a mesh or an object
                 // Each time this keyword is analyzed, create a new Object with all data for creating a babylonMesh
@@ -656,6 +707,7 @@ export class SolidParser {
                     result[1].trim().split(" "), // ["1/1", "2/2"]
                     0
                 );
+                this._hasLineData = true;
 
                 // Define a mesh or an object
                 // Each time this keyword is analyzed, create a new Object with all data for creating a babylonMesh
@@ -668,6 +720,7 @@ export class SolidParser {
                     result[1].trim().split(" "), // ["1/1/1", "2/2/2"]
                     0
                 );
+                this._hasLineData = true;
 
                 // Define a mesh or an object
                 // Each time this keyword is analyzed, create a new Object with all data for creating a babylonMesh
@@ -743,7 +796,6 @@ export class SolidParser {
                 Logger.Log("Unhandled expression at line : " + line);
             }
         }
-
         // At the end of the file, add the last mesh into the meshesFromObj array
         if (this._hasMeshes) {
             // Set the data for the last mesh
@@ -761,6 +813,7 @@ export class SolidParser {
             this._handledMesh.positions = this._unwrappedPositionsForBabylon;
             this._handledMesh.normals = this._unwrappedNormalsForBabylon;
             this._handledMesh.uvs = this._unwrappedUVForBabylon;
+            this._handledMesh.hasLines = this._hasLineData;
 
             if (this._loadingOptions.importVertexColors) {
                 this._handledMesh.colors = this._unwrappedColorsForBabylon;
@@ -828,6 +881,7 @@ export class SolidParser {
                 materialName: this._materialNameFromObj,
                 directMaterial: newMaterial,
                 isObject: true,
+                hasLines: this._hasLineData,
             });
         }
 
@@ -869,6 +923,11 @@ export class SolidParser {
             //Push the name of the material to an array
             //This is indispensable for the importMesh function
             this._materialToUse.push(this._meshesFromObj[j].materialName);
+            //If the mesh is a line mesh
+            if (this._handledMesh.hasLines) {
+                babylonMesh._internalMetadata ??= {};
+                babylonMesh._internalMetadata["_isLine"] = true; //this is a line mesh
+            }
 
             if (this._handledMesh.positions?.length === 0) {
                 //Push the mesh into an array

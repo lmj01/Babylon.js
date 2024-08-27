@@ -1,5 +1,5 @@
 /* eslint-disable no-console */
-import * as glob from "glob";
+import { globSync } from "glob";
 import * as fs from "fs";
 import * as path from "path";
 import * as chokidar from "chokidar";
@@ -78,6 +78,7 @@ function getModuleDeclaration(
                     / from ['"](.*)['"]/,
                     // Module augmentation
                     / {4}module ['"](.*)['"]/,
+                    /^module ['"](\..*)['"]/,
                     // Inlined Import
                     /import\(['"](.*)['"]/,
                     // Side Effect Import
@@ -168,7 +169,8 @@ function getModuleDeclaration(
             return;
         }
     });
-    processedLines = processedLines.replace(/export declare /g, "export ");
+    processedLines = processedLines.replace(/export declare /g, "export ").replace(/export const enum/g, "export enum");
+
     return `declare module "${moduleName}" {
 ${processedLines}
 }
@@ -307,6 +309,8 @@ function getPackageDeclaration(
     const packageMapping = getPackageMappingByDevName(devPackageName);
     const defaultModuleName = getPublicPackageName(packageMapping.namespace);
     const thisFileModuleName = getPublicPackageName(packageMapping.namespace, sourceFilePath);
+    const linesToDefaultNamespace: string[] = [];
+    let addToDefaultModule = false;
     while (i < lines.length) {
         let line = lines[i];
 
@@ -333,6 +337,13 @@ function getPackageDeclaration(
 
         const match = line.match(/(\s*)declare module "(.*)" \{/);
         if (match) {
+            // try to match namespace
+            const fileToCheck = path.resolve(path.dirname(sourceFilePath), match[2] + ".d.ts");
+            const moduleName = getPublicPackageName(packageMapping.namespace, fileToCheck);
+            if (moduleName !== thisFileModuleName && moduleName === defaultModuleName) {
+                addToDefaultModule = true;
+            }
+
             lastWhitespace = match[1];
             removeNext = true;
             excludeLine = true;
@@ -341,6 +352,7 @@ function getPackageDeclaration(
         if (removeNext && line.indexOf(`${lastWhitespace}}`) === 0) {
             removeNext = false;
             excludeLine = true;
+            addToDefaultModule = false;
         }
 
         if (/namespace (.*) \{/.test(line)) {
@@ -352,13 +364,18 @@ function getPackageDeclaration(
         if (excludeLine) {
             lines[i] = "";
         } else {
-            if (line.indexOf("declare ") !== -1) {
-                lines[i] = line.replace("declare ", "");
+            if (addToDefaultModule) {
+                linesToDefaultNamespace.push(line);
+                lines[i] = "";
             } else {
-                lines[i] = line;
+                if (line.indexOf("declare ") !== -1) {
+                    lines[i] = line.replace("declare ", "");
+                } else {
+                    lines[i] = line;
+                }
+                //Add tab
+                lines[i] = "    " + lines[i];
             }
-            //Add tab
-            lines[i] = "    " + lines[i];
         }
         i++;
     }
@@ -399,6 +416,8 @@ function getPackageDeclaration(
         }
     );
 
+    processedSource = processedSource.replace(/export const enum/g, "export enum");
+
     processedSource = processedSource.replace(
         / global {([^}]*)}/gm,
         `
@@ -415,6 +434,7 @@ declare module ${thisFileModuleName} {
     ${processedSource}
 }
 declare module ${defaultModuleName} {
+${linesToDefaultNamespace.join("\n")}
 `;
     }
 
@@ -527,9 +547,21 @@ export function generateDeclaration() {
 
         const debounced = debounce(() => {
             const { output, namespaceDeclaration, looseDeclarationsString } = generateCombinedDeclaration(
-                directoriesToWatch.map((dir) => glob.sync(dir)).flat(),
+                directoriesToWatch
+                    .map((dir) =>
+                        globSync(dir, {
+                            windowsPathsNoEscape: true,
+                        })
+                    )
+                    .flat(),
                 config,
-                looseDeclarations.map((dir) => glob.sync(dir)).flat(),
+                looseDeclarations
+                    .map((dir) =>
+                        globSync(dir, {
+                            windowsPathsNoEscape: true,
+                        })
+                    )
+                    .flat(),
                 config.buildType
             );
             const filename = `${outputDir}/${config.filename || "index.d.ts"}`;

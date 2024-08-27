@@ -21,6 +21,7 @@ import type { IGetSetVerticesData } from "./mesh.vertexData";
 import { VertexData } from "./mesh.vertexData";
 
 import { Geometry } from "./geometry";
+import type { IMeshDataOptions } from "./abstractMesh";
 import { AbstractMesh } from "./abstractMesh";
 import { SubMesh } from "./subMesh";
 import type { BoundingSphere } from "../Culling/boundingSphere";
@@ -151,6 +152,8 @@ class _InternalMeshDataInfo {
     public _forcedInstanceCount: number = 0;
 
     public _overrideRenderingFillMode: Nullable<number> = null;
+
+    public _sideOrientation: number;
 }
 
 /**
@@ -444,8 +447,35 @@ export class Mesh extends AbstractMesh implements IGetSetVerticesData {
 
     /**
      * Use this property to change the original side orientation defined at construction time
+     * Material.sideOrientation will override this value if set
+     * User will still be able to change the material sideOrientation afterwards if they really need it
      */
-    public overrideMaterialSideOrientation: Nullable<number> = null;
+    public get sideOrientation(): number {
+        return this._internalMeshDataInfo._sideOrientation;
+    }
+
+    public set sideOrientation(value: number) {
+        this._internalMeshDataInfo._sideOrientation = value;
+
+        this._internalAbstractMeshDataInfo._sideOrientationHint =
+            (this._scene.useRightHandedSystem && value === Constants.MATERIAL_CounterClockWiseSideOrientation) ||
+            (!this._scene.useRightHandedSystem && value === Constants.MATERIAL_ClockWiseSideOrientation);
+    }
+
+    /**
+     * @deprecated Please use sideOrientation instead.
+     * @see https://doc.babylonjs.com/breaking-changes#7110
+     */
+    public get overrideMaterialSideOrientation() {
+        return this.sideOrientation;
+    }
+
+    public set overrideMaterialSideOrientation(value: number) {
+        this.sideOrientation = value;
+        if (this.material) {
+            this.material.sideOrientation = null;
+        }
+    }
 
     /**
      * Use this property to override the Material's fillMode value
@@ -456,6 +486,17 @@ export class Mesh extends AbstractMesh implements IGetSetVerticesData {
 
     public set overrideRenderingFillMode(fillMode: Nullable<number>) {
         this._internalMeshDataInfo._overrideRenderingFillMode = fillMode;
+    }
+
+    public override get material(): Nullable<Material> {
+        return this._internalAbstractMeshDataInfo._material;
+    }
+
+    public override set material(value: Nullable<Material>) {
+        if (value && ((this.material && this.material.sideOrientation === null) || this._internalAbstractMeshDataInfo._sideOrientationHint)) {
+            value.sideOrientation = null;
+        }
+        this._setMaterial(value);
     }
 
     /**
@@ -534,8 +575,170 @@ export class Mesh extends AbstractMesh implements IGetSetVerticesData {
         this._instanceDataStorage.forceMatrixUpdates = value;
     }
 
+    protected _copySource(source: Mesh, doNotCloneChildren?: boolean, clonePhysicsImpostor: boolean = true) {
+        const scene = this.getScene();
+        // Geometry
+        if (source._geometry) {
+            source._geometry.applyToMesh(this);
+        }
+
+        // Deep copy
+        DeepCopier.DeepCopy(
+            source,
+            this,
+            [
+                "name",
+                "material",
+                "skeleton",
+                "instances",
+                "parent",
+                "uniqueId",
+                "source",
+                "metadata",
+                "morphTargetManager",
+                "hasInstances",
+                "worldMatrixInstancedBuffer",
+                "previousWorldMatrixInstancedBuffer",
+                "hasLODLevels",
+                "geometry",
+                "isBlocked",
+                "areNormalsFrozen",
+                "facetNb",
+                "isFacetDataEnabled",
+                "lightSources",
+                "useBones",
+                "isAnInstance",
+                "collider",
+                "edgesRenderer",
+                "forward",
+                "up",
+                "right",
+                "absolutePosition",
+                "absoluteScaling",
+                "absoluteRotationQuaternion",
+                "isWorldMatrixFrozen",
+                "nonUniformScaling",
+                "behaviors",
+                "worldMatrixFromCache",
+                "hasThinInstances",
+                "cloneMeshMap",
+                "hasBoundingInfo",
+                "physicsBody",
+                "physicsImpostor",
+            ],
+            ["_poseMatrix"]
+        );
+
+        // Source mesh
+        this._internalMeshDataInfo._source = source;
+        if (scene.useClonedMeshMap) {
+            if (!source._internalMeshDataInfo.meshMap) {
+                source._internalMeshDataInfo.meshMap = {};
+            }
+            source._internalMeshDataInfo.meshMap[this.uniqueId] = this;
+        }
+
+        // Construction Params
+        // Clone parameters allowing mesh to be updated in case of parametric shapes.
+        this._originalBuilderSideOrientation = source._originalBuilderSideOrientation;
+        this._creationDataStorage = source._creationDataStorage;
+
+        // Animation ranges
+        if (source._ranges) {
+            const ranges = source._ranges;
+            for (const name in ranges) {
+                if (!Object.prototype.hasOwnProperty.call(ranges, name)) {
+                    continue;
+                }
+
+                if (!ranges[name]) {
+                    continue;
+                }
+
+                this.createAnimationRange(name, ranges[name]!.from, ranges[name]!.to);
+            }
+        }
+
+        // Metadata
+        if (source.metadata && source.metadata.clone) {
+            this.metadata = source.metadata.clone();
+        } else {
+            this.metadata = source.metadata;
+        }
+        this._internalMetadata = source._internalMetadata;
+
+        // Tags
+        if (Tags && Tags.HasTags(source)) {
+            Tags.AddTagsTo(this, Tags.GetTags(source, true));
+        }
+
+        // Enabled. We shouldn't need to check the source's ancestors, as this mesh
+        // will have the same ones.
+        this.setEnabled(source.isEnabled(false));
+
+        // Parent
+        this.parent = source.parent;
+
+        // Pivot
+        this.setPivotMatrix(source.getPivotMatrix(), this._postMultiplyPivotMatrix);
+
+        this.id = this.name + "." + source.id;
+
+        // Material
+        this.material = source.material;
+
+        if (!doNotCloneChildren) {
+            // Children
+            const directDescendants = source.getDescendants(true);
+            for (let index = 0; index < directDescendants.length; index++) {
+                const child = directDescendants[index];
+
+                if ((<any>child).clone) {
+                    (<any>child).clone(this.name + "." + child.name, this);
+                }
+            }
+        }
+
+        // Morphs
+        if (source.morphTargetManager) {
+            this.morphTargetManager = source.morphTargetManager;
+        }
+
+        // Physics clone
+        if (scene.getPhysicsEngine) {
+            const physicsEngine = scene.getPhysicsEngine();
+            if (clonePhysicsImpostor && physicsEngine) {
+                if (physicsEngine.getPluginVersion() === 1) {
+                    const impostor = (physicsEngine as PhysicsEngineV1).getImpostorForPhysicsObject(source);
+                    if (impostor) {
+                        this.physicsImpostor = impostor.clone(this);
+                    }
+                } else if (physicsEngine.getPluginVersion() === 2) {
+                    if (source.physicsBody) {
+                        source.physicsBody.clone(this);
+                    }
+                }
+            }
+        }
+
+        // Particles
+        for (let index = 0; index < scene.particleSystems.length; index++) {
+            const system = scene.particleSystems[index];
+
+            if (system.emitter === source) {
+                system.clone(system.name, this);
+            }
+        }
+
+        // Skeleton
+        this.skeleton = source.skeleton;
+
+        this.refreshBoundingInfo(true, true);
+        this.computeWorldMatrix(true);
+    }
+
     /**
-     * @constructor
+     * Constructor
      * @param name The value used by scene.getMeshByName() to do a lookup.
      * @param scene The scene to add this mesh to.
      * @param parent The parent of this mesh, if it has one
@@ -557,6 +760,12 @@ export class Mesh extends AbstractMesh implements IGetSetVerticesData {
 
         scene = this.getScene();
 
+        if (this._scene.useRightHandedSystem) {
+            this.sideOrientation = Constants.MATERIAL_ClockWiseSideOrientation;
+        } else {
+            this.sideOrientation = Constants.MATERIAL_CounterClockWiseSideOrientation;
+        }
+
         this._onBeforeDraw = (isInstance: boolean, world: Matrix, effectiveMaterial?: Material) => {
             if (isInstance && effectiveMaterial) {
                 if (this._uniformBuffer) {
@@ -568,164 +777,7 @@ export class Mesh extends AbstractMesh implements IGetSetVerticesData {
         };
 
         if (source) {
-            // Geometry
-            if (source._geometry) {
-                source._geometry.applyToMesh(this);
-            }
-
-            // Deep copy
-            DeepCopier.DeepCopy(
-                source,
-                this,
-                [
-                    "name",
-                    "material",
-                    "skeleton",
-                    "instances",
-                    "parent",
-                    "uniqueId",
-                    "source",
-                    "metadata",
-                    "morphTargetManager",
-                    "hasInstances",
-                    "worldMatrixInstancedBuffer",
-                    "previousWorldMatrixInstancedBuffer",
-                    "hasLODLevels",
-                    "geometry",
-                    "isBlocked",
-                    "areNormalsFrozen",
-                    "facetNb",
-                    "isFacetDataEnabled",
-                    "lightSources",
-                    "useBones",
-                    "isAnInstance",
-                    "collider",
-                    "edgesRenderer",
-                    "forward",
-                    "up",
-                    "right",
-                    "absolutePosition",
-                    "absoluteScaling",
-                    "absoluteRotationQuaternion",
-                    "isWorldMatrixFrozen",
-                    "nonUniformScaling",
-                    "behaviors",
-                    "worldMatrixFromCache",
-                    "hasThinInstances",
-                    "cloneMeshMap",
-                    "hasBoundingInfo",
-                    "physicsBody",
-                    "physicsImpostor",
-                ],
-                ["_poseMatrix"]
-            );
-
-            // Source mesh
-            this._internalMeshDataInfo._source = source;
-            if (scene.useClonedMeshMap) {
-                if (!source._internalMeshDataInfo.meshMap) {
-                    source._internalMeshDataInfo.meshMap = {};
-                }
-                source._internalMeshDataInfo.meshMap[this.uniqueId] = this;
-            }
-
-            // Construction Params
-            // Clone parameters allowing mesh to be updated in case of parametric shapes.
-            this._originalBuilderSideOrientation = source._originalBuilderSideOrientation;
-            this._creationDataStorage = source._creationDataStorage;
-
-            // Animation ranges
-            if (source._ranges) {
-                const ranges = source._ranges;
-                for (const name in ranges) {
-                    if (!Object.prototype.hasOwnProperty.call(ranges, name)) {
-                        continue;
-                    }
-
-                    if (!ranges[name]) {
-                        continue;
-                    }
-
-                    this.createAnimationRange(name, ranges[name]!.from, ranges[name]!.to);
-                }
-            }
-
-            // Metadata
-            if (source.metadata && source.metadata.clone) {
-                this.metadata = source.metadata.clone();
-            } else {
-                this.metadata = source.metadata;
-            }
-            this._internalMetadata = source._internalMetadata;
-
-            // Tags
-            if (Tags && Tags.HasTags(source)) {
-                Tags.AddTagsTo(this, Tags.GetTags(source, true));
-            }
-
-            // Enabled. We shouldn't need to check the source's ancestors, as this mesh
-            // will have the same ones.
-            this.setEnabled(source.isEnabled(false));
-
-            // Parent
-            this.parent = source.parent;
-
-            // Pivot
-            this.setPivotMatrix(source.getPivotMatrix(), this._postMultiplyPivotMatrix);
-
-            this.id = name + "." + source.id;
-
-            // Material
-            this.material = source.material;
-
-            if (!doNotCloneChildren) {
-                // Children
-                const directDescendants = source.getDescendants(true);
-                for (let index = 0; index < directDescendants.length; index++) {
-                    const child = directDescendants[index];
-
-                    if ((<any>child).clone) {
-                        (<any>child).clone(name + "." + child.name, this);
-                    }
-                }
-            }
-
-            // Morphs
-            if (source.morphTargetManager) {
-                this.morphTargetManager = source.morphTargetManager;
-            }
-
-            // Physics clone
-            if (scene.getPhysicsEngine) {
-                const physicsEngine = scene.getPhysicsEngine();
-                if (clonePhysicsImpostor && physicsEngine) {
-                    if (physicsEngine.getPluginVersion() === 1) {
-                        const impostor = (physicsEngine as PhysicsEngineV1).getImpostorForPhysicsObject(source);
-                        if (impostor) {
-                            this.physicsImpostor = impostor.clone(this);
-                        }
-                    } else if (physicsEngine.getPluginVersion() === 2) {
-                        if (source.physicsBody) {
-                            source.physicsBody.clone(this);
-                        }
-                    }
-                }
-            }
-
-            // Particles
-            for (let index = 0; index < scene.particleSystems.length; index++) {
-                const system = scene.particleSystems[index];
-
-                if (system.emitter === source) {
-                    system.clone(system.name, this);
-                }
-            }
-
-            // Skeleton
-            this.skeleton = source.skeleton;
-
-            this.refreshBoundingInfo(true, true);
-            this.computeWorldMatrix(true);
+            this._copySource(source, doNotCloneChildren, clonePhysicsImpostor);
         }
 
         // Parent
@@ -1072,6 +1124,12 @@ export class Mesh extends AbstractMesh implements IGetSetVerticesData {
         return data;
     }
 
+    public override copyVerticesData(kind: string, vertexData: { [kind: string]: Float32Array }): void {
+        if (this._geometry) {
+            this._geometry.copyVerticesData(kind, vertexData);
+        }
+    }
+
     /**
      * Returns the mesh VertexBuffer object from the requested `kind`
      * @param kind defines which buffer to read from (positions, indices, normals, etc). Possible `kind` values :
@@ -1410,17 +1468,27 @@ export class Mesh extends AbstractMesh implements IGetSetVerticesData {
     /**
      * This method recomputes and sets a new BoundingInfo to the mesh unless it is locked.
      * This means the mesh underlying bounding box and sphere are recomputed.
-     * @param applySkeleton defines whether to apply the skeleton before computing the bounding info
-     * @param applyMorph  defines whether to apply the morph target before computing the bounding info
+     * @param applySkeletonOrOptions defines whether to apply the skeleton before computing the bounding info or a set of options
+     * @param applyMorph defines whether to apply the morph target before computing the bounding info
      * @returns the current mesh
      */
-    public override refreshBoundingInfo(applySkeleton: boolean = false, applyMorph: boolean = false): Mesh {
+    public override refreshBoundingInfo(applySkeletonOrOptions: boolean | IMeshDataOptions = false, applyMorph: boolean = false): Mesh {
         if (this.hasBoundingInfo && this.getBoundingInfo().isLocked) {
             return this;
         }
 
+        let options: IMeshDataOptions;
+        if (typeof applySkeletonOrOptions === "object") {
+            options = applySkeletonOrOptions;
+        } else {
+            options = {
+                applySkeleton: applySkeletonOrOptions,
+                applyMorph: applyMorph,
+            };
+        }
+
         const bias = this.geometry ? this.geometry.boundingBias : null;
-        this._refreshBoundingInfo(this._getPositionData(applySkeleton, applyMorph), bias);
+        this._refreshBoundingInfo(this._getData(options, null, VertexBuffer.PositionKind), bias);
         return this;
     }
 
@@ -1758,11 +1826,6 @@ export class Mesh extends AbstractMesh implements IGetSetVerticesData {
 
         const engine = this.getScene().getEngine();
 
-        // Morph targets
-        if (this.morphTargetManager && this.morphTargetManager.isUsingTextureForTargets) {
-            this.morphTargetManager._bind(effect);
-        }
-
         // Wireframe
         let indexToBind;
         if (this._unIndexed) {
@@ -1780,6 +1843,22 @@ export class Mesh extends AbstractMesh implements IGetSetVerticesData {
                     indexToBind = this._geometry.getIndexBuffer();
                     break;
             }
+        }
+
+        return this._bindDirect(effect, indexToBind, allowInstancedRendering);
+    }
+
+    /**
+     * @internal
+     */
+    public _bindDirect(effect: Effect, indexToBind: Nullable<DataBuffer>, allowInstancedRendering = true): Mesh {
+        if (!this._geometry) {
+            return this;
+        }
+
+        // Morph targets
+        if (this.morphTargetManager && this.morphTargetManager.isUsingTextureForTargets) {
+            this.morphTargetManager._bind(effect);
         }
 
         // VBOs
@@ -2383,15 +2462,13 @@ export class Mesh extends AbstractMesh implements IGetSetVerticesData {
         if (
             !instanceDataStorage.isFrozen &&
             (this._internalMeshDataInfo._effectiveMaterial.backFaceCulling ||
-                this.overrideMaterialSideOrientation !== null ||
+                this._internalMeshDataInfo._effectiveMaterial.sideOrientation !== null ||
                 (this._internalMeshDataInfo._effectiveMaterial as any).twoSidedLighting)
         ) {
             // Note: if two sided lighting is enabled, we need to ensure that the normal will point in the right direction even if the determinant of the world matrix is negative
             const mainDeterminant = effectiveMesh._getWorldMatrixDeterminant();
-            sideOrientation = this.overrideMaterialSideOrientation;
-            if (sideOrientation == null) {
-                sideOrientation = this._internalMeshDataInfo._effectiveMaterial.sideOrientation;
-            }
+            sideOrientation = this._internalMeshDataInfo._effectiveMaterial._getEffectiveOrientation(this);
+
             if (mainDeterminant < 0) {
                 sideOrientation = sideOrientation === Material.ClockWiseSideOrientation ? Material.CounterClockWiseSideOrientation : Material.ClockWiseSideOrientation;
             }
@@ -2827,14 +2904,7 @@ export class Mesh extends AbstractMesh implements IGetSetVerticesData {
 
     /** @internal */
     public override get _positions(): Nullable<Vector3[]> {
-        if (this._internalAbstractMeshDataInfo._positions) {
-            return this._internalAbstractMeshDataInfo._positions;
-        }
-
-        if (this._geometry) {
-            return this._geometry._positions;
-        }
-        return null;
+        return this._internalAbstractMeshDataInfo._positions || (this._geometry && this._geometry._positions) || null;
     }
 
     /** @internal */
@@ -3087,8 +3157,7 @@ export class Mesh extends AbstractMesh implements IGetSetVerticesData {
 
         // Decide if normals should be flipped
         const flipNormalGeneration =
-            this.overrideMaterialSideOrientation ===
-            (this._scene.useRightHandedSystem ? Constants.MATERIAL_CounterClockWiseSideOrientation : Constants.MATERIAL_ClockWiseSideOrientation);
+            this.sideOrientation === (this._scene.useRightHandedSystem ? Constants.MATERIAL_CounterClockWiseSideOrientation : Constants.MATERIAL_ClockWiseSideOrientation);
 
         // Generate new normals
         for (let index = 0; index < indices.length; index += 3) {
@@ -3116,7 +3185,7 @@ export class Mesh extends AbstractMesh implements IGetSetVerticesData {
     }
 
     private _convertToUnIndexedMesh(flattenNormals: boolean = false): Mesh {
-        const kinds = this.getVerticesDataKinds();
+        const kinds = this.getVerticesDataKinds().filter((kind) => !this.getVertexBuffer(kind)?.getIsInstanced());
         const indices = this.getIndices()!;
         const data: { [kind: string]: FloatArray } = {};
 
@@ -3130,6 +3199,9 @@ export class Mesh extends AbstractMesh implements IGetSetVerticesData {
             }
             return newData;
         };
+
+        // Save mesh bounding info
+        const meshBoundingInfo = this.getBoundingInfo();
 
         // Save previous submeshes
         const previousSubmeshes = this.geometry ? this.subMeshes.slice(0) : [];
@@ -3189,8 +3261,12 @@ export class Mesh extends AbstractMesh implements IGetSetVerticesData {
         // Update submeshes
         this.releaseSubMeshes();
         for (const previousOne of previousSubmeshes) {
-            SubMesh.AddToMesh(previousOne.materialIndex, previousOne.indexStart, previousOne.indexCount, previousOne.indexStart, previousOne.indexCount, this);
+            const boundingInfo = previousOne.getBoundingInfo();
+            const subMesh = SubMesh.AddToMesh(previousOne.materialIndex, previousOne.indexStart, previousOne.indexCount, previousOne.indexStart, previousOne.indexCount, this);
+            subMesh.setBoundingInfo(boundingInfo);
         }
+
+        this.setBoundingInfo(meshBoundingInfo);
 
         this.synchronizeInstances();
 
@@ -3672,7 +3748,7 @@ export class Mesh extends AbstractMesh implements IGetSetVerticesData {
         serializationObject.ellipsoidOffset = this.ellipsoidOffset.asArray();
         serializationObject.doNotSyncBoundingInfo = this.doNotSyncBoundingInfo;
         serializationObject.isBlocker = this.isBlocker;
-        serializationObject.overrideMaterialSideOrientation = this.overrideMaterialSideOrientation;
+        serializationObject.sideOrientation = this.sideOrientation;
 
         // Parent
         if (this.parent) {
@@ -4059,8 +4135,13 @@ export class Mesh extends AbstractMesh implements IGetSetVerticesData {
             mesh.ellipsoidOffset = Vector3.FromArray(parsedMesh.ellipsoidOffset);
         }
 
-        if (parsedMesh.overrideMaterialSideOrientation !== undefined) {
-            mesh.overrideMaterialSideOrientation = parsedMesh.overrideMaterialSideOrientation;
+        // For Backward compatibility ("!=" to exclude null and undefined)
+        if (parsedMesh.overrideMaterialSideOrientation != null) {
+            mesh.sideOrientation = parsedMesh.overrideMaterialSideOrientation;
+        }
+
+        if (parsedMesh.sideOrientation !== undefined) {
+            mesh.sideOrientation = parsedMesh.sideOrientation;
         }
 
         if (parsedMesh.isBlocker !== undefined) {
@@ -4205,7 +4286,7 @@ export class Mesh extends AbstractMesh implements IGetSetVerticesData {
 
         // Physics
         if (parsedMesh.physicsImpostor) {
-            Mesh._PhysicsImpostorParser(scene, mesh, parsedMesh);
+            mesh.physicsImpostor = Mesh._PhysicsImpostorParser(scene, mesh, parsedMesh);
         }
 
         // Levels
@@ -4287,7 +4368,7 @@ export class Mesh extends AbstractMesh implements IGetSetVerticesData {
 
                 // Physics
                 if (parsedInstance.physicsImpostor) {
-                    Mesh._PhysicsImpostorParser(scene, instance, parsedInstance);
+                    instance.physicsImpostor = Mesh._PhysicsImpostorParser(scene, instance, parsedInstance);
                 }
 
                 // Actions
@@ -4655,7 +4736,7 @@ export class Mesh extends AbstractMesh implements IGetSetVerticesData {
         const materialIndexArray: Array<number> = new Array<number>();
         // Merge
         const indiceArray: Array<number> = new Array<number>();
-        const currentOverrideMaterialSideOrientation = meshes[0].overrideMaterialSideOrientation;
+        const currentsideOrientation = meshes[0].sideOrientation;
 
         for (index = 0; index < meshes.length; index++) {
             const mesh = meshes[index];
@@ -4664,8 +4745,8 @@ export class Mesh extends AbstractMesh implements IGetSetVerticesData {
                 return null;
             }
 
-            if (currentOverrideMaterialSideOrientation !== mesh.overrideMaterialSideOrientation) {
-                Logger.Warn("Cannot merge meshes with different overrideMaterialSideOrientation values.");
+            if (currentsideOrientation !== mesh.sideOrientation) {
+                Logger.Warn("Cannot merge meshes with different sideOrientation values.");
                 return null;
             }
 
@@ -4750,7 +4831,7 @@ export class Mesh extends AbstractMesh implements IGetSetVerticesData {
 
         // Setting properties
         meshSubclass.checkCollisions = source.checkCollisions;
-        meshSubclass.overrideMaterialSideOrientation = source.overrideMaterialSideOrientation;
+        meshSubclass.sideOrientation = source.sideOrientation;
 
         // Cleaning
         if (disposeSource) {
@@ -4822,7 +4903,7 @@ export class Mesh extends AbstractMesh implements IGetSetVerticesData {
 
     /** @internal */
     public override _shouldConvertRHS() {
-        return this.overrideMaterialSideOrientation === Material.CounterClockWiseSideOrientation;
+        return this._scene.useRightHandedSystem && this.sideOrientation === Material.CounterClockWiseSideOrientation;
     }
 
     /** @internal */

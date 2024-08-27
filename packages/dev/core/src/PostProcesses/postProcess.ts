@@ -4,7 +4,7 @@ import type { Observer } from "../Misc/observable";
 import { Observable } from "../Misc/observable";
 import { Vector2 } from "../Maths/math.vector";
 import type { Camera } from "../Cameras/camera";
-import type { Effect } from "../Materials/effect";
+import { Effect } from "../Materials/effect";
 import { Constants } from "../Engines/constants";
 import type { RenderTargetCreationOptions } from "../Materials/Textures/textureCreationOptions";
 import "../Shaders/postprocess.vertex";
@@ -26,8 +26,83 @@ import type { InternalTexture } from "../Materials/Textures/internalTexture";
 import type { Animation } from "../Animations/animation";
 import type { PrePassRenderer } from "../Rendering/prePassRenderer";
 import type { PrePassEffectConfiguration } from "../Rendering/prePassEffectConfiguration";
-import type { AbstractEngine } from "../Engines/abstractEngine";
+import { AbstractEngine } from "../Engines/abstractEngine";
 import { GetExponentOfTwo } from "../Misc/tools.functions";
+
+declare module "../Engines/abstractEngine" {
+    export interface AbstractEngine {
+        /**
+         * Sets a texture to the context from a postprocess
+         * @param channel defines the channel to use
+         * @param postProcess defines the source postprocess
+         * @param name name of the channel
+         */
+        setTextureFromPostProcess(channel: number, postProcess: Nullable<PostProcess>, name: string): void;
+
+        /**
+         * Binds the output of the passed in post process to the texture channel specified
+         * @param channel The channel the texture should be bound to
+         * @param postProcess The post process which's output should be bound
+         * @param name name of the channel
+         */
+        setTextureFromPostProcessOutput(channel: number, postProcess: Nullable<PostProcess>, name: string): void;
+    }
+}
+
+AbstractEngine.prototype.setTextureFromPostProcess = function (channel: number, postProcess: Nullable<PostProcess>, name: string): void {
+    let postProcessInput = null;
+    if (postProcess) {
+        if (postProcess._forcedOutputTexture) {
+            postProcessInput = postProcess._forcedOutputTexture;
+        } else if (postProcess._textures.data[postProcess._currentRenderTextureInd]) {
+            postProcessInput = postProcess._textures.data[postProcess._currentRenderTextureInd];
+        }
+    }
+
+    this._bindTexture(channel, postProcessInput?.texture ?? null, name);
+};
+
+AbstractEngine.prototype.setTextureFromPostProcessOutput = function (channel: number, postProcess: Nullable<PostProcess>, name: string): void {
+    this._bindTexture(channel, postProcess?._outputTexture?.texture ?? null, name);
+};
+
+declare module "../Materials/effect" {
+    export interface Effect {
+        /**
+         * Sets a texture to be the input of the specified post process. (To use the output, pass in the next post process in the pipeline)
+         * @param channel Name of the sampler variable.
+         * @param postProcess Post process to get the input texture from.
+         */
+        setTextureFromPostProcess(channel: string, postProcess: Nullable<PostProcess>): void;
+
+        /**
+         * (Warning! setTextureFromPostProcessOutput may be desired instead)
+         * Sets the input texture of the passed in post process to be input of this effect. (To use the output of the passed in post process use setTextureFromPostProcessOutput)
+         * @param channel Name of the sampler variable.
+         * @param postProcess Post process to get the output texture from.
+         */
+        setTextureFromPostProcessOutput(channel: string, postProcess: Nullable<PostProcess>): void;
+    }
+}
+
+/**
+ * Sets a texture to be the input of the specified post process. (To use the output, pass in the next post process in the pipeline)
+ * @param channel Name of the sampler variable.
+ * @param postProcess Post process to get the input texture from.
+ */
+Effect.prototype.setTextureFromPostProcess = function (channel: string, postProcess: Nullable<PostProcess>): void {
+    this._engine.setTextureFromPostProcess(this._samplers[channel], postProcess, channel);
+};
+
+/**
+ * (Warning! setTextureFromPostProcessOutput may be desired instead)
+ * Sets the input texture of the passed in post process to be input of this effect. (To use the output of the passed in post process use setTextureFromPostProcessOutput)
+ * @param channel Name of the sampler variable.
+ * @param postProcess Post process to get the output texture from.
+ */
+Effect.prototype.setTextureFromPostProcessOutput = function (channel: string, postProcess: Nullable<PostProcess>): void {
+    this._engine.setTextureFromPostProcessOutput(this._samplers[channel], postProcess, channel);
+};
 
 /**
  * Allows for custom processing of the shader code used by a post process
@@ -140,6 +215,12 @@ type TextureCache = { texture: RenderTargetWrapper; postProcessChannel: number; 
  * See https://doc.babylonjs.com/features/featuresDeepDive/postProcesses/usePostProcesses
  */
 export class PostProcess {
+    /**
+     * Force all the postprocesses to compile to glsl even on WebGPU engines.
+     * False by default. This is mostly meant for backward compatibility.
+     */
+    public static ForceGLSL = false;
+
     /** @internal */
     public _parentContainer: Nullable<AbstractScene> = null;
 
@@ -297,12 +378,23 @@ export class PostProcess {
     protected _scene: Scene;
     private _engine: AbstractEngine;
 
+    private _shadersLoaded = false;
+    protected _webGPUReady = false;
+
     private _options: number | { width: number; height: number };
     private _reusable = false;
     private _renderId = 0;
     private _textureType: number;
     private _textureFormat: number;
+    /** @internal */
     private _shaderLanguage: ShaderLanguage;
+
+    /**
+     * Gets the shader language type used to generate vertex and fragment source code.
+     */
+    public get shaderLanguage(): ShaderLanguage {
+        return this._shaderLanguage;
+    }
 
     /**
      * if externalTextureSamplerBinding is true, the "apply" method won't bind the textureSampler texture, it is expected to be done by the "outside" (by the onApplyObservable observer most probably).
@@ -354,6 +446,12 @@ export class PostProcess {
     public getEffectName(): string {
         return this._fragmentUrl;
     }
+
+    /**
+     * Executed when the effect was created
+     * @returns effect that was created for this post process
+     */
+    public onEffectCreatedObservable = new Observable<Effect>(undefined, true);
 
     // Events
 
@@ -512,6 +610,7 @@ export class PostProcess {
      * @param blockCompilation If the shader should not be compiled immediatly. (default: false)
      * @param textureFormat Format of textures used when performing the post process. (default: TEXTUREFORMAT_RGBA)
      * @param shaderLanguage The shader language of the shader. (default: GLSL)
+     * @param extraInitializations Defines additional code to call to prepare the shader code
      */
     constructor(
         name: string,
@@ -529,7 +628,8 @@ export class PostProcess {
         indexParameters?: any,
         blockCompilation?: boolean,
         textureFormat?: number,
-        shaderLanguage?: ShaderLanguage
+        shaderLanguage?: ShaderLanguage,
+        extraInitializations?: (useWebGPU: boolean, list: Promise<any>[]) => void
     );
 
     /** @internal */
@@ -549,7 +649,8 @@ export class PostProcess {
         indexParameters?: any,
         blockCompilation = false,
         textureFormat = Constants.TEXTUREFORMAT_RGBA,
-        shaderLanguage = ShaderLanguage.GLSL
+        shaderLanguage?: ShaderLanguage,
+        extraInitializations?: (useWebGPU: boolean, list: Promise<any>[]) => void
     ) {
         this.name = name;
         let size: number | { width: number; height: number } = 1;
@@ -597,7 +698,7 @@ export class PostProcess {
         this._reusable = reusable || false;
         this._textureType = textureType;
         this._textureFormat = textureFormat;
-        this._shaderLanguage = shaderLanguage;
+        this._shaderLanguage = shaderLanguage || ShaderLanguage.GLSL;
 
         this._samplers = samplers || [];
         this._samplers.push("textureSampler");
@@ -611,6 +712,35 @@ export class PostProcess {
 
         this._indexParameters = indexParameters;
         this._drawWrapper = new DrawWrapper(this._engine);
+
+        this._webGPUReady = this._shaderLanguage === ShaderLanguage.WGSL;
+
+        this._postConstructor(blockCompilation, defines, extraInitializations);
+    }
+
+    /** @internal */
+    protected _gatherImports(useWebGPU = false, list: Promise<any>[]) {
+        // this._webGPUReady is used to detect when a postprocess is intended to be used with WebGPU
+        if (useWebGPU && this._webGPUReady) {
+            list.push(Promise.all([import("../ShadersWGSL/postprocess.vertex")]));
+        } else {
+            list.push(Promise.all([import("../Shaders/postprocess.vertex")]));
+        }
+    }
+
+    private _importPromises: Array<Promise<any>> = [];
+    private _postConstructor(blockCompilation: boolean, defines: Nullable<string> = null, extraInitializations?: (useWebGPU: boolean, list: Promise<any>[]) => void) {
+        const engine = this.getEngine();
+        const useWebGPU = engine.isWebGPU && !PostProcess.ForceGLSL;
+
+        this._gatherImports(useWebGPU, this._importPromises);
+        if (extraInitializations) {
+            extraInitializations(useWebGPU, this._importPromises);
+        }
+
+        if (useWebGPU && this._webGPUReady) {
+            this._shaderLanguage = ShaderLanguage.WGSL;
+        }
 
         if (!blockCompilation) {
             this.updateEffect(defines);
@@ -719,9 +849,16 @@ export class PostProcess {
                     ? (shaderType: string, code: string) => customShaderCodeProcessing!.processFinalCode!(this.name, shaderType, code)
                     : null,
                 shaderLanguage: this._shaderLanguage,
+                extraInitializationsAsync: this._shadersLoaded
+                    ? undefined
+                    : async () => {
+                          await Promise.all(this._importPromises);
+                          this._shadersLoaded = true;
+                      },
             },
             this._engine
         );
+        this.onEffectCreatedObservable.notifyObservers(this._drawWrapper.effect);
     }
 
     /**
@@ -1100,6 +1237,7 @@ export class PostProcess {
         this.onApplyObservable.clear();
         this.onBeforeRenderObservable.clear();
         this.onSizeChangedObservable.clear();
+        this.onEffectCreatedObservable.clear();
     }
 
     /**

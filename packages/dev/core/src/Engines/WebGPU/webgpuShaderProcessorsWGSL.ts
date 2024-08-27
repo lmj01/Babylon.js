@@ -8,35 +8,20 @@ import { WebGPUShaderProcessingContext } from "./webgpuShaderProcessingContext";
 import * as WebGPUConstants from "./webgpuConstants";
 import { Logger } from "../../Misc/logger";
 import { WebGPUShaderProcessor } from "./webgpuShaderProcessor";
-import { RemoveComments } from "../../Misc/codeStringParsingTools";
+import { RemoveComments, InjectStartingAndEndingCode } from "../../Misc/codeStringParsingTools";
+import { ShaderLanguage } from "../../Materials/shaderLanguage";
 
-import "../../ShadersWGSL/ShadersInclude/bonesDeclaration";
-import "../../ShadersWGSL/ShadersInclude/bonesVertex";
+import { Constants } from "../constants";
+
 import "../../ShadersWGSL/ShadersInclude/bakedVertexAnimationDeclaration";
 import "../../ShadersWGSL/ShadersInclude/bakedVertexAnimation";
-import "../../ShadersWGSL/ShadersInclude/clipPlaneFragment";
-import "../../ShadersWGSL/ShadersInclude/clipPlaneFragmentDeclaration";
-import "../../ShadersWGSL/ShadersInclude/clipPlaneVertex";
-import "../../ShadersWGSL/ShadersInclude/clipPlaneVertexDeclaration";
 import "../../ShadersWGSL/ShadersInclude/instancesDeclaration";
 import "../../ShadersWGSL/ShadersInclude/instancesVertex";
 import "../../ShadersWGSL/ShadersInclude/helperFunctions";
 import "../../ShadersWGSL/ShadersInclude/fresnelFunction";
 import "../../ShadersWGSL/ShadersInclude/meshUboDeclaration";
-import "../../ShadersWGSL/ShadersInclude/morphTargetsVertex";
-import "../../ShadersWGSL/ShadersInclude/morphTargetsVertexDeclaration";
-import "../../ShadersWGSL/ShadersInclude/morphTargetsVertexGlobal";
-import "../../ShadersWGSL/ShadersInclude/morphTargetsVertexGlobalDeclaration";
 import "../../ShadersWGSL/ShadersInclude/sceneUboDeclaration";
-import "../../ShadersWGSL/ShadersInclude/lightsFragmentFunctions";
-import "../../ShadersWGSL/ShadersInclude/lightFragment";
-import "../../ShadersWGSL/ShadersInclude/lightUboDeclaration";
-import "../../ShadersWGSL/ShadersInclude/lightVxUboDeclaration";
-import "../../ShadersWGSL/ShadersInclude/shadowsFragmentFunctions";
-import "../../ShadersWGSL/ShadersInclude/shadowsVertex";
-import "../../ShadersWGSL/ShadersInclude/fogFragmentDeclaration";
-import { ShaderLanguage } from "../../Materials/shaderLanguage";
-import { Constants } from "../constants";
+import "../../ShadersWGSL/ShadersInclude/decalFragment";
 
 const builtInName_frag_depth = "fragmentOutputs.fragDepth";
 
@@ -77,6 +62,7 @@ export class WebGPUShaderProcessorWGSL extends WebGPUShaderProcessor {
     public uniformRegexp = /uniform\s+(\w+)\s*:\s*(.+)\s*;/;
     public textureRegexp = /var\s+(\w+)\s*:\s*((array<\s*)?(texture_\w+)\s*(<\s*(.+)\s*>)?\s*(,\s*\w+\s*>\s*)?);/;
     public noPrecision = true;
+    public pureMode = false;
 
     public preProcessor(code: string, defines: string[], preProcessors: { [key: string]: string }, isFragment: boolean, processingContext: Nullable<ShaderProcessingContext>) {
         // Convert defines into const
@@ -130,12 +116,14 @@ export class WebGPUShaderProcessorWGSL extends WebGPUShaderProcessor {
 
     public preProcessShaderCode(code: string): string {
         // Same check as in webgpuShaderProcessorsGLSL to avoid same ubDelcaration to be injected twice.
-        const ubDeclaration = `struct ${WebGPUShaderProcessor.InternalsUBOName} {\n  yFactor_: f32,\n  textureOutputHeight_: f32,\n};\nvar<uniform> ${internalsVarName} : ${WebGPUShaderProcessor.InternalsUBOName};\n`;
+        const ubDeclaration = this.pureMode
+            ? ""
+            : `struct ${WebGPUShaderProcessor.InternalsUBOName} {\n  yFactor_: f32,\n  textureOutputHeight_: f32,\n};\nvar<uniform> ${internalsVarName} : ${WebGPUShaderProcessor.InternalsUBOName};\n`;
         const alreadyInjected = code.indexOf(ubDeclaration) !== -1;
         return alreadyInjected ? code : ubDeclaration + RemoveComments(code);
     }
 
-    public varyingCheck(varying: string, isFragment: boolean): boolean {
+    public varyingCheck(varying: string): boolean {
         const regex = /(flat|linear|perspective)?\s*(center|centroid|sample)?\s*\bvarying\b/;
 
         return regex.test(varying);
@@ -179,7 +167,7 @@ export class WebGPUShaderProcessorWGSL extends WebGPUShaderProcessor {
             this._webgpuProcessingContext.availableAttributes[name] = location;
             this._webgpuProcessingContext.orderedAttributes[location] = name;
 
-            const numComponents = this.vertexBufferKindToNumberOfComponents[name];
+            const numComponents = this._webgpuProcessingContext.vertexBufferKindToNumberOfComponents[name];
             if (numComponents !== undefined) {
                 // Special case for an int/ivecX vertex buffer that is used as a float/vecX attribute in the shader.
                 const newType =
@@ -274,21 +262,22 @@ export class WebGPUShaderProcessorWGSL extends WebGPUShaderProcessor {
         return texture;
     }
 
-    // Ignore for now as we inject const for numeric defines
-    // public postProcessor(code: string, defines: string[]) {
-    //     const defineToValue: { [key: string]: string } = {};
-    //     for (const define of defines) {
-    //         const parts = define.split(/ +/);
-    //         defineToValue[parts[1]] = parts.length > 2 ? parts[2] : "";
-    //     }
-    //     return code.replace(/\$(\w+)\$/g, (_, p1) => {
-    //         return defineToValue[p1] ?? p1;
-    //     });
-    // }
+    // We need to process defines which are directly in the files themselves
+    public postProcessor(code: string) {
+        const definePattern = /#define (.+?) (.+?)$/gm;
+
+        let match: RegExpExecArray | null;
+
+        while ((match = definePattern.exec(code)) !== null) {
+            code = code.replace(new RegExp(match[1], "g"), match[2]);
+        }
+
+        return code;
+    }
 
     public finalizeShaders(vertexCode: string, fragmentCode: string): { vertexCode: string; fragmentCode: string } {
         const fragCoordCode =
-            fragmentCode.indexOf("fragmentInputs.position") >= 0
+            fragmentCode.indexOf("fragmentInputs.position") >= 0 && !this.pureMode
                 ? `
             if (internals.yFactor_ == 1.) {
                 fragmentInputs.position.y = internals.textureOutputHeight_ - fragmentInputs.position.y;
@@ -340,18 +329,22 @@ export class WebGPUShaderProcessorWGSL extends WebGPUShaderProcessor {
             vertexMainStartingCode += this._attributesConversionCodeWGSL.join("\n");
             vertexMainStartingCode += "\n";
         }
-        const vertexMainEndingCode = `  vertexOutputs.position.y = vertexOutputs.position.y * internals.yFactor_;\n  return vertexOutputs;`;
+        const vertexMainEndingCode = this.pureMode
+            ? `  return vertexOutputs;`
+            : `  vertexOutputs.position.y = vertexOutputs.position.y * internals.yFactor_;\n  return vertexOutputs;`;
         let needDiagnosticOff = vertexCode.indexOf(Constants.DISABLEUA) !== -1;
 
         vertexCode =
             (needDiagnosticOff ? "diagnostic(off, derivative_uniformity);\n" : "") +
-            this._injectStartingAndEndingCode(vertexCode, "fn main", vertexMainStartingCode, vertexMainEndingCode);
+            InjectStartingAndEndingCode(vertexCode, "fn main", vertexMainStartingCode, vertexMainEndingCode);
 
         // fragment code
         fragmentCode = fragmentCode.replace(/#define (\w+)\s+(\d+\.?\d*)/g, "const $1 = $2;");
         fragmentCode = fragmentCode.replace(/#define /g, "//#define ");
         fragmentCode = this._processStridedUniformArrays(fragmentCode);
-        fragmentCode = fragmentCode.replace(/dpdy/g, "(-internals.yFactor_)*dpdy"); // will also handle dpdyCoarse and dpdyFine
+        if (!this.pureMode) {
+            fragmentCode = fragmentCode.replace(/dpdy/g, "(-internals.yFactor_)*dpdy"); // will also handle dpdyCoarse and dpdyFine
+        }
 
         let fragmentInputs = "struct FragmentInputs {\n  @builtin(position) position : vec4<f32>,\n  @builtin(front_facing) frontFacing : bool,\n";
         if (this._varyingsWGSL.length > 0) {
@@ -359,8 +352,43 @@ export class WebGPUShaderProcessorWGSL extends WebGPUShaderProcessor {
         }
         fragmentInputs += "\n};\nvar<private> fragmentInputs : FragmentInputs;\n";
 
-        let fragmentOutputs = "struct FragmentOutputs {\n  @location(0) color : vec4<f32>,\n";
+        let fragmentOutputs = "struct FragmentOutputs {\n";
 
+        // Adding fragData output locations
+        let regex = /const SCENE_MRT_COUNT = (\d+);/;
+        let match = fragmentCode.match(regex);
+        let indexLocation = 0;
+
+        if (match) {
+            const number = parseInt(match[1]);
+            if (number > 0) {
+                for (let index = 0; index < number; index++) {
+                    fragmentOutputs += ` @location(${indexLocation}) fragData${indexLocation} : vec4<f32>,\n`;
+                    indexLocation++;
+                }
+                if (fragmentCode.indexOf("MRT_AND_COLOR") !== -1) {
+                    fragmentOutputs += `  @location(${indexLocation}) color : vec4<f32>,\n`;
+                    indexLocation++;
+                }
+            }
+        }
+
+        // Adding fragData output locations
+        regex = /oitDepthSampler/;
+        match = fragmentCode.match(regex);
+
+        if (match) {
+            fragmentOutputs += ` @location(${indexLocation++}) depth : vec2<f32>,\n`;
+            fragmentOutputs += ` @location(${indexLocation++}) frontColor : vec4<f32>,\n`;
+            fragmentOutputs += ` @location(${indexLocation++}) backColor : vec4<f32>,\n`;
+        }
+
+        if (indexLocation === 0) {
+            fragmentOutputs += "  @location(0) color : vec4<f32>,\n";
+            indexLocation++;
+        }
+
+        // FragDepth
         let hasFragDepth = false;
         let idx = 0;
         while (!hasFragDepth) {
@@ -393,13 +421,12 @@ export class WebGPUShaderProcessorWGSL extends WebGPUShaderProcessor {
         needDiagnosticOff = fragmentCode.indexOf(Constants.DISABLEUA) !== -1;
 
         fragmentCode =
-            (needDiagnosticOff ? "diagnostic(off, derivative_uniformity);\n" : "") +
-            this._injectStartingAndEndingCode(fragmentCode, "fn main", fragmentStartingCode, fragmentEndingCode);
+            (needDiagnosticOff ? "diagnostic(off, derivative_uniformity);\n" : "") + InjectStartingAndEndingCode(fragmentCode, "fn main", fragmentStartingCode, fragmentEndingCode);
 
         this._collectBindingNames();
         this._preCreateBindGroupEntries();
 
-        this.vertexBufferKindToNumberOfComponents = {};
+        this._webgpuProcessingContext.vertexBufferKindToNumberOfComponents = {};
 
         return { vertexCode, fragmentCode };
     }
@@ -447,10 +474,8 @@ export class WebGPUShaderProcessorWGSL extends WebGPUShaderProcessor {
 
             const name = match[1]; // name of the variable
             const samplerType = match[2]; // sampler or sampler_comparison
-            const textureName =
-                name.indexOf(Constants.AUTOSAMPLERSUFFIX) === name.length - Constants.AUTOSAMPLERSUFFIX.length
-                    ? name.substring(0, name.indexOf(Constants.AUTOSAMPLERSUFFIX))
-                    : null;
+            const suffixLessLength = name.length - Constants.AUTOSAMPLERSUFFIX.length;
+            const textureName = name.lastIndexOf(Constants.AUTOSAMPLERSUFFIX) === suffixLessLength ? name.substring(0, suffixLessLength) : null;
             const samplerBindingType = samplerType === "sampler_comparison" ? WebGPUConstants.SamplerBindingType.Comparison : WebGPUConstants.SamplerBindingType.Filtering;
 
             if (textureName) {

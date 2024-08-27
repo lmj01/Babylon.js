@@ -18,7 +18,7 @@ import type { WebGPUEngine } from "core/Engines/webgpuEngine";
 /**
  * Textures that can be displayed as a debugging tool
  */
-export enum FluidRenderingDebug {
+export const enum FluidRenderingDebug {
     DepthTexture,
     DepthBlurredTexture,
     ThicknessTexture,
@@ -836,7 +836,7 @@ export class FluidRenderingTargetRenderer {
                         texture = this._thicknessRenderTarget?.texture ?? null;
                         break;
                     case FluidRenderingDebug.ThicknessBlurredTexture:
-                        texture = this._thicknessRenderTarget?.enableBlur ? this._thicknessRenderTarget?.textureBlur ?? null : this._thicknessRenderTarget?.texture ?? null;
+                        texture = this._thicknessRenderTarget?.enableBlur ? (this._thicknessRenderTarget?.textureBlur ?? null) : (this._thicknessRenderTarget?.texture ?? null);
                         break;
                     case FluidRenderingDebug.DiffuseTexture:
                         if (this._diffuseRenderTarget) {

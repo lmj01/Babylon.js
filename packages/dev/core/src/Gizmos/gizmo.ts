@@ -41,7 +41,7 @@ export interface GizmoAxisCache {
 /**
  * Anchor options where the Gizmo can be positioned in relation to its anchored node
  */
-export enum GizmoAnchorPoint {
+export const enum GizmoAnchorPoint {
     /** The origin of the attached node */
     Origin,
     /** The pivot point of the attached node*/
@@ -51,7 +51,7 @@ export enum GizmoAnchorPoint {
 /**
  * Coordinates mode: Local or World. Defines how axis is aligned: either on world axis or transform local axis
  */
-export enum GizmoCoordinatesMode {
+export const enum GizmoCoordinatesMode {
     World,
     Local,
 }
@@ -309,7 +309,7 @@ export class Gizmo implements IGizmo {
      * @param gizmoLayer The utility layer the gizmo will be added to
      */
     constructor(
-        /** The utility layer the gizmo will be added to */
+        /** [Object] The utility layer the gizmo will be added to */
         public gizmoLayer: UtilityLayerRenderer = UtilityLayerRenderer.DefaultUtilityLayer
     ) {
         this._rootMesh = new Mesh("gizmoRootNode", gizmoLayer.utilityLayerScene);

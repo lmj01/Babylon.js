@@ -1,5 +1,5 @@
 import type { DeepImmutable, Nullable } from "../types";
-import { ArrayTools } from "../Misc/arrayTools";
+import { BuildArray } from "../Misc/arrayTools";
 import { Matrix, Vector3 } from "../Maths/math.vector";
 import type { BoundingSphere } from "../Culling/boundingSphere";
 
@@ -16,7 +16,7 @@ export class BoundingBox implements ICullable {
     /**
      * Gets the 8 vectors representing the bounding box in local space
      */
-    public readonly vectors: Vector3[] = ArrayTools.BuildArray(8, Vector3.Zero);
+    public readonly vectors: Vector3[] = BuildArray(8, Vector3.Zero);
     /**
      * Gets the center of the bounding box in local space
      */
@@ -26,21 +26,21 @@ export class BoundingBox implements ICullable {
      */
     public readonly centerWorld: Vector3 = Vector3.Zero();
     /**
-     * Gets the extend size in local space
+     * Gets half the size of the extent in local space. Multiply by 2 to obtain the full size of the box!
      */
     public readonly extendSize: Vector3 = Vector3.Zero();
     /**
-     * Gets the extend size in world space
+     * Gets half the size of the extent in world space. Multiply by 2 to obtain the full size of the box!
      */
     public readonly extendSizeWorld: Vector3 = Vector3.Zero();
     /**
      * Gets the OBB (object bounding box) directions
      */
-    public readonly directions: Vector3[] = ArrayTools.BuildArray(3, Vector3.Zero);
+    public readonly directions: Vector3[] = BuildArray(3, Vector3.Zero);
     /**
      * Gets the 8 vectors representing the bounding box in world space
      */
-    public readonly vectorsWorld: Vector3[] = ArrayTools.BuildArray(8, Vector3.Zero);
+    public readonly vectorsWorld: Vector3[] = BuildArray(8, Vector3.Zero);
     /**
      * Gets the minimum vector in world space
      */
@@ -59,7 +59,7 @@ export class BoundingBox implements ICullable {
     public readonly maximum: Vector3 = Vector3.Zero();
 
     private _worldMatrix: DeepImmutable<Matrix>;
-    private static readonly _TmpVector3 = ArrayTools.BuildArray(3, Vector3.Zero);
+    private static readonly _TmpVector3 = BuildArray(3, Vector3.Zero);
 
     /**
      * @internal

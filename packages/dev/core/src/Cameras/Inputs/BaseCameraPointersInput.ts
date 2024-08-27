@@ -87,7 +87,13 @@ export abstract class BaseCameraPointersInput implements ICameraInput<Camera> {
                 this.onTouch(null, offsetX, offsetY);
                 this._pointA = null;
                 this._pointB = null;
-            } else if (p.type !== PointerEventTypes.POINTERDOWN && isTouch && this._pointA?.pointerId !== evt.pointerId && this._pointB?.pointerId !== evt.pointerId) {
+            } else if (
+                p.type !== PointerEventTypes.POINTERDOWN &&
+                p.type !== PointerEventTypes.POINTERDOUBLETAP &&
+                isTouch &&
+                this._pointA?.pointerId !== evt.pointerId &&
+                this._pointB?.pointerId !== evt.pointerId
+            ) {
                 return; // If we get a non-down event for a touch that we're not tracking, ignore it
             } else if (p.type === PointerEventTypes.POINTERDOWN && (this._currentActiveButton === -1 || isTouch)) {
                 try {
@@ -186,10 +192,9 @@ export abstract class BaseCameraPointersInput implements ICameraInput<Camera> {
                 if (this._pointA && this._pointB === null) {
                     const offsetX = evt.clientX - this._pointA.x;
                     const offsetY = evt.clientY - this._pointA.y;
-                    this.onTouch(this._pointA, offsetX, offsetY);
-
                     this._pointA.x = evt.clientX;
                     this._pointA.y = evt.clientY;
+                    this.onTouch(this._pointA, offsetX, offsetY);
                 }
                 // Two buttons down: pinch
                 else if (this._pointA && this._pointB) {
